@@ -1,0 +1,29 @@
+{
+    "id": "default",
+    "name": "Default Notepad",
+    "created": "timestamp",
+    "files": [
+        {
+            "local_name": "files/example_paper.pdf",
+            "cloud_name": "files/20g91rvk99h0"
+        }
+    ],
+    "chat": [
+        {
+            "role": "user",
+            "content": "Charlie, please list out the mental models you have found most useful in your life"
+        },
+        {
+            "role": "assistant",
+            "content": "Well, Chris, a useful mental model isn't something you find once and enshrine.  It's a tool, a framework, "
+        },
+        {
+            "role": "user",
+            "content": "please summarise the key ideas in the file"
+        },
+        {
+            "role": "assistant",
+            "content": "```\nThe Prompt Report: A Systematic Survey of Prompting Techniques\n\nThis document, \"The Prompt Report: A Systematic Survey of Prompting Techniques,\" is a research paper analyzing prompting techniques for generative artificial intelligence (GenAI) systems.  It provides a structured understanding of prompting, assembling a taxonomy of prompting techniques and analyzing their use.\n\nKey findings and topics covered include:\n\n* **Abstract:** Introduces the study's purpose and scope.  Highlights the need for a structured understanding of prompts due to the conflicting terminology and poor ontological understanding in the nascent field of prompting.  Outlines the paper's key contributions, including a taxonomy of 58 text-only prompting techniques and 40 techniques for other modalities, a comprehensive vocabulary of 33 terms, and a meta-analysis of the literature on natural language prefix-prompting.\n\n* **Introduction:** Defines a prompt as input to a generative AI model to guide its output and includes textual, visual, auditory, and mixed examples.  Outlines the scope of the study, which primarily focuses on discrete prefix prompts and task-agnostic techniques.\n\n* **Meta-Analysis of Prompting:**  Details the systematic review process used to identify and categorize prompting techniques. Includes a breakdown of text-based techniques and methods like In-Context Learning (ICL), Zero-Shot, and Chain-of-Thought (CoT) prompting. Discusses various design decisions that significantly affect few-shot learning prompt efficacy (e.g., exemplar quantity, order, label distribution).\n\n* **Beyond English Text Prompting:** Explores prompting techniques for multilingual and multimodal settings, including translation-first prompting, chain-of-thought methods, in-context learning techniques specific to the multilingual environment, image/text prompts and multimodal CoT examples. Also details prompting for machine translation.\n\n* **Extensions of Prompting:** Discusses prompting with agents (using external tools), and specific examples of code-based agents, observation-based agents, and retrieval-augmented generation.\n\n* **Evaluation:** Analyzes methods for evaluating LLM performance in prompting tasks, examining different formats for outputs (e.g., binary, linear scale, Likert scale) and prompting techniques for creating robust evaluation frameworks.\n\n* **Prompting Issues:** Addresses security concerns (prompt hacking, prompt injection, jailbreaking), data privacy, and alignment issues (biases, calibration, overconfidence) within prompting.\n\n* **Benchmarking:**  Describes how prompting techniques were benchmarked using the widely-used MMLU dataset.  Provides results and analysis of different techniques and variations.\n\n* **Prompt Engineering Case Study:**  Presents a detailed case study illustrating the process of prompt engineering applied to a real-world problem involving suicide risk detection from text. Provides data, process, and results.\n\n\n* **Related Work:** Reviews existing surveys and meta-analyses related to prompting and prompt engineering.\n\n* **Conclusions:** Summarizes the paper's findings and contributions, stressing the need for continued research, ecological validity in evaluation, and the collaborative relationship between prompt engineers and domain experts in effective prompting.\n\nThe appendices contain additional details and materials, including definitions of prompting, extended vocabulary, keywords used for research, a datasheet, and an entrapment prompting process outline.  The paper is well-structured and well-referenced, providing a thorough overview of the field.\n```"
+        }
+    ]
+}

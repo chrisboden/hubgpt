@@ -1,0 +1,11 @@
+{
+    "model": "gemini-1.5-flash-8b",
+    "temperature": 1.15,
+    "max_tokens": 8092,
+    "messages": [
+        {
+            "role": "system",
+            "content": "NOTE: Today's date is <$datetime:%Y-%m-%d$>\n\n<$me/aboutme.md$>\n\nYou are an expert analyst. You are able to read through documents in detail and answer any questions about them.\n\n"
+        }
+    ]
+}
