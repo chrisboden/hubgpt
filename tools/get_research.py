@@ -259,13 +259,13 @@ TOOL_METADATA = {
     "type": "function",
     "function": {
         "name": "get_research",
-        "description": "This tool is a very intelligent web research agent that can search, find, gather and synthesise highly relevant formation for a given topic. Use this tool whenever you are asked to perform research on topic. You simply give the agent a research_brief in natural language, eg 'please research the spacex starship launch schedule'. It will return a comprehensive research dossier for you to use in your answers.",
+        "description": "This tool is a very intelligent web research agent that can search, find, gather and synthesise highly relevant information for a given topic. Use this tool whenever you are asked to perform research on topic. You simply give the agent a research_brief in natural language, eg 'please research the spacex starship launch schedule'. It will return a comprehensive research dossier for you to use in your answers.",
         "parameters": {
             "type": "object",
             "properties": {
                 "research_brief": {
                     "type": "string",
-                    "description": "The initial research brief query to use for the research, based on the user's message. Determine the intent and rephrase to get the best possible results."
+                    "description": "The initial research brief query to use for the research, based on the user's message. Determine the intent and rephrase to get the best possible results. Be careful not to change key terms for example don't assume a given term is a typo when the user may have meant to use that term. Eg if the user mentions an org name, be careful not to change the org name in your research brief."
                 }
             },
             "required": ["research_brief"]

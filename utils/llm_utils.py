@@ -158,7 +158,42 @@ def get_llm_response(
                         status_placeholder.markdown(f"*🔧 Executing tool: {tool_name}*")
                         
                         tool_response_data = execute_tool(tool_name, function_call_data, llm_client=client)
-                        
+
+                        # Check if direct streaming is enabled
+                        if tool_response_data.get('direct_stream', False):
+                            # Get the stream from the tool response
+                            stream = tool_response_data.get('result', '')
+                            
+                            # Clear status placeholder
+                            status_placeholder.empty()
+                            
+                            # Create a new placeholder for streaming response
+                            response_placeholder = st.empty()
+                            full_response = ""
+                            
+                            # Handle OpenAI stream
+                            for chunk in stream:
+                                if not chunk.choices:
+                                    continue
+                                
+                                delta = chunk.choices[0].delta
+                                chunk_text = delta.content or ""
+                                full_response += chunk_text
+                                response_placeholder.markdown(full_response)
+                            
+                            # Add to chat history as an assistant message
+                            chat_history.append({
+                                "role": "assistant", 
+                                "content": full_response,
+                                "tool_name": tool_name
+                            })
+                            
+                            # Save chat history
+                            save_chat_history(chat_history, chat_history_path)
+                            return chat_history
+
+
+
                         if tool_response_data:
                             # Add tool messages to chat history
                             assistant_tool_message = {

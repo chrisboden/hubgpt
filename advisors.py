@@ -118,7 +118,6 @@ def main():
         # Create a more robust spinner placeholder
         st.session_state.spinner_placeholder = st.empty()
         st.session_state.spinner_placeholder.markdown(f"*{st.session_state.spinner_status}*")
-        
         # User message handling
         user_message = {"role": "user", "content": prompt}
         st.session_state.chat_history.append(user_message)

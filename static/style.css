@@ -1,0 +1,19 @@
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@100..900&display=swap');
+
+html, body, [class*="css"] {
+    font-size: 16px;
+    font-weight: 500;
+    color: #091747;
+    font-family: "Geist", serif!important;
+    font-optical-sizing: auto;
+    font-style: normal;
+}
+
+.stHeading h1{
+    font-size: 1.45em;
+    font-family: "Geist";
+}
+
+.stApp *{
+    font-family:"Geist"!important;
+}

@@ -29,6 +29,12 @@ load_dotenv()
 if 'current_tab' not in st.session_state:
     st.session_state.current_tab = "Advisors"
 
+
+with open('./static/style.css') as f:
+    css = f.read()
+
+st.markdown(f'<style>{css}</style>', unsafe_allow_html=True)
+
 # Create sidebar with navigation buttons
 col1, col2, col3 = st.sidebar.columns(3)
 

@@ -60,8 +60,9 @@ def execute_tool(tool_name: str, args: Dict[str, Any], llm_client=None) -> Dict[
     try:
         logging.info(f"Executing tool '{tool_name}' with arguments: {args}")
         
-        # Get the execute function for the specified tool
+        # Get the tool function and its metadata
         tool_func = TOOL_REGISTRY[tool_name]
+        tool_metadata = TOOL_METADATA_REGISTRY.get(tool_name, {})
         tool_signature = signature(tool_func)
         
         # Execute the tool and get response
@@ -85,9 +86,16 @@ def execute_tool(tool_name: str, args: Dict[str, Any], llm_client=None) -> Dict[
             except json.JSONDecodeError:
                 logging.warning(f"Could not parse tool response as JSON: {response}")
                 # If parsing fails, return the cleaned string
-                return {"result": response}
+                return {
+                    "result": response, 
+                    "direct_stream": tool_metadata.get("direct_stream", False)
+                }
 
-        return response
+        # Return response with direct_stream flag
+        return {
+            **response,
+            "direct_stream": tool_metadata.get("direct_stream", False)
+        }
     except Exception as e:
         st.error(f"Error executing tool '{tool_name}': {e}")
         logging.error(f"Error executing tool '{tool_name}': {e}")
