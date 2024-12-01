@@ -1,4 +1,4 @@
-# run_team_streamlit.py
+# team_chat.py
 
 import os
 import json
@@ -11,44 +11,13 @@ import traceback
 from dotenv import load_dotenv
 from openai import OpenAI
 import streamlit as st
+from utils.db_utils import AgentRunsDB
 
 load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-class ScratchpadManager:
-    def __init__(self):
-        self.work = {}
-        
-    def save_work(self, content: str, agent_name: str, handoff_message: str = "", handoff_target: str = "") -> str:
-        key = str(uuid.uuid4())
-        self.work[key] = {
-            "key": key,
-            "agent_name": agent_name,
-            "content": content,
-            "handoff_message": handoff_message,
-            "handoff_target": handoff_target
-        }
-        return key
-        
-    def get_work(self, key: str) -> Optional[dict]:
-        if key not in self.work:
-            return None
-        work_entry = self.work[key]
-        return work_entry
-        
-    def get_all_work(self) -> dict:
-        if not self.work:
-            logger.info("Scratchpad is empty")
-        for key, work_entry in self.work.items():
-            logger.info(f"\nKey: {key}\nWork Entry:\n{work_entry}")
-        return self.work.copy()
-        
-    def clear(self):
-        logger.info("\n=== SCRATCHPAD CLEARED ===")
-        self.work = {}
 
 @dataclass
 class Response:
@@ -177,20 +146,21 @@ def function_to_schema(func: Callable) -> dict:
         }
     return schema
 
-def execute_tool_call(tool_call, tools, agent_name, messages):
+def execute_tool_call(tool_call, tools, agent_name, messages, run_id):
     """Execute a tool call and handle agent transfers with context."""
     name = tool_call.function.name
     args = json.loads(tool_call.function.arguments)
 
-    scratchpad.get_all_work()
-
     if name == "final_outcome":
         work_done = None
         for msg in reversed(messages):
-            if isinstance(msg, dict) and "work_done_key" in msg:
-                work_entry = scratchpad.get_work(msg["work_done_key"])
-                if work_entry:
-                    work_done = work_entry['content']
+            if isinstance(msg, dict) and "tool_call_id" in msg:
+                steps = db.get_steps_for_run(run_id)
+                for step in reversed(steps):
+                    if step["tool_call_id"] == msg["tool_call_id"]:
+                        work_done = step["output"]
+                        break
+                if work_done:
                     break
         if not work_done:
             raise Exception("No final report found for final_outcome")
@@ -202,19 +172,26 @@ def execute_tool_call(tool_call, tools, agent_name, messages):
     elif name == "handoff_to_coordinator":
         if not args.get('work_done') or not args.get('handoff'):
             raise Exception("Agents must provide 'work_done' and 'handoff' when calling handoff_to_coordinator")
-        work_done_key = scratchpad.save_work(
-            content=args['work_done'],
-            agent_name=agent_name,
-            handoff_message=args['handoff'],
-            handoff_target="coordinator"
+        
+        tool_call_id = str(uuid.uuid4())
+        db.add_step(
+            run_id=run_id,
+            output=args['work_done'],
+            handoff_msg=args['handoff'],
+            actor_agent=agent_name,
+            target_agent="coordinator",
+            summary="Handoff to coordinator",
+            tool_call_id=tool_call_id
         )
+        
         messages.append({
             "role": "assistant",
             "content": "",
-            "work_done_key": work_done_key,
+            "tool_call_id": tool_call_id,
             "handoff": args['handoff'],
             "agent_name": agent_name
         })
+        
         result = tools[name](work_done=args['work_done'], handoff=args['handoff'])
         logger.info(f"Executing tool: {name} with args: {str(args)[:100]}...")
         return result
@@ -223,15 +200,25 @@ def execute_tool_call(tool_call, tools, agent_name, messages):
         if not args.get('agent_name') or not args.get('handoff'):
             raise Exception("Must specify 'agent_name' and 'handoff' when handing off to another agent")
 
+        tool_call_id = str(uuid.uuid4())
+        if args.get('work_done'):
+            db.add_step(
+                run_id=run_id,
+                output=args['work_done'],
+                handoff_msg=args['handoff'],
+                actor_agent=agent_name,
+                target_agent=args['agent_name'],
+                summary=f"Handoff to {args['agent_name']}",
+                tool_call_id=tool_call_id
+            )
+
         message_entry = {
             "role": "assistant",
             "content": "",
             "handoff": args['handoff'],
-            "agent_name": agent_name
+            "agent_name": agent_name,
+            "tool_call_id": tool_call_id
         }
-
-        if args.get('work_done'):
-            message_entry['work_done'] = args['work_done']
 
         messages.append(message_entry)
 
@@ -249,13 +236,16 @@ def execute_tool_call(tool_call, tools, agent_name, messages):
         result = tools[name](**cleaned_args)
         return result
 
-def build_context_messages(agent: Agent, messages: List[dict]) -> List[dict]:
+def build_context_messages(agent: Agent, messages: List[dict], run_id: str) -> List[dict]:
     if agent.name.lower() == "coordinator":
         context_messages = [{"role": "system", "content": agent.instructions}]
         
         N = 30
         truncated_messages = messages[-N:]
         logger.info(f"Using the last {N} messages for context.")
+
+        steps = db.get_steps_for_run(run_id)
+        steps_by_tool_call = {step["tool_call_id"]: step for step in steps}
 
         for msg in truncated_messages:
             context_msg = {
@@ -264,12 +254,12 @@ def build_context_messages(agent: Agent, messages: List[dict]) -> List[dict]:
             }
 
             if msg["role"] in ["system", "user", "assistant"]:
-                if "work_done_key" in msg:
-                    work_entry = scratchpad.get_work(msg["work_done_key"])
-                    if work_entry and work_entry['content'].strip():
-                        agent_name = work_entry.get("agent_name", "an agent")
+                if "tool_call_id" in msg:
+                    step = steps_by_tool_call.get(msg["tool_call_id"])
+                    if step and step['output'].strip():
+                        agent_name = step["actor_agent"]
                         if agent_name.lower() != "coordinator":
-                            context_msg["content"] += f"\n\nPrevious work done by {agent_name}:\n{work_entry['content']}"
+                            context_msg["content"] += f"\n\nPrevious work done by {agent_name}:\n{step['output']}"
                 if "handoff" in msg:
                     context_msg["content"] += f"\n\nHandoff Instructions:\n{msg['handoff']}"
 
@@ -283,24 +273,21 @@ def build_context_messages(agent: Agent, messages: List[dict]) -> List[dict]:
                 user_request = msg["content"]
                 break
 
+        steps = db.get_steps_for_run(run_id)
         previous_work = ''
         previous_agent_name = ''
-        for msg in reversed(messages):
-            if 'work_done_key' in msg:
-                work_entry = scratchpad.get_work(msg["work_done_key"])
-                if work_entry and work_entry['content'].strip():
-                    agent_name = work_entry.get("agent_name", "an agent")
-                    if agent_name.lower() == "coordinator":
-                        continue
-                    previous_work = work_entry['content']
-                    previous_agent_name = agent_name
-                    break
+        
+        for step in reversed(steps):
+            if step["actor_agent"].lower() != "coordinator" and step["output"].strip():
+                previous_work = step["output"]
+                previous_agent_name = step["actor_agent"]
+                break
 
-            handoff_instructions = ''
-            for msg in reversed(messages):
-                if "handoff" in msg:
-                    handoff_instructions = msg["handoff"]
-                    break
+        handoff_instructions = ''
+        for msg in reversed(messages):
+            if "handoff" in msg:
+                handoff_instructions = msg["handoff"]
+                break
 
         user_message_content = f"""Hi, it's the Coordinator Agent here. A user has asked our team for assistance and we have been on the job.
 
@@ -333,7 +320,8 @@ Please figure out the best possible answer to the last user query from the conve
 
         return context_messages
 
-def run_full_turn(agent: Agent, messages: list) -> Response:
+
+def run_full_turn(agent: Agent, messages: list, run_id: str) -> Response:
     current_agent = agent
     num_init_messages = len(messages)
     messages = messages.copy()
@@ -344,7 +332,7 @@ def run_full_turn(agent: Agent, messages: list) -> Response:
         tool_schemas = [function_to_schema(tool) for tool in current_agent.tools]
         tools = {tool.__name__: tool for tool in current_agent.tools}
 
-        context_messages = build_context_messages(current_agent, messages)
+        context_messages = build_context_messages(current_agent, messages, run_id)
 
         request_payload = {
             'model': current_agent.model,
@@ -354,7 +342,7 @@ def run_full_turn(agent: Agent, messages: list) -> Response:
         logger.info("\n=== API Request Payload ===")
         logger.info(json.dumps(request_payload, indent=2))
         logger.info("==========================\n")
-        # In run_full_turn function of team_chat.py
+        
         try:
             response = client.chat.completions.create(**request_payload)
             logger.info("\n=== API Response ===")
@@ -398,12 +386,14 @@ def run_full_turn(agent: Agent, messages: list) -> Response:
 
             if message.tool_calls:
                 for tool_call in message.tool_calls:
-                    result = execute_tool_call(tool_call, tools, current_agent.name, messages)
+                    result = execute_tool_call(tool_call, tools, current_agent.name, messages, run_id)
 
                     if isinstance(result, Agent):
                         logger.info(f"Agent transfer: {current_agent.name} → {result.name}")
                         current_agent = result
                         result = f"Transferred to {result.name}. Adopting new role."
+                        # Continue the loop with the new agent
+                        break  # Break the tool_calls loop to continue with while loop
 
                     messages.append({
                         "role": "assistant",
@@ -412,8 +402,12 @@ def run_full_turn(agent: Agent, messages: list) -> Response:
                     
                     if tool_call.function.name == "final_outcome":
                         return Response(agent=current_agent, messages=messages[num_init_messages:])
+                else:  # This else belongs to the for loop - executes if no break occurred
+                    return Response(agent=current_agent, messages=messages[num_init_messages:])
             elif not message.content:  # Only break if there's no content AND no tool calls
                 raise Exception("Empty response from API - no content or tool calls")
+            else:  # Has content but no tool calls
+                return Response(agent=current_agent, messages=messages[num_init_messages:])
 
         except Exception as e:
             logger.error(f"Error in run_full_turn: {str(e)}")
@@ -430,10 +424,8 @@ def run_full_turn(agent: Agent, messages: list) -> Response:
                 )
             continue
 
-    return Response(agent=current_agent, messages=messages[num_init_messages:])
-
-# Initialize scratchpad and load agents
-scratchpad = ScratchpadManager()
+# Initialize db and load agents
+db = AgentRunsDB()
 config = load_team_config('teams/old/demo_team.json')
 agents = create_agents(config)
 
@@ -447,17 +439,18 @@ if __name__ == "__main__":
     st.write("Start chatting! (type 'quit' to exit)")
 
     agent = agents["coordinator"]
-    messages = []
-
+    
+    # Initialize session state
     if 'messages' not in st.session_state:
         st.session_state.messages = []
-
+        st.session_state.run_id = db.create_run()
+    
     user_input = st.chat_input("Type your message here...")
 
     if user_input:
         st.session_state.messages.append({"role": "user", "content": user_input})
         try:
-            response = run_full_turn(agent, st.session_state.messages)
+            response = run_full_turn(agent, st.session_state.messages, st.session_state.run_id)
             agent = response.agent
             st.session_state.messages.extend(response.messages)
         except Exception as e:
@@ -470,5 +463,3 @@ if __name__ == "__main__":
             st.chat_message("user").markdown(message["content"])
         else:
             st.chat_message("assistant").markdown(message["content"])
-
-    scratchpad.clear()
