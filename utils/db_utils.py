@@ -1,5 +1,5 @@
 import duckdb
-import uuid
+import shortuuid  # replaces uuid
 from typing import Optional, List, Dict
 import json
 from datetime import datetime
@@ -35,7 +35,7 @@ class AgentRunsDB:
 
     # Create a new run
     def create_run(self) -> str:
-        run_id = str(uuid.uuid4())
+        run_id = shortuuid.uuid()[:8]  # Generate shorter ID (8 chars)
         timestamp = datetime.utcnow().isoformat()
         self.conn.execute("""
         INSERT INTO runs (id, start_timestamp, updated_timestamp) VALUES (?, ?, ?)
@@ -52,7 +52,7 @@ class AgentRunsDB:
     # Add a step to a run
     def add_step(self, run_id: str, output: str, handoff_msg: str, actor_agent: str,
                  target_agent: str, summary: str, tool_call_id: str) -> str:
-        step_id = str(uuid.uuid4())
+        step_id = shortuuid.uuid()[:8]  # Generate shorter ID (8 chars)
         timestamp = datetime.utcnow().isoformat()
         self.conn.execute("""
         INSERT INTO steps (id, run_id, timestamp, output, handoff_msg, actor_agent, target_agent, summary, tool_call_id)
@@ -97,7 +97,7 @@ if __name__ == "__main__":
 
     # Create a new run
     run_id = db.create_run()
-    print(f"New run created with ID: {run_id}")
+    print(f"New run created with ID: {run_id}")  # Will print something like "3k4j5n2m"
 
     # Add steps to the run
     step_id = db.add_step(
@@ -109,7 +109,7 @@ if __name__ == "__main__":
         summary="Summary of step A",
         tool_call_id="tool-1234"
     )
-    print(f"Step added with ID: {step_id}")
+    print(f"Step added with ID: {step_id}")  # Will print something like "7h8j9k2l"
 
     # Fetch all runs
     runs = db.get_all_runs()

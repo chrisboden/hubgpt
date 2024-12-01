@@ -3,7 +3,6 @@
 import os
 import json
 import logging
-import uuid
 from typing import List, Callable, Optional, Dict
 from dataclasses import dataclass
 import inspect
@@ -172,11 +171,12 @@ def execute_tool_call(tool_call, tools, agent_name, messages, run_id):
     # Always add llm_client to args for all tools
     args["llm_client"] = client
 
+    tool_call_id = tool_call.id
+
     if name == "handoff_to_coordinator":
         if not args.get('work_done') or not args.get('handoff'):
             raise Exception("Agents must provide 'work_done' and 'handoff' when calling handoff_to_coordinator")
         
-        tool_call_id = str(uuid.uuid4())
         db.add_step(
             run_id=run_id,
             output=args['work_done'],
@@ -203,17 +203,22 @@ def execute_tool_call(tool_call, tools, agent_name, messages, run_id):
         if not args.get('agent_name') or not args.get('handoff'):
             raise Exception("Must specify 'agent_name' and 'handoff' when handing off to another agent")
 
-        tool_call_id = str(uuid.uuid4())
-        if args.get('work_done'):
-            db.add_step(
-                run_id=run_id,
-                output=args['work_done'],
-                handoff_msg=args['handoff'],
-                actor_agent=agent_name,
-                target_agent=args['agent_name'],
-                summary=f"Handoff to {args['agent_name']}",
-                tool_call_id=tool_call_id
-            )
+        # Get the coordinator's last message content as the work_done
+        coordinator_work = ""
+        for msg in reversed(messages):
+            if msg.get("role") == "assistant" and msg.get("content"):
+                coordinator_work = msg["content"]
+                break
+
+        db.add_step(
+            run_id=run_id,
+            output=coordinator_work,  # Store coordinator's analysis/instructions as output
+            handoff_msg=args['handoff'],
+            actor_agent=agent_name,  # This will be "coordinator" when coordinator hands off
+            target_agent=args['agent_name'],
+            summary=f"Handoff to {args['agent_name']}",
+            tool_call_id=tool_call_id
+        )
 
         message_entry = {
             "role": "assistant",
@@ -254,42 +259,81 @@ def execute_tool_call(tool_call, tools, agent_name, messages, run_id):
 
 
 def build_context_messages(agent: Agent, messages: List[dict], run_id: str) -> List[dict]:
+    """Build context messages for an agent based on conversation history and run data."""
+    
+    # Get original user request - this is needed for both coordinator and other agents
+    user_request = None
+    for msg in messages:
+        if msg["role"] == "user":
+            user_request = msg["content"]
+            break
+
     if agent.name.lower() == "coordinator":
-        context_messages = [{"role": "system", "content": agent.instructions}]
-        
-        N = 30
-        truncated_messages = messages[-N:]
-        logger.info(f"Using the last {N} messages for context.")
-
+        # Initialize variables
+        previous_coordinator_handoff = ''
+        agent_name = ''
+        work_done = ''
+        handoff_to_coordinator = ''
         steps = db.get_steps_for_run(run_id)
-        steps_by_tool_call = {step["tool_call_id"]: step for step in steps}
-
-        for msg in truncated_messages:
-            context_msg = {
-                "role": msg["role"],
-                "content": msg.get("content", "")
-            }
-
-            if msg["role"] in ["system", "user", "assistant"]:
+        
+        # Walk backwards through messages to find the handoff TO coordinator
+        for msg in reversed(messages):
+            if "handoff" in msg and msg.get("agent_name", "").lower() != "coordinator":
+                handoff_to_coordinator = msg["handoff"]
+                agent_name = msg["agent_name"]
+                
+                # Get the work_done from DB using tool_call_id
                 if "tool_call_id" in msg:
-                    step = steps_by_tool_call.get(msg["tool_call_id"])
-                    if step and step['output'].strip():
-                        agent_name = step["actor_agent"]
-                        if agent_name.lower() != "coordinator":
-                            context_msg["content"] += f"\n\nPrevious work done by {agent_name}:\n{step['output']}"
-                if "handoff" in msg:
-                    context_msg["content"] += f"\n\nHandoff Instructions:\n{msg['handoff']}"
-
-            context_messages.append(context_msg)
-
-        return context_messages
-    else:
-        user_request = None
-        for msg in messages:
-            if msg["role"] == "user":
-                user_request = msg["content"]
+                    tool_call_id = msg["tool_call_id"]
+                    # Find the work done for this handoff
+                    for step in steps:
+                        if step["tool_call_id"] == tool_call_id:
+                            work_done = step["output"]
+                            break
+                    
+                    # Find the most recent coordinator handoff to this agent
+                    for step in reversed(steps):
+                        if (step["actor_agent"].lower() == "coordinator" and 
+                            step["target_agent"].lower() == agent_name.lower()):
+                            previous_coordinator_handoff = step["handoff_msg"]
+                            logger.info(f"Found previous coordinator handoff: {previous_coordinator_handoff[:100]}...")
+                            break
                 break
 
+        # If this is the first message to coordinator (no previous agent work)
+        if not agent_name:
+            context_messages = [
+                {"role": "system", "content": agent.instructions},
+                {"role": "user", "content": f"A user has made the following request:\n\n{user_request}"}
+            ]
+            return context_messages
+
+        # Log the values for debugging
+        logger.info(f"Building coordinator context with:")
+        logger.info(f"Agent name: {agent_name}")
+        logger.info(f"Previous coordinator handoff: {previous_coordinator_handoff[:100]}...")
+        logger.info(f"Work done: {work_done[:100]}...")
+        logger.info(f"Handoff to coordinator: {handoff_to_coordinator[:100]}...")
+
+        user_message_content = f"""Hi, it's the {agent_name} agent here. You asked me to do the following:
+
+{previous_coordinator_handoff}
+
+I have been working on that request and have completed the task with the work done, below:
+
+{work_done}
+
+My message for you is: {handoff_to_coordinator}"""
+
+        context_messages = [
+            {"role": "system", "content": agent.instructions},
+            {"role": "user", "content": user_message_content}
+        ]
+        
+        return context_messages
+    
+    else:  # For non-coordinator agents
+        # Get the most recent non-coordinator work
         steps = db.get_steps_for_run(run_id)
         previous_work = ''
         previous_agent_name = ''
@@ -300,6 +344,7 @@ def build_context_messages(agent: Agent, messages: List[dict], run_id: str) -> L
                 previous_agent_name = step["actor_agent"]
                 break
 
+        # Get the most recent handoff instructions
         handoff_instructions = ''
         for msg in reversed(messages):
             if "handoff" in msg:
@@ -327,7 +372,6 @@ Here's what the team needs you to do:
 
 {handoff_instructions}
 
-Please figure out the best possible answer to the last user query from the conversation above.
 """
 
         context_messages = [
@@ -336,7 +380,6 @@ Please figure out the best possible answer to the last user query from the conve
         ]
 
         return context_messages
-
 
 def run_full_turn(agent: Agent, messages: list, run_id: str) -> Response:
     current_agent = agent

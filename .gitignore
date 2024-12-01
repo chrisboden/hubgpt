@@ -205,3 +205,4 @@ scrape.md
 *demo*
 *.db
 *.db.wal
+*.vscode*
