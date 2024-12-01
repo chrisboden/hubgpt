@@ -33,7 +33,7 @@ def load_tools(tools_dir: str):
                 # Register execute function
                 if hasattr(module, 'execute') and callable(getattr(module, 'execute')):
                     TOOL_REGISTRY[module_name] = module.execute
-                    logging.info(f"Loaded tool: {module_name}")
+                    #logging.info(f"Loaded tool: {module_name}")
                 else:
                     logging.warning(f"Module '{module_name}' does not have an 'execute' function. Skipping.")
                     continue
@@ -41,7 +41,7 @@ def load_tools(tools_dir: str):
                 # Register tool metadata
                 if hasattr(module, 'TOOL_METADATA'):
                     TOOL_METADATA_REGISTRY[module_name] = module.TOOL_METADATA
-                    logging.info(f"Loaded metadata for tool: {module_name}")
+                    #logging.info(f"Loaded metadata for tool: {module_name}")
                 else:
                     logging.warning(f"Module '{module_name}' does not have 'TOOL_METADATA'. Skipping metadata.")
             except Exception as e:

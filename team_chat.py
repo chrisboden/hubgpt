@@ -12,6 +12,8 @@ from dotenv import load_dotenv
 from openai import OpenAI
 import streamlit as st
 from utils.db_utils import AgentRunsDB
+from utils.tool_utils import TOOL_REGISTRY, TOOL_METADATA_REGISTRY
+from utils.tool_utils import load_tools
 
 load_dotenv()
 
@@ -25,11 +27,19 @@ class Response:
     messages: list
 
 class Agent:
-    def __init__(self, name: str, instructions: str, tools: List[Callable] = None):
+    def __init__(self, name: str, instructions: str, tools: List[str] = None):
         self.name = name
         self.instructions = instructions
-        self.tools = tools or []
+        self.tool_names = tools or []  # Store tool names
         self.model = "openai/gpt-4o-mini"
+        
+        # Get tool metadata for this agent's tools
+        self.tools = []
+        for tool_name in self.tool_names:
+            if tool_name in TOOL_METADATA_REGISTRY:
+                self.tools.append(TOOL_METADATA_REGISTRY[tool_name])
+            else:
+                logging.warning(f"Tool {tool_name} not found in registry")
 
 def final_outcome(report: str) -> str:
     """Present the final report to the user"""
@@ -41,21 +51,21 @@ def escalate_to_human(summary: str):
     st.chat_message("assistant").markdown(f"**Human Escalation Required:**\n\nSummary: {summary}")
     return "Escalated to human supervisor"
 
-def handoff_to_coordinator(work_done: str, handoff: str) -> Agent:
-    """Handoff work to the coordinator agent."""
-    return agents["coordinator"]
-
-def handoff_to_agent(agent_name: str, handoff: str) -> Agent:
-    """Handoff work to another agent by name."""
-    return agents[agent_name]
-
 # Tool mapping
 AVAILABLE_TOOLS = {
-    "handoff_to_agent": handoff_to_agent,
-    "handoff_to_coordinator": handoff_to_coordinator,
     "escalate_to_human": escalate_to_human,
     "final_outcome": final_outcome
 }
+
+def init_teams():
+    # Load shared tools
+    load_tools('tools/')
+    
+    # Load team configs and create agents
+    config = load_team_config('teams/old/demo_team.json')
+    agents = create_agents(config)
+    return agents
+
 
 def load_team_config(file_path: str) -> Dict:
     """Load team configuration from JSON file"""
@@ -71,11 +81,12 @@ def create_agents(config: Dict) -> Dict[str, Agent]:
     created_agents = {}
     
     for agent_id, agent_config in config['agents'].items():
-        tools = [AVAILABLE_TOOLS[tool_name] for tool_name in agent_config['tools']]
+        # Instead of looking up tools in AVAILABLE_TOOLS, just pass the tool names
+        # The Agent class will look them up in TOOL_METADATA_REGISTRY
         created_agents[agent_id] = Agent(
             name=agent_config['name'],
             instructions=agent_config['instructions'],
-            tools=tools
+            tools=agent_config['tools']  # Just pass the tool names
         )
     
     return created_agents
@@ -146,30 +157,22 @@ def function_to_schema(func: Callable) -> dict:
         }
     return schema
 
+# team_chat.py
+
 def execute_tool_call(tool_call, tools, agent_name, messages, run_id):
     """Execute a tool call and handle agent transfers with context."""
     name = tool_call.function.name
     args = json.loads(tool_call.function.arguments)
 
-    if name == "final_outcome":
-        work_done = None
-        for msg in reversed(messages):
-            if isinstance(msg, dict) and "tool_call_id" in msg:
-                steps = db.get_steps_for_run(run_id)
-                for step in reversed(steps):
-                    if step["tool_call_id"] == msg["tool_call_id"]:
-                        work_done = step["output"]
-                        break
-                if work_done:
-                    break
-        if not work_done:
-            raise Exception("No final report found for final_outcome")
-        cleaned_args = {'report': work_done}
-        logger.info(f"Executing tool: {name} with args: {str(cleaned_args)[:100]}...")
-        result = tools[name](**cleaned_args)
-        return result
+    # Get the actual tool function from TOOL_REGISTRY
+    tool_func = TOOL_REGISTRY.get(name)
+    if not tool_func:
+        raise Exception(f"Tool {name} not found in registry")
 
-    elif name == "handoff_to_coordinator":
+    # Always add llm_client to args for all tools
+    args["llm_client"] = client
+
+    if name == "handoff_to_coordinator":
         if not args.get('work_done') or not args.get('handoff'):
             raise Exception("Agents must provide 'work_done' and 'handoff' when calling handoff_to_coordinator")
         
@@ -192,9 +195,9 @@ def execute_tool_call(tool_call, tools, agent_name, messages, run_id):
             "agent_name": agent_name
         })
         
-        result = tools[name](work_done=args['work_done'], handoff=args['handoff'])
-        logger.info(f"Executing tool: {name} with args: {str(args)[:100]}...")
-        return result
+        # Execute tool and return the coordinator agent
+        tool_func(**args)  # Execute with llm_client
+        return agents["coordinator"]
 
     elif name == "handoff_to_agent":
         if not args.get('agent_name') or not args.get('handoff'):
@@ -222,19 +225,33 @@ def execute_tool_call(tool_call, tools, agent_name, messages, run_id):
 
         messages.append(message_entry)
 
-        result = tools[name](
-            agent_name=args['agent_name'],
-            handoff=args['handoff']
-        )
-        logger.info(f"Executing tool: {name} with args: {str(args)[:100]}...")
-        return result
+        # Execute tool and return the target agent
+        tool_func(**args)  # Execute with llm_client
+        return agents[args['agent_name']]
+
+    elif name == "final_outcome":
+        work_done = None
+        for msg in reversed(messages):
+            if isinstance(msg, dict) and "tool_call_id" in msg:
+                steps = db.get_steps_for_run(run_id)
+                for step in reversed(steps):
+                    if step["tool_call_id"] == msg["tool_call_id"]:
+                        work_done = step["output"]
+                        break
+                if work_done:
+                    break
+        if not work_done:
+            raise Exception("No final report found for final_outcome")
+        cleaned_args = {'report': work_done}
+        logger.info(f"Executing tool: {name} with args: {str(cleaned_args)[:100]}...")
+        return final_outcome(**cleaned_args)
 
     else:
-        sig = inspect.signature(tools[name])
+        sig = inspect.signature(tool_func)
         cleaned_args = {k: v for k, v in args.items() if k in sig.parameters}
         logger.info(f"Executing tool: {name} with args: {str(cleaned_args)[:100]}...")
-        result = tools[name](**cleaned_args)
-        return result
+        return tool_func(**cleaned_args)
+
 
 def build_context_messages(agent: Agent, messages: List[dict], run_id: str) -> List[dict]:
     if agent.name.lower() == "coordinator":
@@ -329,15 +346,18 @@ def run_full_turn(agent: Agent, messages: list, run_id: str) -> Response:
     retry_count = 0
 
     while True:
-        tool_schemas = [function_to_schema(tool) for tool in current_agent.tools]
-        tools = {tool.__name__: tool for tool in current_agent.tools}
+        # Get tool metadata from TOOL_METADATA_REGISTRY instead of converting functions
+        tool_schemas = []
+        for tool_name in current_agent.tool_names:  # Use tool_names from agent
+            if tool_name in TOOL_METADATA_REGISTRY:
+                tool_schemas.append(TOOL_METADATA_REGISTRY[tool_name])
 
         context_messages = build_context_messages(current_agent, messages, run_id)
 
         request_payload = {
             'model': current_agent.model,
             'messages': context_messages,
-            'tools': tool_schemas or None
+            'tools': tool_schemas if tool_schemas else None
         }
         logger.info("\n=== API Request Payload ===")
         logger.info(json.dumps(request_payload, indent=2))
@@ -386,7 +406,7 @@ def run_full_turn(agent: Agent, messages: list, run_id: str) -> Response:
 
             if message.tool_calls:
                 for tool_call in message.tool_calls:
-                    result = execute_tool_call(tool_call, tools, current_agent.name, messages, run_id)
+                    result = execute_tool_call(tool_call, None, current_agent.name, messages, run_id)
 
                     if isinstance(result, Agent):
                         logger.info(f"Agent transfer: {current_agent.name} → {result.name}")
@@ -424,8 +444,10 @@ def run_full_turn(agent: Agent, messages: list, run_id: str) -> Response:
                 )
             continue
 
+
 # Initialize db and load agents
 db = AgentRunsDB()
+load_tools('tools/')  # Load tools first
 config = load_team_config('teams/old/demo_team.json')
 agents = create_agents(config)
 
