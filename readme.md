@@ -1,8 +1,8 @@
-# cbgpt
+# Hubgpt
 
-A conversational AI assistant framework that allows the creation of personalised advisors with tool support.
+A conversational AI agent framework that allows the creation of personalised advisors with tool support. Developed for low code tinkering by members and friends of the Peregian Digital Hub.
 
-The cbgpt project is a customisable conversational AI framework that allows users to create AI-powered advisors using prompt templates and tools. Each advisor is configured with specific LLM parameters (like model and temperature) and system instructions, offering granular control over the advisor's behavior and expertise. 
+The Hubgpt project is a customisable conversational AI framework that allows users to create AI-powered advisors using prompt templates and tools. Each advisor is configured with specific LLM parameters (like model and temperature) and system instructions, offering granular control over the advisor's behavior and expertise. 
 
 One standout feature is the ability to include external files directly in the system prompts using a special tag notation. This enables developers to inject rich context into the advisor’s instructions by specifying custom files, such as personal biographies or detailed guidelines. This functionality not only personalises the output but also allows the AI to be grounded in extensive data sources, like long-form biographies or research documents. This is particularly powerful when leveraging large context window models that can accept prompts containing hundreds of thousands of tokens, enabling the advisor to operate with far deeper and more nuanced knowledge. 
 
@@ -11,7 +11,7 @@ Built on Streamlit for an intuitive user interface, the app makes it easy to int
 ## Clone the Repository
 
 ```bash
-git clone https://github.com/chrisboden/cbgpt.git
+git clone https://github.com/chrisboden/hubgpt.git
 ```
 
 > **Note**: This is a private repo. Ensure you have the appropriate access permissions.
