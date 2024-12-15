@@ -4,17 +4,150 @@ import traceback
 from pytube import YouTube
 from youtube_transcript_api import YouTubeTranscriptApi
 from termcolor import cprint
+from yt_dlp import YoutubeDL
+import json
+import duckdb
+from pathlib import Path
 
-def download_transcript(video_url):
-    """
-    Download transcript from a YouTube video
-    
-    Args:
-        video_url (str): URL of the YouTube video
-    
-    Returns:
-        str: Markdown-formatted transcript
-    """
+def init_db():
+    """Initialize the DuckDB database and create the transcripts table if it doesn't exist"""
+    try:
+        # Ensure the data directory exists
+        data_dir = Path(__file__).resolve().parent.parent / "data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Connect to DuckDB database
+        db_path = data_dir / "transcripts.db"
+        conn = duckdb.connect(str(db_path))
+        
+        # Create table if it doesn't exist
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS transcripts (
+                video_id VARCHAR PRIMARY KEY,
+                raw_transcript TEXT NOT NULL,
+                summary TEXT,
+                metadata JSON,  -- Added metadata column
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
+        
+        # Debug: Print table schema
+        cprint("DEBUG - Table Schema:", "blue")
+        schema = conn.execute("DESCRIBE transcripts").fetchall()
+        for col in schema:
+            cprint(f"Column: {col}", "blue")
+        
+        return conn
+    except Exception as e:
+        cprint(f"Database initialization error: {e}", "red")
+        traceback.print_exc()
+        raise
+
+def get_video_metadata(video_url):
+    """Extract metadata from YouTube video"""
+    try:
+        cprint("Extracting video metadata...", "blue")
+        
+        ydl_opts = {
+            'quiet': True,
+            'skip_download': True,
+            'extract_flat': True,
+        }
+        
+        with YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(video_url, download=False)
+            
+        metadata = {
+            "id": info.get("id"),
+            "title": info.get("title"),
+            "uploader": info.get("uploader"),
+            "uploader_id": info.get("uploader_id"),
+            "upload_date": info.get("upload_date"),
+            "duration": info.get("duration"),
+            "view_count": info.get("view_count"),
+            "like_count": info.get("like_count"),
+            "description": info.get("description"),
+            "categories": info.get("categories"),
+            "tags": info.get("tags"),
+            "thumbnail": info.get("thumbnail"),
+            "channel_url": info.get("channel_url"),
+            "webpage_url": info.get("webpage_url")
+        }
+        
+        cprint(f"Successfully extracted metadata for video: {metadata['title']}", "green")
+        return metadata
+        
+    except Exception as e:
+        cprint(f"Metadata extraction error: {e}", "red")
+        traceback.print_exc()
+        return None
+
+def store_transcript(conn, video_id, raw_transcript, summary=None, metadata=None):
+    """Store transcript, summary, and metadata in cache"""
+    try:
+        # Debug print before storage
+        cprint(f"Storing data for video ID: {video_id}", "blue")
+        cprint(f"Summary value being stored: {repr(summary)}", "blue")
+        cprint(f"New metadata being stored: {bool(metadata)}", "blue")
+        
+        if metadata:
+            # If new metadata is provided, store it
+            conn.execute("""
+                INSERT INTO transcripts (video_id, raw_transcript, summary, metadata)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT (video_id) DO UPDATE 
+                SET raw_transcript = EXCLUDED.raw_transcript,
+                    summary = EXCLUDED.summary,
+                    metadata = EXCLUDED.metadata,
+                    created_at = NOW()
+            """, [video_id, raw_transcript, summary, json.dumps(metadata)])
+        else:
+            # If no new metadata, preserve existing metadata
+            conn.execute("""
+                INSERT INTO transcripts (video_id, raw_transcript, summary, metadata)
+                VALUES (?, ?, ?, NULL)
+                ON CONFLICT (video_id) DO UPDATE 
+                SET raw_transcript = EXCLUDED.raw_transcript,
+                    summary = EXCLUDED.summary,
+                    created_at = NOW()
+            """, [video_id, raw_transcript, summary])
+        
+        # Verify what was stored
+        result = conn.execute("""
+            SELECT metadata FROM transcripts WHERE video_id = ?
+        """, [video_id]).fetchone()
+        cprint(f"Verified metadata in database: {bool(result[0])}", "green")
+        
+        cprint(f"Stored transcript and metadata for video ID: {video_id}", "green")
+    except Exception as e:
+        cprint(f"Cache storage error: {e}", "red")
+        traceback.print_exc()
+
+
+def get_cached_transcript(conn, video_id):
+    """Check if transcript exists in cache and return it"""
+    try:
+        result = conn.execute("""
+            SELECT raw_transcript, summary, metadata 
+            FROM transcripts 
+            WHERE video_id = ?
+        """, [video_id]).fetchone()
+        
+        if result:
+            cprint(f"Cache hit for video ID: {video_id}", "green")
+            return {
+                "raw_transcript": result[0],
+                "summary": result[1],
+                "metadata": json.loads(result[2]) if result[2] else None
+            }
+        return None
+    except Exception as e:
+        cprint(f"Cache retrieval error: {e}", "red")
+        traceback.print_exc()
+        return None
+
+def download_transcript(video_url, conn):
+    """Download transcript from a YouTube video with caching"""
     try:
         cprint("Starting transcript download process...", "blue")
         
@@ -22,7 +155,16 @@ def download_transcript(video_url):
         video_id = YouTube(video_url).video_id
         cprint(f"Extracted Video ID: {video_id}", "green")
         
-        # Attempt to get transcript
+        # Check cache first
+        cached_data = get_cached_transcript(conn, video_id)
+        if cached_data and cached_data["raw_transcript"]:
+            cprint("Retrieved transcript from cache", "green")
+            return cached_data["raw_transcript"]
+        
+        # Get metadata
+        metadata = get_video_metadata(video_url)
+        
+        # If not in cache, download transcript
         transcript = YouTubeTranscriptApi.get_transcript(video_id)
         cprint(f"Successfully retrieved transcript with {len(transcript)} entries", "green")
         
@@ -31,232 +173,178 @@ def download_transcript(video_url):
         for entry in transcript:
             transcript_text += f"[{entry['start']:.2f}s] {entry['text']}\n"
         
-        # Debug: Print first few lines of transcript
-        cprint("First few lines of transcript:", "cyan")
-        cprint(transcript_text[:500], "white")
+        # Store in cache with metadata
+        store_transcript(conn, video_id, transcript_text, None, metadata)
         
         return transcript_text
     
     except Exception as e:
         cprint(f"Transcript Download Error: {e}", "red")
-        cprint(f"Error Type: {type(e).__name__}", "red")
         traceback.print_exc()
         return f"### Transcript:\n\n*Error downloading transcript: {e}*"
 
 
-def download_captions(video_url):
-    """
-    Download captions from a YouTube video
-    
-    Args:
-        video_url (str): URL of the YouTube video
-    
-    Returns:
-        str: Markdown-formatted captions
-    """
+def summarize_transcript(transcript_text, llm_client, video_id, conn):
+    """Summarize transcript with caching"""
     try:
-        cprint("Starting caption download process...", "blue")
+        cprint("Starting transcript summarization...", "blue")
         
-        yt = YouTube(video_url)
-        cprint(f"Successfully loaded YouTube video: {video_url}", "green")
+        # Check cache first
+        cached_data = get_cached_transcript(conn, video_id)
+        if cached_data and cached_data.get("summary"):
+            cprint("Retrieved valid summary from cache", "green")
+            
+            # Create a generator that yields the cached content in chunk format
+            def cached_stream():
+                yield type('ChunkResponse', (), {
+                    'choices': [type('Choice', (), {
+                        'delta': type('Delta', (), {
+                            'content': cached_data["summary"]
+                        })
+                    })]
+                })
+            
+            return {
+                "result": cached_stream(),
+                "direct_stream": True,  # We're still streaming, just from cache
+                "cached": True
+            }
         
-        # Get all available captions
-        captions = yt.captions
-        cprint(f"Total captions found: {len(captions)}", "cyan")
-        
-        # Try to find English captions
-        english_caption = None
-        for lang, caption in captions.items():
-            cprint(f"Checking caption language: {lang}", "magenta")
-            if 'en' in lang.lower():
-                english_caption = caption
-                cprint(f"Found English caption for language: {lang}", "green")
-                break
-        
-        if english_caption:
-            cprint("Generating SRT captions...", "blue")
-            srt_captions = english_caption.generate_srt_captions()
-            cprint("SRT captions generated successfully", "green")
-            return f"### Captions:\n\n```\n{srt_captions}\n```"
-        
-        cprint("No English captions found", "yellow")
-        return "### Captions:\n\n*No captions available in English.*"
-    
-    except Exception as e:
-        cprint(f"Detailed Caption Download Error: {e}", "red")
-        cprint(f"Error Type: {type(e).__name__}", "red")
-        traceback.print_exc()
-        return f"### Captions:\n\n*Error downloading captions: {e}*"
-
-def summarize_transcript(transcript_text, llm_client):
-    """
-    Comprehensive diagnostic summarization with extensive error handling
-    """
-    try:
-        print("\n🔍 DIAGNOSTIC: Entering summarize_transcript")
-        print(f"🔢 Transcript Length: {len(transcript_text)} characters")
+        cprint("No valid summary in cache. Generating new summary...", "yellow")
         
         # Validate inputs
         if not transcript_text:
-            print("❌ ERROR: Empty transcript text")
+            cprint("Empty transcript text", "red")
             return {
                 "error": "Empty transcript text",
                 "direct_stream": False
             }
         
         if not llm_client:
-            print("❌ ERROR: No LLM client provided")
+            cprint("No LLM client provided", "red")
             return {
                 "error": "No LLM client provided",
                 "direct_stream": False
             }
+
+        # Get metadata from cache if available
+        metadata = cached_data.get("metadata") if cached_data else None
         
-        # Diagnostic: Check LLM client capabilities
-        try:
-            print("🕵️ Checking LLM Client Configuration")
-            print(f"Client Type: {type(llm_client)}")
-            print(f"Available Methods: {dir(llm_client)}")
-            print(f"Chat Attribute Exists: {'chat' in dir(llm_client)}")
-        except Exception as config_error:
-            print(f"❌ LLM Client Configuration Error: {config_error}")
+        # Prepare metadata text
+        video_title = metadata.get("title", "Not provided") if metadata else "Not provided"
         
-        # Prepare messages
-        messages = [
-            {
-                "role": "system",
-                "content": "You are an expert content processor. Clean and structure the given transcript, removing any irrelevant information, ads, or boilerplate text. Your cleaned output should be an information-dense, faithful, detailed and comprehensive summary that loses none of the key information. Your output will be used as context by an AI agent "
-            },
-            {
-                "role": "user",
-                "content": f"Here is the transcript:\n\n{transcript_text}"
-            }
-        ]
+        cprint(f"Using metadata - Title: {video_title}", "blue")
         
-        # Diagnostic: Message preparation
-        print("📝 Prepared Messages:")
-        for msg in messages:
-            print(f"  {msg['role']}: {msg['content'][:200]}...")
-        
-        # Attempt streaming completion with comprehensive error handling
-        try:
-            print("🚀 Attempting Streaming Completion")
-            
-            # Diagnostic: Verify chat.completions method
-            if not hasattr(llm_client, 'chat') or not hasattr(llm_client.chat, 'completions'):
-                print("❌ ERROR: Invalid LLM Client Structure")
-                return {
-                    "error": "Invalid LLM Client - Missing chat.completions method",
-                    "direct_stream": False
+        # Prepare metadata text
+        video_title = metadata.get("title", "Not provided") if metadata else "Not provided"
+        video_uploader = metadata.get("uploader", "Not provided") if metadata else "Not provided"
+        video_description = metadata.get("description", "Not provided") if metadata else "Not provided"
+        video_duration = metadata.get("duration", "Not provided") if metadata else "Not provided"
+                
+
+        # Create the stream - EXACTLY as in working version
+        stream = llm_client.chat.completions.create(
+            model="openai/gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an expert content processor. Your job is to generate perfect transcriptions for youtube videos by stitching together and cleaning the messy timestamped captions for a given video. \n\nNOTES:\n\n1. You do not summarise. 2. You have no editorial permission to interpret or add your own take on the content - you faithfully transcribe what is said in the video. 3. You can remove obvious adverts and boilerplate. 4. You should correct caption errors with your transcript. For example, often the youtube speech to text system mis-hears or mis-interprets the audio in the video and as a result produces an incorrect caption - mis-spelled or just wrong. You can correct this where you are very sure of the mistake, eg where the captions refer to a name that you know is incorrect because the title/description/uploader mentions the correct name. Similarly, a caption may contain a total non-sequitir which you can detect because you have read the entire transcript up until that point, and with an understanding of the context, can correct the wrongly-heard word.\n5.The videos you work with will often be podcast-style chats, panels or interviews with guests with a lot of back and forth q&a. Where possible try to denote questions and answers, eg by using linebreaks or colons. If it is obvious who the asker is and who the answerer is, then show their names \n6. Your cleaned output should be delivered in markdown format. "
+                },
+                {
+                    "role": "user",
+                    "content": f"""Here is the data for you to process:
+
+                    Video Title: {video_title}
+                    Uploaded by: {video_uploader}
+                    Duration: {video_duration} seconds
+                    Description: {video_description}
+
+                    The video transcript is as follows:
+
+                    {transcript_text}"""
                 }
-            
-            # Attempt streaming using the same model as get_advice.py
-            stream = llm_client.chat.completions.create(
-                model="google/gemini-flash-1.5-8b",  # Changed to match get_advice.py
-                messages=messages,
-                temperature=0.7,
-                max_tokens=3024,
-                stream=True
-            )
-            
-            print("✅ Streaming Completion Created Successfully")
-            
-            return {
-                "result": stream,
-                "direct_stream": True
-            }
+            ],
+            temperature=0.7,
+            max_tokens=16000,
+            stream=True
+        )
         
-        except AttributeError as attr_error:
-            print(f"❌ Attribute Error: {attr_error}")
-            print(f"Client Attributes: {dir(llm_client)}")
-            return {
-                "error": f"Attribute Error in LLM Client: {attr_error}",
-                "direct_stream": False
-            }
-        except Exception as stream_error:
-            print(f"❌ Streaming Completion Error: {stream_error}")
-            import traceback
-            traceback.print_exc()
-            
-            return {
-                "error": f"Failed to create streaming completion: {str(stream_error)}",
-                "direct_stream": False
-            }
-    
-    except Exception as e:
-        print(f"❌ CRITICAL Summarization Error: {e}")
-        import traceback
-        traceback.print_exc()
+        # Create a simple accumulator for the DB
+        def accumulate_and_save():
+            full_response = ""
+            for chunk in stream:
+                if hasattr(chunk.choices[0].delta, 'content'):
+                    if chunk.choices[0].delta.content:
+                        full_response += chunk.choices[0].delta.content
+                if chunk.choices[0].finish_reason == "stop":
+                    store_transcript(conn, video_id, transcript_text, full_response, None)
+                yield chunk
         
         return {
-            "error": f"Unexpected error in summarization: {str(e)}",
-            "direct_stream": False
+            "result": accumulate_and_save(),
+            "direct_stream": True,
+            "cached": False
+        }
+            
+    except Exception as e:
+        cprint(f"Summarization Error: {e}", "red")
+        traceback.print_exc()
+        return {
+            "error": f"Unexpected error in summarization: {str(e)}"
         }
 
-
 def execute(video_url=None, llm_client=None):
-    """
-    Enhanced diagnostic transcript processing
-    """
-    print("\n🎬 DIAGNOSTIC: Entering Transcription Execute")
-    print(f"🔗 Video URL: {video_url}")
-    print(f"🤖 LLM Client: {'Provided' if llm_client else 'Not Provided'}")
-
-    if not video_url:
-        raise ValueError("A YouTube video URL is required.")
-    
-    # Initialize result dictionary
-    result = {
-        "video_url": video_url,
-        "captions_markdown": None,
-        "transcript_markdown": None,
-        "summary_stream": None,
-        "direct_stream": True
-    }
-    
-    # Fetch captions and transcript
-    captions_result = download_captions(video_url)
-    result["captions_markdown"] = captions_result
-    
-    transcript_result = download_transcript(video_url)
-    result["transcript_markdown"] = transcript_result
-    
-    # Diagnostic logging
-    print(f"📄 Captions Length: {len(captions_result)}")
-    print(f"📜 Transcript Length: {len(transcript_result)}")
-
-    # Summarization with extensive error handling
-    if llm_client:
-        try:
-            # Remove markdown header for summarization
-            transcript_text = result["transcript_markdown"].replace("### Transcript:\n\n", "")
+    """Main execution function with caching"""
+    try:
+        cprint("Starting execution process...", "blue")
+        
+        if not video_url:
+            raise ValueError("A YouTube video URL is required.")
+        
+        # Initialize database connection
+        conn = init_db()
+        
+        # Extract video ID
+        video_id = YouTube(video_url).video_id
+        
+        # Get transcript
+        transcript_markdown = download_transcript(video_url, conn)
+        
+        # Get summary if LLM client is provided
+        if llm_client:
+            # Remove markdown header from transcript
+            transcript_text = transcript_markdown.replace("### Transcript:\n\n", "")
             
             print("🔍 Preparing Transcript Summarization")
-            summary_result = summarize_transcript(transcript_text, llm_client)
+            summary_result = summarize_transcript(transcript_text, llm_client, video_id, conn)
             
-            # Detailed diagnostic of summary result
-            print("📋 Summary Result Diagnostics:")
-            print(f"  Direct Stream: {summary_result.get('direct_stream')}")
-            print(f"  Error (if any): {summary_result.get('error', 'None')}")
-            print(f"  Stream Object Present: {summary_result.get('result') is not None}")
-            
-            # Return the summary result directly if it's a stream
-            if summary_result.get('direct_stream') and summary_result.get('result'):
+            # Handle both streaming and cached responses
+            if summary_result.get("direct_stream"):
                 print("🔄 Returning direct stream result")
                 return summary_result
-            
-            # Otherwise store in result dictionary
-            result["summary_stream"] = summary_result.get('result')
-            result["direct_stream"] = summary_result.get('direct_stream', False)
+            elif summary_result.get("cached"):
+                print("📦 Returning cached summary")
+                # Format cached summary as an assistant message
+                return {
+                    "result": summary_result["result"],
+                    "direct_stream": False
+                }
         
-        except Exception as summarization_error:
-            print(f"❌ Summarization Process Error: {summarization_error}")
-            import traceback
-            traceback.print_exc()
-            result["summary_stream"] = None
-            result["direct_stream"] = False
+        return {
+            "transcript": transcript_markdown,
+            "summary": None,
+            "direct_stream": False
+        }
+        
+    except Exception as e:
+        print(f"❌ Execution Error: {e}")
+        traceback.print_exc()
+        return {
+            "error": str(e),
+            "transcript": None,
+            "summary": None
+        }
 
-    return result
-# Tool metadata
 TOOL_METADATA = {
     "type": "function",
     "function": {
