@@ -14,6 +14,11 @@ def update_spinner_status(message):
     
     Args:
         message (str): Status message to display
+    
+    Purpose:
+    - Provides flexible mechanism for updating UI spinner status
+    - Handles multiple fallback methods for status updates
+    - Ensures visibility of current processing state
     """
     try:
         # Check if there's an active spinner in session state or Streamlit
@@ -43,6 +48,17 @@ def update_spinner_status(message):
 
 
 def get_default_llm_params():
+    """
+    Provides default parameters for LLM interactions
+    
+    Returns:
+    - dict: Standardized configuration for language model API calls
+    
+    Key Considerations:
+    - Uses gpt-4o-mini as default model
+    - Enables streaming for real-time response rendering
+    - Configures generation parameters like temperature and token limits
+    """
     return {
         'model': 'gpt-4o-mini',
         'temperature': 1.0,
@@ -66,7 +82,37 @@ def get_llm_response(
     **overrides
 ):
     """
-    Get response from LLM with support for streaming, tool calls, and dynamic status updates.
+    Comprehensive LLM response generation with advanced features
+    
+    Key Capabilities:
+    - Streaming response generation
+    - Dynamic tool calling and execution
+    - Real-time UI status updates
+    - Error handling and logging
+    
+    Flow:
+    1. Prepare API parameters
+    2. Resolve and validate tools
+    3. Stream initial LLM response
+    4. Handle potential tool calls
+    5. Execute tools if required
+    6. Generate final response
+    7. Save chat history
+    
+    Args:
+        client: LLM API client
+        messages: Current conversation messages
+        initial_messages: Initial context messages
+        chat_history: Running conversation history
+        chat_history_path: File path to save chat history
+        advisor_data: Metadata about current advisor
+        selected_advisor: Name of current advisor
+        tools: List of tools to potentially use
+        tool_choice: Strategy for tool selection
+        **overrides: Additional parameter overrides
+    
+    Returns:
+        Updated chat history
     """
     try:
         with st.chat_message("assistant"):
@@ -96,8 +142,9 @@ def get_llm_response(
                         resolved_tools.append(metadata)
                     else:
                         logging.warning(f"Tool '{tool_name}' metadata not found. Skipping tool.")
+                print(f"The tools added are: {resolved_tools}")
                 
-                # Initialize variables
+                # Initialize variables for tool call tracking
                 function_call_data = None
                 st.session_state.tool_call_args = ""
                 st.session_state.last_tool_call_id = ""
@@ -157,9 +204,10 @@ def get_llm_response(
                         tool_name = st.session_state.last_tool_name
                         status_placeholder.markdown(f"*🔧 Executing tool: {tool_name}*")
                         
+                        # Execute the specific tool with provided arguments
                         tool_response_data = execute_tool(tool_name, function_call_data, llm_client=client)
 
-                        # Check if direct streaming is enabled
+                        # Check if direct streaming is enabled for tool response
                         if tool_response_data.get('direct_stream', False):
                             # Get the stream from the tool response
                             stream = tool_response_data.get('result', '')
@@ -192,8 +240,7 @@ def get_llm_response(
                             save_chat_history(chat_history, chat_history_path)
                             return chat_history
 
-
-
+                        # Handle standard tool response processing
                         if tool_response_data:
                             # Add tool messages to chat history
                             assistant_tool_message = {
@@ -221,13 +268,16 @@ def get_llm_response(
                             # Process tool response
                             status_placeholder.markdown("*💭 Processing tool response...*")
                             
+                            # Reconstruct full history with tool context
                             full_history = initial_messages + chat_history
                             api_params['messages'] = full_history
                             
+                            # Generate final response based on tool results
                             final_stream = client.chat.completions.create(**api_params)
                             final_response_placeholder = st.empty()
                             final_response_text = ""
                             
+                            # Stream final response
                             for chunk in final_stream:
                                 delta = chunk.choices[0].delta
                                 if hasattr(delta, "content") and delta.content:
@@ -235,10 +285,12 @@ def get_llm_response(
                                     final_response_text += chunk_text
                                     final_response_placeholder.markdown(final_response_text)
                             
+                            # Add final response to chat history
                             if final_response_text.strip():
                                 chat_history.append({"role": "assistant", "content": final_response_text})
                 
                 except Exception as e:
+                    # Comprehensive error handling for LLM response generation
                     st.error(f"An error occurred: {e}")
                     logging.error(f"LLM Response Error: {e}")
                 
@@ -247,6 +299,7 @@ def get_llm_response(
                     status_placeholder.empty()
     
     except Exception as main_e:
+        # Top-level error handling for unexpected issues
         st.error(f"An unexpected error occurred: {main_e}")
         logging.error(f"Unexpected error in get_llm_response: {main_e}")
 

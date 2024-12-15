@@ -128,5 +128,5 @@ TOOL_METADATA = {
             "required": ["advisor_name", "query"]
         }
     },
-    "direct_stream": True  # Maintain the direct streaming flag
+    "direct_stream": True
 }

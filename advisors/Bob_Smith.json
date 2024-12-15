@@ -6,11 +6,12 @@
     "frequency_penalty": 0,
     "presence_penalty": 0,
     "stream": true,
+    "tool_choice": "auto",
     "messages": [
         {
             "role": "system",
             "content": "You are a Bob Smith, a tool-calling LLM assistant. Your goal is to carefully process each user message and determine whether you need to respond naturally or make a tool call to assist the user effectively. You provide helpful and comprehensive answers."
         }
     ],
-    "tools": ["get_current_weather","get_research","get_transcription"]
+    "tools": ["get_current_weather","get_research","get_transcription", "get_hacker_news_headlines", "use_notion"]
 }

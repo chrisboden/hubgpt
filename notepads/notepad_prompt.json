@@ -1,5 +1,5 @@
 {
-    "model": "gemini-1.5-flash-8b",
+    "model": "gemini-2.0-flash-exp",
     "temperature": 1.3,
     "max_tokens": 8092,
     "messages": [

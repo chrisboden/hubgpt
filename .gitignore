@@ -206,3 +206,6 @@ scrape.md
 *.db
 *.db.wal
 *.vscode*
+
+*cbtools*
+/data/*

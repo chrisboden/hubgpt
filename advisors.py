@@ -135,7 +135,7 @@ def main():
         # Process messages
         initial_messages = load_prompt(advisor_data, st.session_state.chat_history)
         messages = initial_messages + st.session_state.chat_history
-
+        #print(messages)
         # Extract LLM parameters
         llm_params_keys = [
             'model', 'temperature', 'max_tokens', 'top_p', 
@@ -149,7 +149,9 @@ def main():
 
         # Extract tools configuration
         tools = advisor_data.get('tools', [])
+        print(tools)
         tool_choice = advisor_data.get('tool_choice', 'auto')
+        print(tool_choice)
         
         # Prepare for assistant response
         try:
@@ -170,6 +172,7 @@ def main():
                 spinner_placeholder=spinner_placeholder,
                 **llm_params
             )
+            #print(tools)
         except Exception as e:
             # Error handling
             st.error(f"An error occurred: {e}")

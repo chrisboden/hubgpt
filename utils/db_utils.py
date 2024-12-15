@@ -6,7 +6,7 @@ from datetime import datetime
 
 
 class AgentRunsDB:
-    def __init__(self, db_file: str = "agent_runs.db"):
+    def __init__(self, db_file: str = "data/agent_runs.db"):
         self.conn = duckdb.connect(db_file)
         self._create_tables()
 

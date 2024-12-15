@@ -254,7 +254,7 @@ TOOL_METADATA = {
     "type": "function",
     "function": {
         "name": "get_website",
-        "description": "Get the website url for a given term",
+        "description": "Get the definitive website url for a given term",
         "parameters": {
             "type": "object",
             "properties": {

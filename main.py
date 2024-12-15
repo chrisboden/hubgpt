@@ -6,7 +6,7 @@ import streamlit as st
 from dotenv import load_dotenv
 import advisors
 import notepads
-import teams
+#import teams
 
 # Remove any existing handlers to prevent conflicts
 #for handler in logging.root.handlers[:]:
@@ -55,18 +55,18 @@ col2.button(
     use_container_width=True
 )
 
-col3.button(
-    "🧑‍🤝‍🧑",
-    key="teams_btn",
-    type="primary" if st.session_state.current_tab == "Teams" else "secondary",
-    on_click=lambda: setattr(st.session_state, 'current_tab', 'Teams'),
-    use_container_width=True
-)
+#col3.button(
+#    "🧑‍🤝‍🧑",
+#    key="teams_btn",
+#    type="primary" if st.session_state.current_tab == "Teams" else "secondary",
+#    on_click=lambda: setattr(st.session_state, 'current_tab', 'Teams'),
+#    use_container_width=True
+#)
 
 # Load content in main area based on selected tab
 if st.session_state.current_tab == "Advisors":
     advisors.main()
 elif st.session_state.current_tab == "Notepads":
     notepads.main()
-elif st.session_state.current_tab == "Teams":
-    teams.main()
+#elif st.session_state.current_tab == "Teams":
+#    teams.main()

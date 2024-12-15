@@ -8,27 +8,192 @@ import json
 from tavily import TavilyClient, MissingAPIKeyError, InvalidAPIKeyError, UsageLimitExceededError, BadRequestError
 import openai
 
-
+# Represents a structured search result with title, URL, and description
 class SearchResult:
     def __init__(self, title: str, url: str, description: str):
+        """
+        Initialize a search result with key metadata.
+        
+        Args:
+            title (str): The title of the search result
+            url (str): The web URL of the result
+            description (str): A brief description or snippet of the result
+        """
         self.title = title
         self.url = url
         self.description = description
 
 
+# Abstract base class defining the interface for search providers
 class SearchProvider:
     def search(self, query: str, max_results: int = 10) -> List[SearchResult]:
+        """
+        Abstract method to be implemented by concrete search providers.
+        
+        Args:
+            query (str): The search query string
+            max_results (int): Maximum number of results to return
+        
+        Raises:
+            NotImplementedError: If not overridden by subclass
+        """
         raise NotImplementedError
+
+
+class BraveSearchProvider(SearchProvider):
+    def __init__(self, api_key: Optional[str] = None):
+        self.api_key = api_key or os.getenv("BRAVE_API_KEY")
+        if not self.api_key:
+            raise ValueError("Brave API key is required")
+        self.base_url = "https://api.search.brave.com/res/v1/web/search"
+
+    def search(self, query: str, max_results: int = 10) -> List[SearchResult]:
+        try:
+            headers = {"X-Subscription-Token": self.api_key}
+            params = {"q": query, "count": max_results}
+            response = requests.get(self.base_url, headers=headers, params=params)
+            response.raise_for_status()
+            data = response.json()
+            
+            return [
+                SearchResult(
+                    title=result.get("title", "No title"),
+                    url=result.get("url", ""),
+                    description=result.get("description", "No description")
+                ) for result in data.get("results", [])[:max_results]
+            ]
+        except Exception as e:
+            print(f"Brave search failed: {str(e)}")
+            return []
+
+class SerperSearchProvider(SearchProvider):
+    def __init__(self, api_key: Optional[str] = None):
+        self.api_key = api_key or os.getenv("SERPER_API_KEY")
+        if not self.api_key:
+            raise ValueError("Serper API key is required")
+        self.base_url = "https://google.serper.dev/search"
+
+    def search(self, query: str, max_results: int = 10) -> List[SearchResult]:
+        try:
+            headers = {"X-API-KEY": self.api_key}
+            payload = {"q": query, "num": max_results}
+            response = requests.post(self.base_url, headers=headers, json=payload)
+            response.raise_for_status()
+            data = response.json()
+            
+            return [
+                SearchResult(
+                    title=result.get("title", "No title"),
+                    url=result.get("link", ""),
+                    description=result.get("snippet", "No description")
+                ) for result in data.get("organic", [])[:max_results]
+            ]
+        except Exception as e:
+            print(f"Serper search failed: {str(e)}")
+            return []
+
+class JinaSearchProvider(SearchProvider):
+    def __init__(self, api_key: Optional[str] = None):
+        self.api_key = api_key or os.getenv("JINA_API_KEY")
+        if not self.api_key:
+            raise ValueError("Jina API key is required")
+        self.base_url = "https://api.jina.ai/v1/search"
+
+    def search(self, query: str, max_results: int = 10) -> List[SearchResult]:
+        try:
+            headers = {"Authorization": f"Bearer {self.api_key}"}
+            payload = {"query": query, "limit": max_results}
+            response = requests.post(self.base_url, headers=headers, json=payload)
+            response.raise_for_status()
+            data = response.json()
+            
+            return [
+                SearchResult(
+                    title=result.get("title", "No title"),
+                    url=result.get("url", ""),
+                    description=result.get("snippet", "No description")
+                ) for result in data.get("results", [])[:max_results]
+            ]
+        except Exception as e:
+            print(f"Jina search failed: {str(e)}")
+            return []
+
+class DDGSearchProvider(SearchProvider):
+    def __init__(self):
+        self.ddgs = DDGS()
+
+    def search(self, query: str, max_results: int = 10) -> List[SearchResult]:
+        try:
+            results = list(self.ddgs.text(query, max_results=max_results))
+            return [
+                SearchResult(
+                    title=result.get("title", "No title"),
+                    url=result.get("link", ""),
+                    description=result.get("body", "No description")
+                ) for result in results[:max_results]
+            ]
+        except Exception as e:
+            print(f"DuckDuckGo search failed: {str(e)}")
+            return []
+
+class SerpApiSearchProvider(SearchProvider):
+    def __init__(self, api_key: Optional[str] = None):
+        self.api_key = api_key or os.getenv("SERPAPI_API_KEY")
+        if not self.api_key:
+            raise ValueError("SerpApi API key is required")
+        self.base_url = "https://serpapi.com/search"
+
+    def search(self, query: str, max_results: int = 10) -> List[SearchResult]:
+        try:
+            params = {
+                "q": query,
+                "num": max_results,
+                "api_key": self.api_key,
+                "engine": "google"
+            }
+            response = requests.get(self.base_url, params=params)
+            response.raise_for_status()
+            data = response.json()
+            
+            return [
+                SearchResult(
+                    title=result.get("title", "No title"),
+                    url=result.get("link", ""),
+                    description=result.get("snippet", "No description")
+                ) for result in data.get("organic_results", [])[:max_results]
+            ]
+        except Exception as e:
+            print(f"SerpApi search failed: {str(e)}")
+            return []
 
 
 class TavilySearchProvider(SearchProvider):
     def __init__(self, api_key: Optional[str] = None):
+        """
+        Initialize Tavily search provider with API key.
+        
+        Args:
+            api_key (Optional[str]): Tavily API key, defaults to environment variable
+        
+        Raises:
+            MissingAPIKeyError: If no API key is provided
+        """
         self.api_key = api_key or os.getenv("TAVILY_API_KEY")
         if not self.api_key:
             raise MissingAPIKeyError("Tavily API key is required")
         self.client = TavilyClient(api_key=self.api_key)
 
     def search(self, query: str, max_results: int = 10) -> List[SearchResult]:
+        """
+        Perform a search using Tavily API.
+        
+        Args:
+            query (str): Search query string
+            max_results (int): Maximum number of results to return
+        
+        Returns:
+            List[SearchResult]: Processed search results
+        """
         try:
             response = self.client.search(query, max_results=max_results)
             return [
@@ -43,179 +208,51 @@ class TavilySearchProvider(SearchProvider):
             return []
 
 
-class JinaSearchProvider(SearchProvider):
-    def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or os.getenv("JINA_API_KEY")
-        if not self.api_key:
-            raise ValueError("Jina API key is required")
-        self.base_url = "https://s.jina.ai"
 
-    def search(self, query: str, max_results: int = 10) -> List[SearchResult]:
-        try:
-            url = f"{self.base_url}/{query}"
-            headers = {
-                "Accept": "application/json",
-                "Authorization": f"Bearer {self.api_key}",
-                "X-Retain-Images": "none"
-            }
-            response = requests.get(url, headers=headers)
-            response.raise_for_status()
-            data = response.json()
-
-            return [
-                SearchResult(
-                    title=item.get("title", "No title"),
-                    url=item.get("url", ""),
-                    description=item.get("description", "No description")
-                ) for item in data.get("data", [])[:max_results]
-            ]
-        except Exception as e:
-            print(f"Jina search failed: {str(e)}")
-            return []
-
-
-class DDGSearchProvider(SearchProvider):
-    def search(self, query: str, max_results: int = 10) -> List[SearchResult]:
-        try:
-            with DDGS() as ddgs:
-                results = list(ddgs.text(query, max_results=max_results))
-                return [
-                    SearchResult(
-                        title=r.get("title", "No title"),
-                        url=r.get("href", ""),
-                        description=r.get("body", "No description")
-                    ) for r in results
-                ]
-        except Exception as e:
-            print(f"DDG search failed: {str(e)}")
-            return []
-
-
-class SerperSearchProvider(SearchProvider):
-    def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or os.getenv("SERPER_API_KEY")
-        if not self.api_key:
-            raise ValueError("Serper API key is required")
-
-    def search(self, query: str, max_results: int = 10) -> List[SearchResult]:
-        try:
-            url = "https://google.serper.dev/search"
-            payload = json.dumps({
-                "q": query,
-                "num": max_results
-            })
-            headers = {
-                "X-API-KEY": self.api_key,
-                "Content-Type": "application/json"
-            }
-            response = requests.post(url, headers=headers, data=payload)
-            response.raise_for_status()
-            data = response.json()
-
-            results = []
-            for item in data.get("organic", [])[:max_results]:
-                results.append(SearchResult(
-                    title=item.get("title", "No title"),
-                    url=item.get("link", ""),
-                    description=item.get("snippet", "No description")
-                ))
-            return results
-        except Exception as e:
-            print(f"Serper search failed: {str(e)}")
-            return []
-
-
-class SerpApiSearchProvider(SearchProvider):
-    def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or os.getenv("SERPAPI_API_KEY")
-        if not self.api_key:
-            raise ValueError("SerpAPI key is required")
-
-    def search(self, query: str, max_results: int = 10) -> List[SearchResult]:
-        try:
-            params = {
-                "engine": "google",
-                "q": query,
-                "api_key": self.api_key,
-                "num": max_results
-            }
-            response = requests.get("https://serpapi.com/search", params=params)
-            response.raise_for_status()
-            data = response.json()
-
-            results = []
-            for item in data.get("organic_results", [])[:max_results]:
-                results.append(SearchResult(
-                    title=item.get("title", "No title"),
-                    url=item.get("link", ""),
-                    description=item.get("snippet", "No description")
-                ))
-            return results
-        except Exception as e:
-            print(f"SerpAPI search failed: {str(e)}")
-            return []
-
-
-class BraveSearchProvider(SearchProvider):
-    def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or os.getenv("BRAVE_API_KEY")
-        if not self.api_key:
-            raise ValueError("Brave Search API key is required")
-
-    def search(self, query: str, max_results: int = 10) -> List[SearchResult]:
-        try:
-            url = "https://api.search.brave.com/res/v1/web/search"
-            headers = {
-                "Accept": "application/json",
-                "Accept-Encoding": "gzip", 
-                "X-Subscription-Token": self.api_key
-            }
-            params = {
-                "q": query,
-                "count": max_results
-            }
-            
-            response = requests.get(url, headers=headers, params=params)
-            response.raise_for_status()
-            data = response.json()
-
-            results = []
-            for item in data.get("web", {}).get("results", [])[:max_results]:
-                results.append(SearchResult(
-                    title=item.get("title", "No title"),
-                    url=item.get("url", ""),
-                    description=item.get("description", "No description")
-                ))
-            return results
-        except Exception as e:
-            print(f"Brave Search failed: {str(e)}")
-            return []
-
-
-
+# Resilient search mechanism that tries multiple search providers
 class ResilientSearcher:
     def __init__(self):
+        """
+        Initialize search providers based on available API keys.
+        
+        Dynamically creates search providers using environment variables,
+        allowing fallback and flexibility in search strategies.
+        """
         # Debug logging to understand provider initialization
         print("🕵️ Initializing Search Providers:")
         print(f"BRAVE_API_KEY present: {bool(os.getenv('BRAVE_API_KEY'))}")
         print(f"TAVILY_API_KEY present: {bool(os.getenv('TAVILY_API_KEY'))}")
 
+        # Ordered list of search providers with conditional initialization
         self.providers = [
             BraveSearchProvider() if os.getenv("BRAVE_API_KEY") else None,
             TavilySearchProvider() if os.getenv("TAVILY_API_KEY") else None,
             SerperSearchProvider() if os.getenv("SERPER_API_KEY") else None,
             JinaSearchProvider() if os.getenv("JINA_API_KEY") else None,
-            DDGSearchProvider(),
+            DDGSearchProvider(),  # Always available as a fallback
             SerpApiSearchProvider() if os.getenv("SERPAPI_API_KEY") else None,
         ]
         
-        # Additional debug logging
+        # Additional debug logging to show active providers
         print("🔍 Active Providers:")
         for provider in self.providers:
             if provider:
                 print(f" - {type(provider).__name__}")
 
     def search(self, query: str, max_results: int = 10) -> List[SearchResult]:
+        """
+        Attempt to search using multiple providers in a resilient manner.
+        
+        Tries each configured search provider sequentially, returning 
+        results from the first successful provider.
+        
+        Args:
+            query (str): Search query string
+            max_results (int): Maximum number of results to return
+        
+        Returns:
+            List[SearchResult]: Search results from the first successful provider
+        """
         print(f"🔎 Attempting to search with query: {query}")
         
         for provider in self.providers:
@@ -234,21 +271,30 @@ class ResilientSearcher:
 
 def generate_search_query(objective: str, llm_client=None) -> Dict[str, Union[str, int]]:
     """
-    Generate an optimized search query and number of results using an LLM
+    Generate an optimized search query using an LLM.
+    
+    Uses an LLM to intelligently craft a search query and determine 
+    the optimal number of results based on the given objective.
     
     Args:
-        objective (str): The fuzzy objective to search for
-        llm_client (optional): The LLM client to use for query generation
+        objective (str): The fuzzy search objective
+        llm_client (optional): Language model client for query generation
     
     Returns:
-        Dict with 'query' and 'max_results'
+        Dict containing refined search query and result count
+        - 'query': Optimized search query string
+        - 'max_results': Recommended number of results
+    
+    Raises:
+        ValueError: If no LLM client is provided
     """
     print(f"🔍 Generating search query for objective: {objective}")
-    # Validate LLM client
+    
+    # Validate LLM client availability
     if llm_client is None:
         raise ValueError("LLM client is required for search query generation")
 
-    # Prepare the LLM messages
+    # Prepare structured prompt for LLM to generate search query
     query_generation_messages = [
         {
             "role": "system", 
@@ -256,7 +302,7 @@ def generate_search_query(objective: str, llm_client=None) -> Dict[str, Union[st
 1. Craft an effective search query that is likely to generate the most useful results
 2. Determine the optimal number of search results that are required for performing the task at hand
 
-You will respond with a JSON object contianing two keys:
+You will respond with a JSON object containing two keys:
 - 'query': A suggested search query string
 - 'max_results': An integer representing the ideal number of search results.
 
@@ -271,35 +317,35 @@ Your goal is to design a query that best matches the objective you have been giv
     ]
    
     try:
-        # Make LLM call to generate query
+        # Generate search query using LLM
         response = llm_client.chat.completions.create(
             model="openai/gpt-4o",  # Use the model from the passed client
             messages=query_generation_messages,
             max_tokens=200,
-            temperature=1,
+            temperature=0.7,
             response_format={"type": "json_object"}
         )
 
-        # Extract and parse the response
+        # Extract and parse the LLM's response
         response_content = response.choices[0].message.content.strip()
         
-        # Clean up JSON string if needed
+        # Clean up potential JSON formatting issues
         if "```json" in response_content:
             response_content = response_content.split("```json")[1].split("```")[0].strip()
         
-        # Parse the JSON
+        # Parse the JSON response
         parsed_response = json.loads(response_content)
 
         print(f"🤖: The llm has designed the search query as follows:{parsed_response}")
         
-        # Validate and set defaults
+        # Validate and set defaults, ensuring reasonable result count
         return {
             "query": parsed_response.get('query', objective),
             "max_results": max(5, min(parsed_response.get('max_results', 10), 15))  # Clamp between 5 and 15
         }
     
-
     except Exception as e:
+        # Fallback mechanism if query generation fails
         print(f"Error generating search query: {e}")
         return {
             "query": objective,
@@ -308,26 +354,30 @@ Your goal is to design a query that best matches the objective you have been giv
     
 def perform_search(objective: str, max_results: int = 10, llm_client=None) -> List[Dict[str, str]]:
     """
-    Perform a search with an LLM-generated query
+    High-level search function that combines query generation and execution.
+    
+    Generates an optimized search query using an LLM, then performs 
+    a resilient search across multiple providers.
     
     Args:
-        objective (str): The fuzzy objective to search for
-        max_results (int): Maximum number of search results to return (optional)
-        llm_client (optional): The LLM client to use for query generation
+        objective (str): The fuzzy search objective
+        max_results (int): Override for maximum number of results
+        llm_client (optional): Language model client for query generation
     
     Returns:
-        List of search result dictionaries
+        List of search results as dictionaries with title, URL, and description
     """
-    # Generate the optimized search query and max results
+    # Generate optimized search query and parameters
     search_params = generate_search_query(objective, llm_client)
     
-    # Use LLM-suggested max_results, but allow override from function parameter
+    # Determine final result count, respecting optional override
     final_max_results = max_results if max_results != 10 else search_params['max_results']
     
     # Perform the search using the generated query
-    searcher = ResilientSearcher()
     print(f"🤖: Now performing the search as follows:{search_params}")
+    searcher = ResilientSearcher()
     results = searcher.search(search_params['query'], final_max_results)
+    
     print(f"🤖: These are the (unranked) search results:{results}")
     return [
         {

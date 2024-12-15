@@ -195,6 +195,11 @@ def handle_file_upload(uploaded_files):
     uploaded_gemini_files = []  # Collect uploaded Gemini file objects
 
     for uploaded_file in uploaded_files:
+        # Check if file is already uploaded
+        if uploaded_file.name in st.session_state.uploaded_file_names:
+            print(f"File {uploaded_file.name} already uploaded. Skipping.")
+            continue
+
         local_file_path = files_dir / uploaded_file.name
         with open(local_file_path, 'wb') as f:
             f.write(uploaded_file.getbuffer())
@@ -247,6 +252,7 @@ def handle_file_upload(uploaded_files):
             st.error(str(e))
             print(str(e))
 
+
 def sync_notepad_files(notepad_id):
     selected_notepad_dir = Path(f'notepads/{notepad_id}')
     index_file = selected_notepad_dir / 'index.json'
@@ -267,7 +273,24 @@ def sync_notepad_files(notepad_id):
         local_file_path = selected_notepad_dir / local_name
 
         if local_file_path.exists():  # Only proceed if file exists
+            # Add more detailed logging
+            print(f"Checking file: {local_file_path}")
+            print(f"Cloud name in index: {cloud_name}")
+            print(f"Cloud file names in session: {cloud_file_names}")
+
+            # More stringent check to prevent unnecessary re-uploads
             if not cloud_name or cloud_name not in cloud_file_names:
+                print(f"Preparing to re-upload: {local_file_path.name}")
+                
+                # Additional check: verify file is not already in cloud_files
+                existing_cloud_file = next((f for f in st.session_state.cloud_files if f.display_name == local_file_path.name), None)
+                
+                if existing_cloud_file:
+                    print(f"File {local_file_path.name} already exists in cloud files. Skipping re-upload.")
+                    file_info['cloud_name'] = existing_cloud_file.name
+                    files_updated = True
+                    continue
+
                 # Re-upload the file
                 mime_type = mimetypes.guess_type(local_file_path)[0] or 'application/octet-stream'
                 with st.spinner(f"Re-uploading {local_file_path.name} to Gemini..."):
@@ -308,7 +331,6 @@ def sync_notepad_files(notepad_id):
             except Exception as e:
                 st.error(str(e))
                 print(str(e))
-
 
 def user_input(user_question):
     print("\n=== DEBUG: CHAT HISTORY AND MESSAGE STRUCTURE ===")

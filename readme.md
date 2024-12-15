@@ -83,7 +83,7 @@ This app uses [Streamlit](https://streamlit.io/), a Python framework for rapid p
 
 ## Bonus
 
-One quite powerful tool to use is the fetchtweets tool. This gets tweets from a given twitter list and inserts them into a prompt, eg see the Mr Feedreader prompt. Get a free account with RapidAPI (using your google account) and sign up for this particular Twitter api (also free, no credit card) - https://rapidapi.com/davethebeast/api/twitter241/pricing - it allows 500 free api calls per month. Find your rapid api key and put in the env file.
+One quite powerful tool to use is the get_tweets tool. This gets tweets from a given twitter list and inserts them into a prompt, eg see the Mr Feedreader prompt. Get a free account with RapidAPI (using your google account) and sign up for this particular Twitter api (also free, no credit card) - https://rapidapi.com/davethebeast/api/twitter241/pricing - it allows 500 free api calls per month. Find your rapid api key and put in the env file.
 
 ## Testing
 

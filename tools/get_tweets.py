@@ -1,3 +1,5 @@
+#tools/get_tweets.json
+
 import os
 import requests
 import json
@@ -17,8 +19,8 @@ load_dotenv(dotenv_path=root_dir / '.env')
 API_URL = "https://twitter241.p.rapidapi.com/list-timeline"
 DEFAULT_LIST_ID = "1609883077026918400"
 DEFAULT_MAX_PAGES = 5  # Set the default maximum number of pages to fetch
-OUTPUT_FILE = "tools/tweets.json"
-LAST_FETCH_FILE = "tools/last_fetch_id.txt"
+OUTPUT_FILE = "data/tweets.json"
+LAST_FETCH_FILE = "data/last_twitter_fetch_id.txt"
 VERBOSE = True  # Set to True to enable detailed logging
 
 # Load API key from environment variable
@@ -265,7 +267,7 @@ def extract_media_urls(legacy):
     return media_urls
 
 def execute(list_id=DEFAULT_LIST_ID, max_pages=DEFAULT_MAX_PAGES, llm_client=None):
-    """Execute function to fetch tweets and return the content of tweets.json as a string."""
+    """Execute function to fetch tweets and return the content of data/tweets.json as a string."""
     if VERBOSE:
         print("Starting tweet fetching process...")
     tweets = fetch_tweets(list_id, max_pages)
@@ -283,14 +285,14 @@ def execute(list_id=DEFAULT_LIST_ID, max_pages=DEFAULT_MAX_PAGES, llm_client=Non
 TOOL_METADATA = {
     "type": "function",
     "function": {
-        "name": "fetchtweets",
-        "description": "Get the latest tweets from a Twitter list",
+        "name": "get_tweets",
+        "description": "Get the latest tweets from a given Twitter list",
         "parameters": {
             "type": "object",
             "properties": {
                 "list_id": {
                     "type": "string",
-                    "description": "The id of the twitter list to use"
+                    "description": "The id of the twitter list to fetch tweets for"
                 },
                 "max_pages": {
                     "type": "integer",
