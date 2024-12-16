@@ -3,10 +3,20 @@ import subprocess
 import os
 import tempfile
 import shutil
+import requests
 import ast
 from termcolor import colored
 from pathspec import PathSpec
 from pathspec.patterns import GitWildMatchPattern
+
+def validate_package_on_pypi(package_name):
+    """Check if a package exists on PyPI"""
+    url = f"https://pypi.org/pypi/{package_name}/json"
+    try:
+        response = requests.get(url)
+        return response.status_code == 200
+    except requests.RequestException:
+        return False
 
 def extract_imports_from_file(file_path):
     """Extract all import statements from a Python file"""
@@ -202,6 +212,22 @@ def generate_requirements():
                                alt.endswith(pkg.replace('_', '-')))))
             }
             
+            # Validate packages against PyPI
+            print(colored("\nValidating packages on PyPI...", 'blue'))
+            invalid_packages = set()
+            for pkg in final_packages:
+                if not validate_package_on_pypi(pkg):
+                    print(colored(f"Warning: Package '{pkg}' not found on PyPI", 'yellow'))
+                    invalid_packages.add(pkg)
+            
+            # Remove invalid packages
+            final_packages = final_packages - invalid_packages
+            
+            if invalid_packages:
+                print(colored("\nRemoved invalid packages:", 'yellow'))
+                for pkg in sorted(invalid_packages):
+                    print(colored(f"- {pkg}", 'yellow'))
+
             # Write final requirements.txt
             requirements_path = os.path.join(root_dir, 'requirements.txt')
             with open(requirements_path, 'w') as f:
