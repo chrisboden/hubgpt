@@ -8,6 +8,7 @@ from yt_dlp import YoutubeDL
 import json
 import duckdb
 from pathlib import Path
+from halo import Halo
 
 def init_db():
     """Initialize the DuckDB database and create the transcripts table if it doesn't exist"""
@@ -43,11 +44,10 @@ def init_db():
         traceback.print_exc()
         raise
 
-def get_video_metadata(video_url):
+def get_video_metadata(video_url, spinner):
     """Extract metadata from YouTube video"""
     try:
-        cprint("Extracting video metadata...", "blue")
-        
+        spinner.text = "Extracting video metadata..."
         ydl_opts = {
             'quiet': True,
             'skip_download': True,
@@ -124,9 +124,10 @@ def store_transcript(conn, video_id, raw_transcript, summary=None, metadata=None
         traceback.print_exc()
 
 
-def get_cached_transcript(conn, video_id):
+def get_cached_transcript(conn, video_id, spinner):
     """Check if transcript exists in cache and return it"""
     try:
+        spinner.text = f"Checking cache for video ID: {video_id}"
         result = conn.execute("""
             SELECT raw_transcript, summary, metadata 
             FROM transcripts 
@@ -146,25 +147,26 @@ def get_cached_transcript(conn, video_id):
         traceback.print_exc()
         return None
 
-def download_transcript(video_url, conn):
+def download_transcript(video_url, conn, spinner):
     """Download transcript from a YouTube video with caching"""
     try:
-        cprint("Starting transcript download process...", "blue")
+        spinner.text = "Starting transcript download process..."
         
         # Extract video ID from URL
         video_id = YouTube(video_url).video_id
-        cprint(f"Extracted Video ID: {video_id}", "green")
+        spinner.text = f"Extracted Video ID: {video_id}"
         
         # Check cache first
-        cached_data = get_cached_transcript(conn, video_id)
+        cached_data = get_cached_transcript(conn, video_id, spinner)
         if cached_data and cached_data["raw_transcript"]:
             cprint("Retrieved transcript from cache", "green")
             return cached_data["raw_transcript"]
         
         # Get metadata
-        metadata = get_video_metadata(video_url)
+        metadata = get_video_metadata(video_url, spinner)
         
         # If not in cache, download transcript
+        spinner.text = "Downloading transcript..."
         transcript = YouTubeTranscriptApi.get_transcript(video_id)
         cprint(f"Successfully retrieved transcript with {len(transcript)} entries", "green")
         
@@ -184,13 +186,13 @@ def download_transcript(video_url, conn):
         return f"### Transcript:\n\n*Error downloading transcript: {e}*"
 
 
-def summarize_transcript(transcript_text, llm_client, video_id, conn):
+def summarize_transcript(transcript_text, llm_client, video_id, conn, spinner):
     """Summarize transcript with caching"""
     try:
-        cprint("Starting transcript summarization...", "blue")
+        spinner.text = "Starting transcript summarization..."
         
         # Check cache first
-        cached_data = get_cached_transcript(conn, video_id)
+        cached_data = get_cached_transcript(conn, video_id, spinner)
         if cached_data and cached_data.get("summary"):
             cprint("Retrieved valid summary from cache", "green")
             
@@ -243,6 +245,7 @@ def summarize_transcript(transcript_text, llm_client, video_id, conn):
                 
 
         # Create the stream - EXACTLY as in working version
+        spinner.text = "Generating summary..."
         stream = llm_client.chat.completions.create(
             model="openai/gpt-4o-mini",
             messages=[
@@ -296,7 +299,8 @@ def summarize_transcript(transcript_text, llm_client, video_id, conn):
 def execute(video_url=None, llm_client=None):
     """Main execution function with caching"""
     try:
-        cprint("Starting execution process...", "blue")
+        spinner = Halo(text="Starting execution process...", spinner="dots")
+        spinner.start()
         
         if not video_url:
             raise ValueError("A YouTube video URL is required.")
@@ -308,28 +312,31 @@ def execute(video_url=None, llm_client=None):
         video_id = YouTube(video_url).video_id
         
         # Get transcript
-        transcript_markdown = download_transcript(video_url, conn)
+        transcript_markdown = download_transcript(video_url, conn, spinner)
         
         # Get summary if LLM client is provided
         if llm_client:
             # Remove markdown header from transcript
             transcript_text = transcript_markdown.replace("### Transcript:\n\n", "")
             
-            print("🔍 Preparing Transcript Summarization")
-            summary_result = summarize_transcript(transcript_text, llm_client, video_id, conn)
+            spinner.text = "Preparing Transcript Summarization"
+            summary_result = summarize_transcript(transcript_text, llm_client, video_id, conn, spinner)
             
             # Handle both streaming and cached responses
             if summary_result.get("direct_stream"):
-                print("🔄 Returning direct stream result")
+                spinner.text = "Returning direct stream result"
+                spinner.succeed()
                 return summary_result
             elif summary_result.get("cached"):
-                print("📦 Returning cached summary")
+                spinner.text = "Returning cached summary"
+                spinner.succeed()
                 # Format cached summary as an assistant message
                 return {
                     "result": summary_result["result"],
                     "direct_stream": False
                 }
         
+        spinner.succeed()
         return {
             "transcript": transcript_markdown,
             "summary": None,
@@ -337,7 +344,7 @@ def execute(video_url=None, llm_client=None):
         }
         
     except Exception as e:
-        print(f"❌ Execution Error: {e}")
+        spinner.fail(f"Execution Error: {e}")
         traceback.print_exc()
         return {
             "error": str(e),
@@ -356,12 +363,16 @@ TOOL_METADATA = {
                 "video_url": {
                     "type": "string",
                     "description": "The URL of the YouTube video to transcribe"
+                },
+                "follow_on_instructions": {
+                    "type": "string",
+                    "description": "Optional instruction for what to do with the transcription after it's generated (e.g., 'post to notion', 'summarize', etc)"
                 }
             },
             "required": ["video_url"]
         }
     },
-    "direct_stream": True  # Ensure this matches the result's direct_stream flag
+    "direct_stream": True
 }
 
 

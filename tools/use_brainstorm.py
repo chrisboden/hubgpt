@@ -183,7 +183,8 @@ TOOL_METADATA = {
                     ]
                 }
             },
-            "required": ["brief"]  # Only brief is required since method has a default
+            "required": ["brief"],
+            
         }
     }
 }

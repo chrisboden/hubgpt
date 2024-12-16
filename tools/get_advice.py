@@ -3,7 +3,7 @@ import os
 import json
 from openai import OpenAI
 from utils import prompt_utils  # Import the prompt utils
-from utils.llm_utils import update_spinner_status
+from utils.ui_utils import update_spinner_status
 
 def execute(llm_client=None, advisor_name=None, query=None, provide_latest_news=False):
     """

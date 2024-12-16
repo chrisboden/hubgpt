@@ -85,6 +85,8 @@ def execute_tool(tool_name: str, args: Dict[str, Any], llm_client=None) -> Dict[
     - Injects LLM client if the tool's function supports it
     - Attempts to parse responses as JSON
     - Returns a standardized response dictionary
+    - Supports follow_on_instructions parameter for chaining tool calls
+    - Returns both tool result and any follow-on instructions for further processing
     
     Args:
         tool_name (str): Name of the tool to execute
@@ -94,6 +96,7 @@ def execute_tool(tool_name: str, args: Dict[str, Any], llm_client=None) -> Dict[
     Returns:
         Dict[str, Any]: Standardized tool execution result
     """
+    # Check if the specified tool is available in the registry
     if tool_name not in TOOL_REGISTRY:
         st.error(f"Tool '{tool_name}' is not available.")
         logging.error(f"Tool '{tool_name}' is not available.")
@@ -102,43 +105,42 @@ def execute_tool(tool_name: str, args: Dict[str, Any], llm_client=None) -> Dict[
     try:
         logging.info(f"Executing tool '{tool_name}' with arguments: {args}")
         
-        # Retrieve tool function and metadata
+        # Extract follow_on_instructions if present
+        follow_on_instructions = args.pop("follow_on_instructions", [])
+        
         tool_func = TOOL_REGISTRY[tool_name]
         tool_metadata = TOOL_METADATA_REGISTRY.get(tool_name, {})
         tool_signature = signature(tool_func)
         
-        # Execute tool with or without LLM client based on function signature
+        # Execute tool
         if llm_client and 'llm_client' in tool_signature.parameters:
             response = tool_func(llm_client=llm_client, **args)
         else:
             response = tool_func(**args)
 
-        # Handle string responses, potentially containing JSON
+        # Handle string responses
         if isinstance(response, str):
-            # Remove markdown JSON formatting if present
             if "```json" in response:
                 response = response.split("```json")[1]
                 if "```" in response:
                     response = response.split("```")[0]
             response = response.strip()
             
-            # Attempt to parse as JSON, fallback to string
             try:
                 response = json.loads(response)
             except json.JSONDecodeError:
-                logging.warning(f"Could not parse tool response as JSON: {response}")
-                return {
-                    "result": response, 
-                    "direct_stream": tool_metadata.get("direct_stream", False)
-                }
+                response = {"result": response}
 
-        # Return standardized response with streaming flag
+        # Add follow-on instructions to response if present
+        if follow_on_instructions:
+            response["follow_on_instructions"] = follow_on_instructions
+
         return {
             **response,
             "direct_stream": tool_metadata.get("direct_stream", False)
         }
+
     except Exception as e:
-        # Comprehensive error handling and logging
         st.error(f"Error executing tool '{tool_name}': {e}")
         logging.error(f"Error executing tool '{tool_name}': {e}")
         return {}

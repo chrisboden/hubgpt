@@ -51,6 +51,93 @@ def execute(location, unit="celsius"):
     }
 ```
 
+## Repo Structure
+
+# Repository Structure
+
+```
+├── .DS_Store
+├── .cursorignore
+├── .cursorrules
+├── .env_copy
+├── .gitignore
+├── .streamlit
+│   └── config.toml
+├── advisors
+├── advisors.py
+├── content
+├── cursor_prompts
+│   ├── howto_add_comments.md
+│   ├── howto_computer-use.md
+│   ├── howto_researcher.md
+│   ├── howto_understand_this_app.md
+│   ├── howto_use_openrouter.md
+│   ├── howto_write_docs.md
+│   ├── linkedin_tool_notes.txt
+│   ├── tools.py
+│   └── use_and_make_tools.md
+├── data
+├── logs
+├── main.py
+├── me
+├── notepads
+├── notepads.py
+├── readme.md
+├── repo_readme_tree.md
+├── requirements.txt
+├── snippets
+├── static
+│   └── style.css
+├── teams
+│   ├── archive
+│   ├── chats
+│   ├── default.json
+│   ├── swarm_team.json
+├── teams.py
+├── tools
+│   ├── .DS_Store
+│   ├── README.md
+│   ├── __init__.py
+│   ├── code_run.py
+│   ├── code_write.py
+│   ├── data
+│   ├── email_create.py
+│   ├── file_delete.py
+│   ├── file_list.py
+│   ├── file_read.py
+│   ├── file_write.py
+│   ├── get_advice.py
+│   ├── get_current_weather.py
+│   ├── get_hacker_news_headlines.py
+│   ├── get_hub_co_updates.py
+│   ├── get_news.py
+│   ├── get_research.py
+│   ├── get_transcription.py
+│   ├── get_tweets.py
+│   ├── get_website.py
+│   ├── get_wikipedia.py
+│   ├── handoff_to_agent.py
+│   ├── handoff_to_coordinator.py
+│   ├── linkedin_research.py
+│   ├── make_podcast.py
+│   ├── use_ai.py
+│   ├── use_brainstorm.py
+│   ├── use_notion.py
+│   ├── web_scrape.py
+│   └── web_search.py
+└── utils
+    ├── chat_utils.py
+    ├── db_utils.py
+    ├── file_utils.py
+    ├── llm_utils.py
+    ├── message_utils.py
+    ├── notion_utils.py
+    ├── prompt_utils.py
+    ├── scrape_utils.py
+    ├── search_utils.py
+    └── tool_utils.py
+```
+
 ## Advisors
 
 An "Advisor" is created by adding a prompt template (JSON file) to the `advisors` directory. Each prompt template consists of:

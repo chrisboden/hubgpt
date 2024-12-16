@@ -1,10 +1,11 @@
 # repo_tools/generate_requirements.py
 import subprocess
 import os
+import fnmatch
 from termcolor import colored
 
 def generate_requirements():
-    """Generate requirements.txt using pipreqs"""
+    """Generate requirements.txt using pipreqs, excluding dependencies in .gitignore"""
     try:
         print(colored("Generating requirements.txt...", 'blue'))
         
@@ -20,12 +21,35 @@ def generate_requirements():
         # Run pipreqs
         subprocess.run(command, shell=True, check=True)
         
-        # Read and display results
-        with open(os.path.join(root_dir, 'requirements.txt'), 'r') as f:
-            packages = f.read().splitlines()
-            print(colored("\nFound packages:", 'green'))
-            for pkg in sorted(packages):
-                print(colored(f"- {pkg}", 'green'))
+        # Read .gitignore patterns
+        gitignore_patterns = set()
+        gitignore_path = os.path.join(root_dir, '.gitignore')
+        if os.path.exists(gitignore_path):
+            with open(gitignore_path, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith('#'):
+                        gitignore_patterns.add(line)
+        
+        # Function to check if a package is ignored
+        def is_ignored(package):
+            for pattern in gitignore_patterns:
+                if fnmatch.fnmatch(package, pattern):
+                    return True
+            return False
+        
+        # Read and filter requirements.txt
+        requirements_path = os.path.join(root_dir, 'requirements.txt')
+        with open(requirements_path, 'r') as f:
+            packages = [line.strip() for line in f if line.strip() and not is_ignored(line)]
+        
+        # Write the filtered packages back to requirements.txt
+        with open(requirements_path, 'w') as f:
+            f.write('\n'.join(sorted(packages)))
+        
+        print(colored("\nFound packages:", 'green'))
+        for pkg in packages:
+            print(colored(f"- {pkg}", 'green'))
                 
     except Exception as e:
         print(colored(f"Error generating requirements: {str(e)}", 'red'))

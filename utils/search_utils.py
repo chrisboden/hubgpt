@@ -40,14 +40,34 @@ class SearchProvider:
         raise NotImplementedError
 
 
+# Concrete search provider using the Brave Search API
 class BraveSearchProvider(SearchProvider):
     def __init__(self, api_key: Optional[str] = None):
+        """
+        Initialize the Brave Search provider with an API key.
+        
+        Args:
+            api_key (Optional[str]): Brave API key, defaults to environment variable
+        
+        Raises:
+            ValueError: If no API key is provided
+        """
         self.api_key = api_key or os.getenv("BRAVE_API_KEY")
         if not self.api_key:
             raise ValueError("Brave API key is required")
         self.base_url = "https://api.search.brave.com/res/v1/web/search"
 
     def search(self, query: str, max_results: int = 10) -> List[SearchResult]:
+        """
+        Perform a search using the Brave Search API.
+        
+        Args:
+            query (str): Search query string
+            max_results (int): Maximum number of results to return
+        
+        Returns:
+            List[SearchResult]: Processed search results
+        """
         try:
             headers = {"X-Subscription-Token": self.api_key}
             params = {"q": query, "count": max_results}
@@ -66,14 +86,35 @@ class BraveSearchProvider(SearchProvider):
             print(f"Brave search failed: {str(e)}")
             return []
 
+
+# Concrete search provider using the Serper API
 class SerperSearchProvider(SearchProvider):
     def __init__(self, api_key: Optional[str] = None):
+        """
+        Initialize the Serper provider with an API key.
+        
+        Args:
+            api_key (Optional[str]): Serper API key, defaults to environment variable
+        
+        Raises:
+            ValueError: If no API key is provided
+        """
         self.api_key = api_key or os.getenv("SERPER_API_KEY")
         if not self.api_key:
             raise ValueError("Serper API key is required")
         self.base_url = "https://google.serper.dev/search"
 
     def search(self, query: str, max_results: int = 10) -> List[SearchResult]:
+        """
+        Perform a search using the Serper API.
+        
+        Args:
+            query (str): Search query string
+            max_results (int): Maximum number of results to return
+        
+        Returns:
+            List[SearchResult]: Processed search results
+        """
         try:
             headers = {"X-API-KEY": self.api_key}
             payload = {"q": query, "num": max_results}
@@ -92,14 +133,35 @@ class SerperSearchProvider(SearchProvider):
             print(f"Serper search failed: {str(e)}")
             return []
 
+
+# Concrete search provider using the Jina API
 class JinaSearchProvider(SearchProvider):
     def __init__(self, api_key: Optional[str] = None):
+        """
+        Initialize the Jina provider with an API key.
+        
+        Args:
+            api_key (Optional[str]): Jina API key, defaults to environment variable
+        
+        Raises:
+            ValueError: If no API key is provided
+        """
         self.api_key = api_key or os.getenv("JINA_API_KEY")
         if not self.api_key:
             raise ValueError("Jina API key is required")
         self.base_url = "https://api.jina.ai/v1/search"
 
     def search(self, query: str, max_results: int = 10) -> List[SearchResult]:
+        """
+        Perform a search using the Jina API.
+        
+        Args:
+            query (str): Search query string
+            max_results (int): Maximum number of results to return
+        
+        Returns:
+            List[SearchResult]: Processed search results
+        """
         try:
             headers = {"Authorization": f"Bearer {self.api_key}"}
             payload = {"query": query, "limit": max_results}
@@ -118,11 +180,26 @@ class JinaSearchProvider(SearchProvider):
             print(f"Jina search failed: {str(e)}")
             return []
 
+
+# Concrete search provider using the DuckDuckGo API
 class DDGSearchProvider(SearchProvider):
     def __init__(self):
+        """
+        Initialize the DuckDuckGo search provider.
+        """
         self.ddgs = DDGS()
 
     def search(self, query: str, max_results: int = 10) -> List[SearchResult]:
+        """
+        Perform a search using the DuckDuckGo API.
+        
+        Args:
+            query (str): Search query string
+            max_results (int): Maximum number of results to return
+        
+        Returns:
+            List[SearchResult]: Processed search results
+        """
         try:
             results = list(self.ddgs.text(query, max_results=max_results))
             return [
@@ -136,14 +213,35 @@ class DDGSearchProvider(SearchProvider):
             print(f"DuckDuckGo search failed: {str(e)}")
             return []
 
+
+# Concrete search provider using the SerpApi
 class SerpApiSearchProvider(SearchProvider):
     def __init__(self, api_key: Optional[str] = None):
+        """
+        Initialize the SerpApi provider with an API key.
+        
+        Args:
+            api_key (Optional[str]): SerpApi API key, defaults to environment variable
+        
+        Raises:
+            ValueError: If no API key is provided
+        """
         self.api_key = api_key or os.getenv("SERPAPI_API_KEY")
         if not self.api_key:
             raise ValueError("SerpApi API key is required")
         self.base_url = "https://serpapi.com/search"
 
     def search(self, query: str, max_results: int = 10) -> List[SearchResult]:
+        """
+        Perform a search using the SerpApi.
+        
+        Args:
+            query (str): Search query string
+            max_results (int): Maximum number of results to return
+        
+        Returns:
+            List[SearchResult]: Processed search results
+        """
         try:
             params = {
                 "q": query,
@@ -167,10 +265,11 @@ class SerpApiSearchProvider(SearchProvider):
             return []
 
 
+# Concrete search provider using the Tavily API
 class TavilySearchProvider(SearchProvider):
     def __init__(self, api_key: Optional[str] = None):
         """
-        Initialize Tavily search provider with API key.
+        Initialize the Tavily search provider with an API key.
         
         Args:
             api_key (Optional[str]): Tavily API key, defaults to environment variable
@@ -185,7 +284,7 @@ class TavilySearchProvider(SearchProvider):
 
     def search(self, query: str, max_results: int = 10) -> List[SearchResult]:
         """
-        Perform a search using Tavily API.
+        Perform a search using the Tavily API.
         
         Args:
             query (str): Search query string
@@ -206,7 +305,6 @@ class TavilySearchProvider(SearchProvider):
         except (InvalidAPIKeyError, UsageLimitExceededError, BadRequestError) as e:
             print(f"Tavily search failed: {str(e)}")
             return []
-
 
 
 # Resilient search mechanism that tries multiple search providers
@@ -269,6 +367,7 @@ class ResilientSearcher:
         return []
 
 
+# Function to generate an optimized search query using an LLM
 def generate_search_query(objective: str, llm_client=None) -> Dict[str, Union[str, int]]:
     """
     Generate an optimized search query using an LLM.

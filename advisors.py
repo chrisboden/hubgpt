@@ -111,23 +111,31 @@ def main():
         st.session_state.save_success = False  # Reset after displaying
 
     # Handle user input
-    if prompt := st.chat_input(f"Chat with {selected_advisor}"):
+    if prompt := st.chat_input(f"Chat with {selected_advisor}") or st.session_state.get('follow_on_instruction'):
+        # If we have a follow-on instruction, use that instead of the user input
+        if st.session_state.get('follow_on_instruction'):
+            prompt = st.session_state.follow_on_instruction
+            # Clear the follow-on instruction after using it
+            del st.session_state.follow_on_instruction
+
         # Initialize spinner status in session state
         st.session_state.spinner_status = f"Preparing response with {selected_advisor}..."
         
         # Create a more robust spinner placeholder
         st.session_state.spinner_placeholder = st.empty()
         st.session_state.spinner_placeholder.markdown(f"*{st.session_state.spinner_status}*")
-        # User message handling
-        user_message = {"role": "user", "content": prompt}
-        st.session_state.chat_history.append(user_message)
-        
-        # Display user message
-        with st.chat_message("user"):
-            st.markdown(prompt)
-        
+
+        # Only append user message if it's not from follow-on instructions
+        if not st.session_state.get('process_follow_on'):
+            user_message = {"role": "user", "content": prompt}
+            st.session_state.chat_history.append(user_message)
+            
+            # Display user message
+            with st.chat_message("user"):
+                st.markdown(prompt)
+
         # Logging
-        logging.info(f"User input: {prompt}")
+        logging.info(f"Processing {'follow-on' if st.session_state.get('process_follow_on') else 'user'} input: {prompt}")
 
         # Save chat history
         save_chat_history(st.session_state.chat_history, chat_history_path)
@@ -135,7 +143,7 @@ def main():
         # Process messages
         initial_messages = load_prompt(advisor_data, st.session_state.chat_history)
         messages = initial_messages + st.session_state.chat_history
-        #print(messages)
+
         # Extract LLM parameters
         llm_params_keys = [
             'model', 'temperature', 'max_tokens', 'top_p', 
@@ -149,9 +157,7 @@ def main():
 
         # Extract tools configuration
         tools = advisor_data.get('tools', [])
-        print(tools)
         tool_choice = advisor_data.get('tool_choice', 'auto')
-        print(tool_choice)
         
         # Prepare for assistant response
         try:
@@ -172,12 +178,16 @@ def main():
                 spinner_placeholder=spinner_placeholder,
                 **llm_params
             )
-            #print(tools)
+
         except Exception as e:
             # Error handling
             st.error(f"An error occurred: {e}")
             logging.error(f"LLM Response Error: {e}")
         
+        # Clear process_follow_on flag if it was set
+        if st.session_state.get('process_follow_on'):
+            del st.session_state.process_follow_on
+            
         # Rerun to refresh the page
         st.rerun()
 

@@ -6,7 +6,6 @@ import glob
 import json
 from datetime import datetime
 import frontmatter
-from datetime import datetime
 from typing import Dict, List, Any
 
 def get_full_path(file_path):
@@ -19,6 +18,7 @@ def get_full_path(file_path):
     Returns:
         str: Absolute file path
     """
+    # Join the current working directory with the relative file path to get the absolute path
     return os.path.join(os.getcwd(), file_path)
 
 def include_directory_content(match, depth=5, file_delimiter=None):
@@ -38,33 +38,39 @@ def include_directory_content(match, depth=5, file_delimiter=None):
     Returns:
         str: Concatenated file contents or error message
     """
+    # Check if the maximum depth has been reached
     if depth <= 0:
         return "[ERROR: Maximum inclusion depth reached]"
     
+    # Extract and convert the directory pattern to an absolute path
     dir_pattern = match.group(1).strip()
     full_dir_pattern = get_full_path(dir_pattern)
     
     try:
-        # Find all files matching the pattern
+        # Find all files matching the directory pattern
         matching_files = glob.glob(full_dir_pattern)
         if not matching_files:
             return f"[ERROR: No files found matching {dir_pattern}]"
         
         contents = []
+        # Iterate over each matching file
         for file_path in matching_files:
+            # Read the content of the file
             with open(file_path, 'r') as f:
                 content = f.read()
             # Process any nested inclusions in the file content
             content = process_inclusions(content, depth - 1, file_delimiter)
             
-            # Optionally add file delimiter
+            # Optionally add a file delimiter before the content
             if file_delimiter is not None:
                 contents.append(f"{file_delimiter.format(filename=os.path.basename(file_path))}\n{content}")
             else:
                 contents.append(content)
         
+        # Join all contents into a single string separated by newlines
         return "\n".join(contents)
     except Exception as e:
+        # Return an error message if an exception occurs
         return f"[ERROR: Failed to process directory {dir_pattern}: {str(e)}]"
 
 def include_file_content(match, depth=5):
@@ -78,16 +84,21 @@ def include_file_content(match, depth=5):
     Returns:
         str: File contents or error message
     """
+    # Check if the maximum depth has been reached
     if depth <= 0:
         return "[ERROR: Maximum inclusion depth reached]"
     
+    # Extract and convert the file path to an absolute path
     file_to_include = match.group(1).strip()
     full_file_path = get_full_path(file_to_include)
     try:
+        # Read the content of the file
         with open(full_file_path, 'r') as f:
             content = f.read()
+        # Process any nested inclusions in the file content
         return process_inclusions(content, depth - 1)
     except FileNotFoundError:
+        # Return an error message if the file is not found
         return f"[ERROR: File {file_to_include} not found]"
 
 def get_current_datetime(match):
@@ -100,10 +111,13 @@ def get_current_datetime(match):
     Returns:
         str: Formatted current datetime or error message
     """
+    # Extract the format string from the match object, default to "%Y-%m-%d %H:%M:%S" if not provided
     format_string = match.group(1).strip() if match.group(1) else "%Y-%m-%d %H:%M:%S"
     try:
+        # Return the current datetime formatted according to the format string
         return datetime.now().strftime(format_string)
     except Exception as e:
+        # Return an error message if the format string is invalid
         return f"[ERROR: Invalid datetime format: {format_string}]"
 
 def process_inclusions(content, depth, file_delimiter=None):
@@ -123,8 +137,11 @@ def process_inclusions(content, depth, file_delimiter=None):
     Returns:
         str: Processed content with inclusions resolved
     """
+    # Replace datetime placeholders with the current datetime
     content = re.sub(r'<\$datetime:(.*?)\$>', get_current_datetime, content)
+    # Replace directory inclusion placeholders with the directory content
     content = re.sub(r'<\$dir:(.*?)\$>', lambda m: include_directory_content(m, depth, file_delimiter), content)
+    # Replace file inclusion placeholders with the file content
     content = re.sub(r'<\$(.*?)\$>', lambda m: include_file_content(m, depth), content)
     return content
 
@@ -144,12 +161,12 @@ def parse_markdown_messages(content: str) -> List[Dict[str, Any]]:
     Returns:
         List[Dict[str, Any]]: Parsed messages with roles and content
     """
-    # Split content by ::role:: markers
+    # Split the content by role markers
     message_pattern = r'\n::([\w-]+)::\n'
     message_blocks = re.split(message_pattern, content.strip())
     messages = []
     
-    # First block is always treated as system message if it has content
+    # If the first block has content, treat it as a system message
     if message_blocks[0].strip():
         messages.append({
             "role": "system",
@@ -157,7 +174,7 @@ def parse_markdown_messages(content: str) -> List[Dict[str, Any]]:
         })
         message_blocks = message_blocks[1:]
     
-    # Process remaining pairs of role and content
+    # Process each pair of role and content
     for i in range(0, len(message_blocks), 2):
         if i + 1 >= len(message_blocks):
             break
@@ -167,19 +184,22 @@ def parse_markdown_messages(content: str) -> List[Dict[str, Any]]:
         
         message = {"role": role}
         
-        # Look for metadata in markdown blockquote format
+        # Look for metadata in blockquote format
         metadata_pattern = r'^>\s*(.+?)\s*\n\n'
         metadata_match = re.match(metadata_pattern, content, re.DOTALL)
         
         if metadata_match:
             metadata_lines = metadata_match.group(1).split('\n')
             metadata = {}
+            # Parse each line of metadata
             for line in metadata_lines:
                 if ':' in line:
                     key, value = line.split(':', 1)
                     metadata[key.strip()] = value.strip()
             
+            # Update the message with the parsed metadata
             message.update(metadata)
+            # Remove the metadata from the content
             content = content[metadata_match.end():].strip()
         
         # Process any file inclusions in the content
@@ -205,29 +225,32 @@ def load_advisor_data(selected_advisor: str) -> Dict[str, Any]:
     Raises:
         FileNotFoundError: If no advisor file is found
     """
+    # Convert spaces to underscores in the advisor name to match file names
     base_name = selected_advisor.replace(' ', '_')
     advisors_dir = "advisors"
     
-    # Try markdown first
+    # Try to load the advisor configuration from a Markdown file
     md_path = os.path.join(advisors_dir, f"{base_name}.md")
     if os.path.exists(md_path):
         with open(md_path, 'r') as advisor_file:
             post = frontmatter.load(advisor_file)
+            # Return the metadata and parsed messages
             return {
                 **post.metadata,
                 "messages": parse_markdown_messages(post.content)
             }
     
-    # Fall back to JSON
+    # Fallback to loading the advisor configuration from a JSON file
     json_path = os.path.join(advisors_dir, f"{base_name}.json")
     if os.path.exists(json_path):
         with open(json_path, 'r') as advisor_file:
             advisor_data = json.load(advisor_file)
-            # Process any file inclusions in message content
+            # Process any file inclusions in the message content
             for message in advisor_data["messages"]:
                 message["content"] = process_inclusions(message["content"], depth=5)
             return advisor_data
             
+    # Raise an error if no advisor file is found
     raise FileNotFoundError(f"No advisor file found for {selected_advisor}")
 
 def load_prompt(advisor_data: Dict[str, Any], conversation_history: List[Dict[str, str]], 
@@ -248,10 +271,12 @@ def load_prompt(advisor_data: Dict[str, Any], conversation_history: List[Dict[st
     Returns:
         List[Dict[str, str]]: Processed messages ready for LLM
     """
+    # Convert the conversation history to a string
     conversation_history_str = "\n".join([f"{msg['role']}: {msg['content']}" 
                                         for msg in conversation_history])
 
     messages = advisor_data["messages"]
+    # Replace the conversation history placeholder in each message
     for message in messages:
         if '<$conversation_history$>' in message["content"]:
             message["content"] = message["content"].replace(
@@ -271,8 +296,10 @@ def get_available_advisors() -> List[str]:
         List[str]: Names of available advisors
     """
     advisors_dir = "advisors"
+    # List all files in the advisors directory that end with .json or .md
     advisor_files = [
         f for f in os.listdir(advisors_dir) 
         if f.endswith(('.json', '.md'))
     ]
+    # Convert filenames to advisor names by replacing underscores with spaces
     return [os.path.splitext(f)[0].replace('_', ' ') for f in advisor_files]

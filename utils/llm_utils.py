@@ -2,63 +2,17 @@
 
 import json
 import logging
+from typing import Dict, Any, List, Optional, Union, Tuple
 import streamlit as st
+from openai.types.chat import ChatCompletion
 from utils.tool_utils import execute_tool, TOOL_METADATA_REGISTRY
 from utils.chat_utils import save_chat_history
-from typing import Dict, Any
 
+# Configure logging
+LOGGING_ENABLED = True
 
-def update_spinner_status(message):
-    """
-    Update the spinner status message dynamically
-    
-    Args:
-        message (str): Status message to display
-    
-    Purpose:
-    - Provides flexible mechanism for updating UI spinner status
-    - Handles multiple fallback methods for status updates
-    - Ensures visibility of current processing state
-    """
-    try:
-        # Check if there's an active spinner in session state or Streamlit
-        if hasattr(st.session_state, 'active_spinner'):
-            try:
-                # Attempt to update the spinner directly
-                st.session_state.active_spinner.text = message
-                return
-            except Exception:
-                pass
-        
-        # Fallback to session state storage
-        st.session_state.spinner_status = message
-        
-        # Optional fallback: use placeholder if available
-        if hasattr(st.session_state, 'spinner_placeholder'):
-            try:
-                st.session_state.spinner_placeholder.markdown(f"*{message}*")
-            except Exception:
-                pass
-        
-        # Console debug
-        print(f"Spinner Status: {message}")
-    
-    except Exception as e:
-        print(f"Error updating spinner status: {e}")
-
-
-def get_default_llm_params():
-    """
-    Provides default parameters for LLM interactions
-    
-    Returns:
-    - dict: Standardized configuration for language model API calls
-    
-    Key Considerations:
-    - Uses gpt-4o-mini as default model
-    - Enables streaming for real-time response rendering
-    - Configures generation parameters like temperature and token limits
-    """
+def get_default_llm_params() -> Dict[str, Any]:
+    """Default parameters for LLM API calls"""
     return {
         'model': 'gpt-4o-mini',
         'temperature': 1.0,
@@ -66,104 +20,251 @@ def get_default_llm_params():
         'top_p': 1,
         'frequency_penalty': 0,
         'presence_penalty': 0,
-        'stream': True  # Renamed 'stream_mode' to 'stream' to match API parameter
+        'stream': True
     }
 
-def get_llm_response(
-    client,
-    messages,
-    initial_messages,
-    chat_history,
-    chat_history_path,
-    advisor_data,
-    selected_advisor,
-    tools=[],
-    tool_choice='auto',
-    **overrides
-):
-    """
-    Comprehensive LLM response generation with advanced features
+def prepare_api_params(messages: List[Dict[str, Any]], tools: List[str], tool_choice: str, **overrides) -> Dict[str, Any]:
+    """Prepare API parameters for LLM call"""
+    api_params = {**get_default_llm_params()}
     
-    Key Capabilities:
-    - Streaming response generation
-    - Dynamic tool calling and execution
-    - Real-time UI status updates
-    - Error handling and logging
+    # Add overrides
+    for key, value in overrides.items():
+        if key not in ['spinner_placeholder', 'status_placeholder']:
+            api_params[key] = value
     
-    Flow:
-    1. Prepare API parameters
-    2. Resolve and validate tools
-    3. Stream initial LLM response
-    4. Handle potential tool calls
-    5. Execute tools if required
-    6. Generate final response
-    7. Save chat history
+    # Add messages and tools
+    api_params['messages'] = messages
+    if tools:
+        api_params['tools'] = resolve_tools(tools)
+        api_params['tool_choice'] = tool_choice
     
-    Args:
-        client: LLM API client
-        messages: Current conversation messages
-        initial_messages: Initial context messages
-        chat_history: Running conversation history
-        chat_history_path: File path to save chat history
-        advisor_data: Metadata about current advisor
-        selected_advisor: Name of current advisor
-        tools: List of tools to potentially use
-        tool_choice: Strategy for tool selection
-        **overrides: Additional parameter overrides
+    if LOGGING_ENABLED:
+        logging.info(f"Prepared API parameters: {api_params}")
     
-    Returns:
-        Updated chat history
-    """
-    try:
-        with st.chat_message("assistant"):
-            # Create a placeholder for dynamic status updates
-            status_placeholder = st.empty()
+    return api_params
+
+def process_tool_call(
+    delta: Any, 
+    accumulated_args: str
+) -> Tuple[Optional[str], Optional[str], Optional[Dict[str, Any]], str]:
+    """Process a tool call from the LLM response"""
+    tool_name = None
+    tool_id = None
+    function_data = None
+    
+    if hasattr(delta, 'tool_calls') and delta.tool_calls:
+        tool_call = delta.tool_calls[0]
+        
+        if hasattr(tool_call.function, 'name') and tool_call.function.name:
+            tool_name = tool_call.function.name
+            if LOGGING_ENABLED:
+                logging.info(f"Tool name detected: {tool_name}")
+        
+        if hasattr(tool_call, 'id'):
+            tool_id = tool_call.id
+        
+        if hasattr(tool_call.function, 'arguments') and tool_call.function.arguments:
+            accumulated_args += tool_call.function.arguments
+            try:
+                function_data = json.loads(accumulated_args)
+                if LOGGING_ENABLED:
+                    logging.info(f"Complete tool call data: {function_data}")
+            except json.JSONDecodeError:
+                if LOGGING_ENABLED:
+                    logging.debug(f"Partial arguments received: {accumulated_args}")
+    
+    return tool_name, tool_id, function_data, accumulated_args
+
+def handle_tool_execution(
+    tool_name: str,
+    function_data: Dict[str, Any],
+    client: Any,
+    chat_history: List[Dict[str, Any]],
+    chat_history_path: str,
+    response_placeholder: Any,
+    status_placeholder: Any
+) -> None:
+    """Handle tool execution and response processing"""
+    if LOGGING_ENABLED:
+        logging.info(f"Executing tool '{tool_name}' with arguments: {function_data}")
+    
+    status_placeholder.markdown(f"*🔧 Executing tool: {tool_name}*")
+    
+    tool_response_data = execute_tool(
+        tool_name, 
+        function_data,
+        llm_client=client
+    )
+    
+    if LOGGING_ENABLED:
+        logging.info(f"Tool response received: {tool_response_data}")
+    
+    if tool_response_data:
+        if tool_response_data.get('direct_stream', False):
+            stream = tool_response_data.get('result', '')
+            status_placeholder.empty()
             
-            # Create a container for the spinner and response
+            follow_on = tool_response_data.get('follow_on_instructions')
+            
+            process_direct_stream(
+                stream,
+                chat_history,
+                tool_name,
+                response_placeholder,
+                chat_history_path,
+                follow_on
+            )
+            
+            if follow_on:
+                if LOGGING_ENABLED:
+                    logging.info("Triggering rerun for follow-on instructions")
+                st.rerun()
+
+def resolve_tools(tools: List[str]) -> List[Dict[str, Any]]:
+    """Resolve tool names to their metadata"""
+    resolved_tools = []
+    for tool_name in tools:
+        metadata = TOOL_METADATA_REGISTRY.get(tool_name)
+        if metadata:
+            resolved_tools.append(metadata)
+        else:
+            logging.warning(f"Tool '{tool_name}' metadata not found. Skipping tool.")
+    return resolved_tools
+
+def handle_tool_call(delta: Any, tool_call_args: str) -> Optional[Dict[str, Any]]:
+    """Handle tool calls from LLM response"""
+    if not hasattr(delta, 'tool_calls') or not delta.tool_calls:
+        return None
+    
+    tool_call = delta.tool_calls[0]
+    
+    if hasattr(tool_call, 'id') and tool_call.id:
+        st.session_state.last_tool_call_id = tool_call.id
+    
+    if hasattr(tool_call.function, 'name') and tool_call.function.name:
+        st.session_state.last_tool_name = tool_call.function.name
+    
+    if hasattr(tool_call.function, 'arguments') and tool_call.function.arguments:
+        try:
+            # Try to parse the complete arguments
+            return json.loads(tool_call.function.arguments)
+        except json.JSONDecodeError:
+            # If parsing fails, accumulate partial arguments
+            return None
+    
+    return None
+
+def process_direct_stream(
+    stream: Any,
+    chat_history: List[Dict[str, Any]],
+    tool_name: str,
+    response_placeholder: Any,
+    chat_history_path: str,
+    follow_on_instructions: Optional[Union[str, List[str]]] = None
+) -> str:
+    """Process direct stream response from tool and handle follow-on instructions"""
+    full_response = ""
+    for chunk in stream:
+        if not chunk.choices:
+            continue
+        
+        delta = chunk.choices[0].delta
+        chunk_text = delta.content or ""
+        full_response += chunk_text
+        response_placeholder.markdown(full_response)
+    
+    if full_response.strip():
+        chat_history.append({
+            "role": "assistant",
+            "content": full_response,
+            "tool_name": tool_name
+        })
+    
+    # Handle follow-on instructions
+    if follow_on_instructions:
+        if isinstance(follow_on_instructions, str):
+            follow_on_instructions = [follow_on_instructions]
+        
+        for instruction in follow_on_instructions:
+            if LOGGING_ENABLED:
+                logging.info(f"Adding follow-on instruction to chat history: {instruction}")
+            chat_history.append({"role": "user", "content": instruction})
+            save_chat_history(chat_history, chat_history_path)
+            
+            # Set a session state flag to process the follow-on instruction
+            st.session_state.process_follow_on = True
+            st.session_state.follow_on_instruction = instruction
+    
+    return full_response
+
+def process_follow_on_instructions(
+    client: Any,
+    messages: List[Dict[str, Any]],
+    initial_messages: List[Dict[str, Any]],
+    chat_history: List[Dict[str, Any]],
+    chat_history_path: str,
+    advisor_data: Dict[str, Any],
+    selected_advisor: str,
+    tools: List[str],
+    tool_choice: str,
+    follow_on_instructions: Union[str, List[str]],
+    **overrides
+) -> None:
+    """Process follow-on instructions after tool execution"""
+    if isinstance(follow_on_instructions, str):
+        follow_on_instructions = [follow_on_instructions]
+    
+    for instruction in follow_on_instructions:
+        # Add instruction to chat history
+        chat_history.append({"role": "user", "content": instruction})
+        save_chat_history(chat_history, chat_history_path)
+        
+        # Process the follow-on instruction
+        st.rerun()
+
+def get_llm_response(
+    client: Any,
+    messages: List[Dict[str, Any]],
+    initial_messages: List[Dict[str, Any]],
+    chat_history: List[Dict[str, Any]],
+    chat_history_path: str,
+    advisor_data: Dict[str, Any],
+    selected_advisor: str,
+    tools: List[str] = [],
+    tool_choice: str = 'auto',
+    **overrides
+) -> List[Dict[str, Any]]:
+    """Main function to handle LLM responses and tool execution"""
+    try:
+        # Handle follow-on instructions if present
+        process_follow_on = st.session_state.get('process_follow_on', False)
+        follow_on_instruction = st.session_state.get('follow_on_instruction')
+        
+        if process_follow_on and follow_on_instruction:
+            if LOGGING_ENABLED:
+                logging.info(f"Processing follow-on instruction: {follow_on_instruction}")
+            st.session_state.process_follow_on = False
+            messages = initial_messages + chat_history
+    
+        with st.chat_message("assistant"):
+            status_placeholder = st.empty()
+            response_placeholder = st.empty()
+            
             with st.spinner(f"{selected_advisor} is thinking..."):
-                # Get default parameters
-                default_params = get_default_llm_params()
-                
-                # Merge overrides from advisor_data but exclude non-API parameters
-                api_params = {**default_params}
-                for key, value in overrides.items():
-                    if key not in ['spinner_placeholder', 'status_placeholder']:  # Exclude UI elements
-                        api_params[key] = value
-                
-                # Remove 'tools' and 'tool_choice' from api_params
-                api_params.pop('tools', None)
-                api_params.pop('tool_choice', None)
-                
-                # Resolve tool names to their metadata
-                resolved_tools = []
-                for tool_name in tools:
-                    metadata = TOOL_METADATA_REGISTRY.get(tool_name)
-                    if metadata:
-                        resolved_tools.append(metadata)
-                    else:
-                        logging.warning(f"Tool '{tool_name}' metadata not found. Skipping tool.")
-                print(f"The tools added are: {resolved_tools}")
-                
-                # Initialize variables for tool call tracking
-                function_call_data = None
-                st.session_state.tool_call_args = ""
-                st.session_state.last_tool_call_id = ""
-                st.session_state.last_tool_name = ""
-                
-                response_placeholder = st.empty()
-                full_response = ""
+                # Prepare API parameters
+                api_params = prepare_api_params(messages, tools, tool_choice, **overrides)
                 
                 try:
-                    # Set messages in API parameters
-                    api_params['messages'] = messages
+                    # Initialize tracking variables
+                    accumulated_args = ""
+                    current_tool_name = None
+                    function_call_data = None
                     
-                    # Add resolved tools to API parameters if applicable
-                    if resolved_tools:
-                        api_params['tools'] = resolved_tools
-                        api_params['tool_choice'] = tool_choice
-                    
-                    # Stream the response
+                    # Get LLM response stream
                     stream = client.chat.completions.create(**api_params)
+                    full_response = ""
+                    
+                    # Process stream
                     for chunk in stream:
                         if not chunk.choices:
                             continue
@@ -171,138 +272,44 @@ def get_llm_response(
                         delta = chunk.choices[0].delta
                         
                         # Handle tool calls
-                        if hasattr(delta, 'tool_calls') and delta.tool_calls:
-                            tool_call = delta.tool_calls[0]
-                            
-                            if hasattr(tool_call, 'id') and tool_call.id:
-                                st.session_state.last_tool_call_id = tool_call.id
-                            
-                            if hasattr(tool_call.function, 'name') and tool_call.function.name:
-                                st.session_state.last_tool_name = tool_call.function.name
-                                status_placeholder.markdown(f"*🔧 Using tool: {tool_call.function.name}*")
-                            
-                            if tool_call.function.arguments:
-                                st.session_state.tool_call_args += tool_call.function.arguments
-                            
-                            try:
-                                function_call_data = json.loads(st.session_state.tool_call_args)
-                                st.session_state.tool_call_args = ""
-                            except json.JSONDecodeError:
-                                continue
+                        tool_name, tool_id, function_data, accumulated_args = process_tool_call(
+                            delta, accumulated_args)
                         
-                        # Handle normal content streaming
-                        chunk_text = delta.content or ""
-                        full_response += chunk_text
-                        response_placeholder.markdown(full_response)
-                    
-                    # Process completed response
-                    if full_response.strip():
-                        chat_history.append({"role": "assistant", "content": full_response})
-                    
-                    # Execute tool calls if detected
-                    if function_call_data:
-                        tool_name = st.session_state.last_tool_name
-                        status_placeholder.markdown(f"*🔧 Executing tool: {tool_name}*")
+                        if tool_name:
+                            current_tool_name = tool_name
+                        if function_data:
+                            function_call_data = function_data
                         
-                        # Execute the specific tool with provided arguments
-                        tool_response_data = execute_tool(tool_name, function_call_data, llm_client=client)
-
-                        # Check if direct streaming is enabled for tool response
-                        if tool_response_data.get('direct_stream', False):
-                            # Get the stream from the tool response
-                            stream = tool_response_data.get('result', '')
-                            
-                            # Clear status placeholder
-                            status_placeholder.empty()
-                            
-                            # Create a new placeholder for streaming response
-                            response_placeholder = st.empty()
-                            full_response = ""
-                            
-                            # Handle OpenAI stream
-                            for chunk in stream:
-                                if not chunk.choices:
-                                    continue
-                                
-                                delta = chunk.choices[0].delta
-                                chunk_text = delta.content or ""
-                                full_response += chunk_text
-                                response_placeholder.markdown(full_response)
-                            
-                            # Add to chat history as an assistant message
-                            chat_history.append({
-                                "role": "assistant", 
-                                "content": full_response,
-                                "tool_name": tool_name
-                            })
-                            
-                            # Save chat history
-                            save_chat_history(chat_history, chat_history_path)
-                            return chat_history
-
-                        # Handle standard tool response processing
-                        if tool_response_data:
-                            # Add tool messages to chat history
-                            assistant_tool_message = {
-                                "role": "assistant",
-                                "content": "null",
-                                "tool_calls": [{
-                                    "id": st.session_state.last_tool_call_id,
-                                    "type": "function",
-                                    "function": {
-                                        "name": tool_name,
-                                        "arguments": json.dumps(function_call_data)
-                                    }
-                                }]
-                            }
-                            chat_history.append(assistant_tool_message)
-                            
-                            tool_message = {
-                                "role": "tool",
-                                "name": tool_name,
-                                "tool_call_id": st.session_state.last_tool_call_id,
-                                "content": json.dumps(tool_response_data, indent=2)
-                            }
-                            chat_history.append(tool_message)
-                            
-                            # Process tool response
-                            status_placeholder.markdown("*💭 Processing tool response...*")
-                            
-                            # Reconstruct full history with tool context
-                            full_history = initial_messages + chat_history
-                            api_params['messages'] = full_history
-                            
-                            # Generate final response based on tool results
-                            final_stream = client.chat.completions.create(**api_params)
-                            final_response_placeholder = st.empty()
-                            final_response_text = ""
-                            
-                            # Stream final response
-                            for chunk in final_stream:
-                                delta = chunk.choices[0].delta
-                                if hasattr(delta, "content") and delta.content:
-                                    chunk_text = delta.content
-                                    final_response_text += chunk_text
-                                    final_response_placeholder.markdown(final_response_text)
-                            
-                            # Add final response to chat history
-                            if final_response_text.strip():
-                                chat_history.append({"role": "assistant", "content": final_response_text})
+                        # Handle content
+                        if hasattr(delta, 'content') and delta.content:
+                            chunk_text = delta.content
+                            full_response += chunk_text
+                            response_placeholder.markdown(full_response)
+                    
+                    # Execute tool if we have complete data
+                    if current_tool_name and function_call_data:
+                        handle_tool_execution(
+                            current_tool_name,
+                            function_call_data,
+                            client,
+                            chat_history,
+                            chat_history_path,
+                            response_placeholder,
+                            status_placeholder
+                        )
                 
                 except Exception as e:
-                    # Comprehensive error handling for LLM response generation
                     st.error(f"An error occurred: {e}")
                     logging.error(f"LLM Response Error: {e}")
+                    logging.exception(e)
                 
                 finally:
-                    # Clean up status placeholder
                     status_placeholder.empty()
     
     except Exception as main_e:
-        # Top-level error handling for unexpected issues
         st.error(f"An unexpected error occurred: {main_e}")
         logging.error(f"Unexpected error in get_llm_response: {main_e}")
-
-    # Save chat history
+        logging.exception(main_e)
+    
     save_chat_history(chat_history, chat_history_path)
     return chat_history

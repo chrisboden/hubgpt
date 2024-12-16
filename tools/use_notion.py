@@ -2,6 +2,7 @@
 
 from utils.notion_utils import NotionClient
 from typing import Optional, Dict, Any
+from utils.ui_utils import update_spinner_status
 
 def execute(llm_client=None, operation: str = None, page_id: str = None, title: str = None, content: str = None) -> Dict[str, Any]:
     """
@@ -18,7 +19,7 @@ def execute(llm_client=None, operation: str = None, page_id: str = None, title: 
     - dict: A dictionary with the operation results and relevant information
     """
     try:
-        print("Using the Notion tool")
+        update_spinner_status("Using the Notion tool")
         notion = NotionClient()
         result = {
             "operation": operation,
@@ -30,6 +31,7 @@ def execute(llm_client=None, operation: str = None, page_id: str = None, title: 
             if not all([page_id, title, content]):
                 raise ValueError("page_id, title, and content are required for create_page operation")
             
+            update_spinner_status("Creating new page in Notion...")
             response = notion.create_page(
                 parent_id=page_id,
                 title=title,
@@ -40,17 +42,20 @@ def execute(llm_client=None, operation: str = None, page_id: str = None, title: 
                 "message": f"Successfully created page: {title}",
                 "page_data": response
             })
+            update_spinner_status(f"Successfully created page: {title}")
 
         elif operation == "fetch_content":
             if not page_id:
                 raise ValueError("page_id is required for fetch_content operation")
             
+            update_spinner_status("Fetching content from Notion page...")
             content = notion.get_page_content(page_id)
             result.update({
                 "success": True,
                 "message": "Successfully fetched page content",
                 "content": content
             })
+            update_spinner_status("Successfully fetched page content")
 
         else:
             raise ValueError(f"Unsupported operation: {operation}")
@@ -58,6 +63,7 @@ def execute(llm_client=None, operation: str = None, page_id: str = None, title: 
         return result
 
     except Exception as e:
+        update_spinner_status(f"Error: {str(e)}")
         return {
             "operation": operation,
             "success": False,
@@ -69,29 +75,35 @@ TOOL_METADATA = {
     "type": "function",
     "function": {
         "name": "use_notion",
-        "description": "This tool enables you to create pages in Notion using content you generate. It also allows you to fetch page content from Notion.",
+        "description": "This tool allows you to interact with Notion by either creating new pages or fetching existing page content. Use 'create_page' to add new content and 'fetch_content' to retrieve existing content.",
         "parameters": {
             "type": "object",
             "properties": {
                 "operation": {
                     "type": "string",
-                    "description": "The operation is the action you wish to perform with Notion to either fetch Notion page content or create page content",
+                    "description": "Specify the action to perform: 'create_page' to add a new page or 'fetch_content' to retrieve content from an existing page.",
                     "enum": ["create_page", "fetch_content"]
                 },
                 "page_id": {
                     "type": "string",
-                    "description": "The Notion page ID identifies the page that is either being fetched or having content appended to it (parent ID for creation, target ID for fetching)"
+                    "description": "The unique identifier for the Notion page. Required for both creating and fetching content. Use the default if not specified: '6aa23cc62c2e4a3cbda8d8e7cfc9b5ca' for notes, '15ecd0ff08558020a58cd4b48a9b4d34' for advice.",
+                    "enum": [
+                        "15ecd0ff08558020a58cd4b48a9b4d34", "6aa23cc62c2e4a3cbda8d8e7cfc9b5ca"
+                    ],
+                    "default": "15ecd0ff08558020a58cd4b48a9b4d34"
                 },
                 "title": {
                     "type": "string",
-                    "description": "The title for the new page you are creating (only for create_page operation)"
+                    "description": "The title for the new page. Required when 'operation' is 'create_page'. Generate a title based on the content to be added."
                 },
                 "content": {
                     "type": "string",
-                    "description": "The markdown content to be added for the new page (only for create_page operation)"
+                    "description": "The markdown content for the new page. Required when 'operation' is 'create_page'. Create content based on the user's instructions."
                 }
             },
-            "required": ["operation", "page_id"]
+            "required": ["operation", "page_id"],
+            "additionalProperties": False
         }
-    }
+    },
+    "direct_stream": True
 }

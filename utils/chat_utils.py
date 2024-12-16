@@ -33,6 +33,10 @@ def initialize_session_state():
         st.session_state.last_tool_name = ""
     if 'save_success' not in st.session_state:
         st.session_state.save_success = False
+    if 'follow_on_instruction' not in st.session_state:
+        st.session_state.follow_on_instruction = None
+    if 'process_follow_on' not in st.session_state:
+        st.session_state.process_follow_on = False
 
 def load_chat_history(chat_history_path):
     """

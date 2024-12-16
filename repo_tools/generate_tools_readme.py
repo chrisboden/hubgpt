@@ -37,7 +37,7 @@ def import_module_from_path(file_path):
 
 def get_intro_text():
     """Read intro text from template file if it exists."""
-    template_path = os.path.join("repo_tools", "generate_tools_readme_intro.md")
+    template_path = os.path.join("repo_tools", "tools_readme_intro.md")
     try:
         if os.path.exists(template_path):
             with open(template_path, 'r') as f:
@@ -51,7 +51,7 @@ def get_intro_text():
     
 def get_howto_text():
     """Read intro text from template file if it exists."""
-    template_path = os.path.join("repo_tools", "generate_tools_readme_howto.md")
+    template_path = os.path.join("repo_tools", "tools_readme_howto.md")
     try:
         if os.path.exists(template_path):
             with open(template_path, 'r') as f:

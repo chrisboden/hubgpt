@@ -9,18 +9,18 @@ import notepads
 #import teams
 
 # Remove any existing handlers to prevent conflicts
-#for handler in logging.root.handlers[:]:
-    #logging.root.removeHandler(handler)
+for handler in logging.root.handlers[:]:
+    logging.root.removeHandler(handler)
 
 # Configure logging
-#logging.basicConfig(
-    #level=logging.INFO,
-    #format='%(asctime)s %(levelname)s:%(message)s',
-    #handlers=[
-        #logging.FileHandler("logs/app.log"),
-        #logging.StreamHandler()
-    #]
-#)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(levelname)s:%(message)s',
+    handlers=[
+        logging.FileHandler("logs/app.log"),
+        logging.StreamHandler()
+    ]
+)
 
 # Load environment variables
 load_dotenv()

@@ -6,7 +6,7 @@ from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
 from utils.search_utils import perform_search
 from utils.scrape_utils import ResilientScraper
-from utils.llm_utils import update_spinner_status
+from utils.ui_utils import update_spinner_status
 import os
 
 
