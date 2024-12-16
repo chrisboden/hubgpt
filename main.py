@@ -8,6 +8,15 @@ import advisors
 import notepads
 #import teams
 
+# Add the project root to PYTHONPATH
+project_root = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(project_root)
+
+# Ensure the logs directory exists
+logs_dir = os.path.join(project_root, "logs")
+if not os.path.exists(logs_dir):
+    os.makedirs(logs_dir)
+
 # Remove any existing handlers to prevent conflicts
 for handler in logging.root.handlers[:]:
     logging.root.removeHandler(handler)
@@ -17,7 +26,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(levelname)s:%(message)s',
     handlers=[
-        logging.FileHandler("logs/app.log"),
+        logging.FileHandler(os.path.join(logs_dir, "app.log")),
         logging.StreamHandler()
     ]
 )
