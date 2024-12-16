@@ -39,6 +39,19 @@ def generate_requirements():
         root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         print(colored(f"Scanning directory: {root_dir}", 'blue'))
 
+        # Get list of our own Python modules to exclude
+        local_modules = {
+            os.path.splitext(f)[0] 
+            for f in os.listdir(root_dir) 
+            if os.path.isfile(os.path.join(root_dir, f)) and f.endswith('.py')
+        }
+        local_modules.update({
+            d for d in os.listdir(root_dir)
+            if os.path.isdir(os.path.join(root_dir, d)) and 
+            os.path.exists(os.path.join(root_dir, d, '__init__.py'))
+        })
+        print(colored(f"Excluding local modules: {', '.join(local_modules)}", 'blue'))
+
         # Read .gitignore patterns
         gitignore_path = os.path.join(root_dir, '.gitignore')
         if os.path.exists(gitignore_path):
@@ -114,20 +127,25 @@ def generate_requirements():
                 'google': 'google-generativeai',
                 'bs4': 'beautifulsoup4',
                 'dotenv': 'python-dotenv',
+                'genai': 'google-generativeai',
                 # Add more mappings as needed
             }
             
-            # Add mapped package names
+            # Add mapped package names and filter out local modules
             for imp in all_imports:
                 if imp in package_mappings:
                     packages.add(package_mappings[imp])
-                else:
+                elif imp not in local_modules:  # Only add if not a local module
                     packages.add(imp)
             
             # Filter out standard library modules
-            stdlib_modules = set(['os', 'sys', 'json', 'datetime', 'time', 'uuid', 'shutil', 
-                                'tempfile', 'pathlib', 'mimetypes', 'ast'])
-            packages = {pkg for pkg in packages if pkg not in stdlib_modules}
+            stdlib_modules = set([
+                'os', 'sys', 'json', 'datetime', 'time', 'uuid', 'shutil', 
+                'tempfile', 'pathlib', 'mimetypes', 'ast', 're', 'typing',
+                'traceback', 'subprocess', 'inspect', 'logging', 'importlib',
+                'glob', 'urllib'
+            ])
+            packages = {pkg for pkg in packages if pkg not in stdlib_modules and pkg not in local_modules}
             
             # Write final requirements.txt
             requirements_path = os.path.join(root_dir, 'requirements.txt')
