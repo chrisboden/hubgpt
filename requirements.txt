@@ -25,6 +25,5 @@ tavily-python
 termcolor
 urllib3
 utils
-wikipediaapi
 youtube-transcript-api
 yt-dlp

@@ -129,6 +129,7 @@ def generate_requirements():
                 'dotenv': 'python-dotenv',
                 'tavily': 'tavily-python',
                 'genai': 'google-generativeai',
+                'wikipediaapi': 'Wikipedia-API',
                 'dateutil': 'python-dateutil',  # Map dateutil to python-dateutil
                 # Add more mappings as needed
             }
