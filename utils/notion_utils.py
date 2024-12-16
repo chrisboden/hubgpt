@@ -312,15 +312,38 @@ class NotionClient:
 
                 # Handle regular paragraphs
                 # Create a dictionary to represent the paragraph block
+
+                def process_text_with_bold(text):
+                    # Split text by bold markers
+                    parts = re.split(r'(\*\*.*?\*\*)', text)
+                    rich_text = []
+                    
+                    for part in parts:
+                        if part.startswith('**') and part.endswith('**'):
+                            # Handle bold text
+                            content = part[2:-2]  # Remove ** markers
+                            rich_text.append({
+                                "type": "text",
+                                "text": {"content": content},
+                                "annotations": {"bold": True}
+                            })
+                        elif part.strip():
+                            # Handle regular text
+                            rich_text.append({
+                                "type": "text",
+                                "text": {"content": part}
+                            })
+                    
+                    return rich_text
+                
                 blocks.append({
                     "type": "paragraph",
                     "paragraph": {
-                        "rich_text": [{
-                            "type": "text",
-                            "text": {"content": line}
-                        }]
+                        "rich_text": process_text_with_bold(line)
                     }
                 })
+
+                return blocks
 
         # Return the list of Notion blocks
         return blocks

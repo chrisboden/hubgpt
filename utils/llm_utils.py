@@ -236,16 +236,6 @@ def get_llm_response(
 ) -> List[Dict[str, Any]]:
     """Main function to handle LLM responses and tool execution"""
     try:
-        # Handle follow-on instructions if present
-        process_follow_on = st.session_state.get('process_follow_on', False)
-        follow_on_instruction = st.session_state.get('follow_on_instruction')
-        
-        if process_follow_on and follow_on_instruction:
-            if LOGGING_ENABLED:
-                logging.info(f"Processing follow-on instruction: {follow_on_instruction}")
-            st.session_state.process_follow_on = False
-            messages = initial_messages + chat_history
-    
         with st.chat_message("assistant"):
             status_placeholder = st.empty()
             response_placeholder = st.empty()
@@ -259,10 +249,10 @@ def get_llm_response(
                     accumulated_args = ""
                     current_tool_name = None
                     function_call_data = None
+                    full_response = ""
                     
                     # Get LLM response stream
                     stream = client.chat.completions.create(**api_params)
-                    full_response = ""
                     
                     # Process stream
                     for chunk in stream:
@@ -285,6 +275,14 @@ def get_llm_response(
                             chunk_text = delta.content
                             full_response += chunk_text
                             response_placeholder.markdown(full_response)
+                    
+                    # Important: Add the response to chat history BEFORE executing tools
+                    if full_response.strip():
+                        chat_history.append({
+                            "role": "assistant",
+                            "content": full_response
+                        })
+                        save_chat_history(chat_history, chat_history_path)
                     
                     # Execute tool if we have complete data
                     if current_tool_name and function_call_data:
