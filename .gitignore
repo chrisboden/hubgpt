@@ -161,25 +161,35 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-# Exclude content etc files
-
-/snippets/*
+# Keep directories but ignore contents
 /advisors/chats/*
 /advisors/ideas/*
 /advisors/archive/*
 /advisors/*
+/logs/*
+/snippets/*
 /content/*
 /teams/chats/*
 /teams/archive/*
-/logs/*
 /me/*
 /notepads/*
-/old/
-/tools/tweets.json
-/tools/last_fetch_id.txt
+/data/*
 
+# Create empty .gitkeep files in these directories to preserve them
+!/advisors/chats/.gitkeep
+!/advisors/ideas/.gitkeep
+!/advisors/archive/.gitkeep
+!/advisors/.gitkeep
+!/logs/.gitkeep
+!/snippets/.gitkeep
+!/teams/chats/.gitkeep
+!/teams/archive/.gitkeep
+!/me/.gitkeep
+!/notepads/.gitkeep
+!/content/.gitkeep
+!/data/.gitkeep
 
-# Unignore specific files
+# Then keep your existing specific file exceptions
 !/me/example_aboutme.txt
 !/me/example_custom_instructions.txt
 !/me/example_tips_copywriting.txt
