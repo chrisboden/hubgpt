@@ -70,9 +70,6 @@ Additionally, you can insert the current date or time into the system prompt usi
 
 To create a new advisor, copy an existing advisor JSON file and modify it as necessary. The app assumes you are using OpenRouter to route your LLM calls.
 
-
-### Using tools
-
 ### Using Tools
 
 Tools in this framework provide powerful, modular functionality that can be leveraged by advisors and the AI assistant. Here's how to effectively use tools:
