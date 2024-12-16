@@ -6,7 +6,7 @@ This tools directory contains a collection of tools that can be used by the AI a
 
 Below is a comprehensive list of all available tools, their source files, and descriptions.
 
-## How to Create Tools for the AI Assistant Framework
+## How to Create Tools for the HubGPT Framework
 
 ### Tool Structure Guidelines
 
@@ -436,14 +436,6 @@ The code will have access to all standard Python libraries plus the agent's tool
 
 ---
 
-## get_tweets
-
-**Source File:** `get_tweets.py`
-
-**Description:** Get the latest tweets from a Twitter list
-
----
-
 ## file_delete
 
 **Source File:** `file_delete.py`
@@ -532,6 +524,14 @@ The code will have access to all standard Python libraries plus the agent's tool
 
 ---
 
+## get_tweets
+
+**Source File:** `get_tweets.py`
+
+**Description:** Get the latest tweets from a given Twitter list
+
+---
+
 ## get_website
 
 **Source File:** `get_website.py`
@@ -608,6 +608,14 @@ messages=[
     {"role": "user", "content": "Based on these search results: <$files/search_results.txt$>, please..."}
 ]
 ```
+
+---
+
+## use_brainstorm
+
+**Source File:** `use_brainstorm.py`
+
+**Description:** Generate creative ideas using various brainstorming techniques, including big_mind_mapping, reverse_brainstorming, role_storming, scamper" six_hats. starbursting
 
 ---
 

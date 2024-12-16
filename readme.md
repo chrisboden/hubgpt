@@ -70,6 +70,129 @@ Additionally, you can insert the current date or time into the system prompt usi
 
 To create a new advisor, copy an existing advisor JSON file and modify it as necessary. The app assumes you are using OpenRouter to route your LLM calls.
 
+
+### Using tools
+
+### Using Tools
+
+Tools in this framework provide powerful, modular functionality that can be leveraged by advisors and the AI assistant. Here's how to effectively use tools:
+
+#### Tool Calling Mechanism
+
+1. **Automatic Discovery**: Tools in the `tools/` directory are automatically discovered and registered.
+2. **Dynamic Execution**: Tools can be called dynamically by the AI based on the task requirements.
+3. **Flexible Parameters**: Each tool supports various input parameters defined in its metadata.
+
+#### Example Tool Assignment
+
+```json
+{
+    "model": "openai/gpt-4o-mini",
+    "tool_choice": "auto",
+    "messages": [
+        {
+            "role": "system",
+            "content": "ABOUT ME:\n\n<$me/aboutme.md$>\n\nABOUT YOU:\n\nYou are a tool-calling LLM assistant. Your goal is to carefully process each user message and determine whether you need to respond naturally or make a tool call to assist the user effectively. You provide helpful and comprehensive answers."
+        }
+    ],
+    "tools": ["get_current_weather","get_research","get_transcription", "get_hacker_news_headlines", "use_notion", "use_brainstorm"]
+}
+```
+
+#### Tool Capabilities
+
+**Available Tools**:
+
+1. `web_search`: Performs comprehensive web searches using multiple search providers
+2. `web_scrape`: Extracts and saves textual content from specified web URLs
+3. `get_news`: Retrieves up-to-date news articles on specific topics
+4. `file_read`: Reads and returns contents of specified files
+5. `file_write`: Writes content to files, supporting multiple file types
+6. `file_list`: Lists files and directories within a specified path
+7. `use_ai`: Makes advanced AI API calls with flexible message and file inclusion
+8. `get_research`: Conducts in-depth web research and synthesizes comprehensive information
+9. `get_advice`: Generates contextual advice from specified advisors
+10. `code_run`: Executes Python scripts and returns their output
+11. `code_write`: Creates or overwrites Python scripts
+12. `email_create`: Sends HTML emails via Zapier webhook
+13. `file_delete`: Removes specified files from the filesystem
+14. `get_current_weather`: Provides current weather for a given location
+15. `get_hacker_news_headlines`: Retrieves top headlines from Hacker News
+16. `get_hub_co_updates`: Fetches recent LinkedIn updates from hub companies
+17. `get_transcription`: Downloads and summarizes YouTube video captions
+18. `get_tweets`: Retrieves latest tweets from a specified Twitter list
+19. `get_website`: Finds definitive website URL for a given term
+20. `get_wikipedia`: Retrieves comprehensive Wikipedia content for a search term
+21. `handoff_to_agent`: Transfers work to another specialized agent
+22. `handoff_to_coordinator`: Returns completed work to the main coordinator
+23. `linkedin_research`: Performs in-depth LinkedIn research on people or companies
+24. `make_podcast`: Generates podcasts from raw content
+25. `use_brainstorm`: Generates creative ideas using various brainstorming techniques
+26. `use_notion`: Creates and fetches Notion pages
+
+#### Best Practices
+
+1. **Context Awareness**: Choose tools that best match the specific task
+2. **Error Handling**: Always be prepared to handle potential tool execution errors
+3. **Streaming Support**: Some tools support `direct_stream` for real-time responses
+
+#### Tool Metadata
+
+Each tool includes metadata describing its:
+- Name
+- Description
+- Required and optional parameters
+- Streaming capabilities
+
+#### Advanced Usage
+
+Tools can be used within advisor prompts, in code generation, or dynamically by the AI assistant to complete complex tasks.
+
+
+
+## Notepads
+
+## Notepads
+
+Notepads is a powerful document-based chat interface that allows you to:
+
+### Key Features
+- Create multiple independent notepads
+- Upload and analyze multiple documents per notepad
+- Maintain separate chat histories for each notepad
+- Sync files between local storage and cloud (Gemini)
+
+### How Notepads Work
+
+1. **Creating Notepads**
+   - Click "New Notepad" to create a unique workspace
+   - Each notepad gets a unique ID and can be renamed
+   - Notepads are stored in the `notepads/` directory
+
+2. **File Management**
+   - Upload documents directly into a notepad
+   - Select which files to include in your chat context
+   - Files are automatically synced with Gemini's cloud storage
+   - Supports multiple file types for comprehensive analysis
+
+3. **Chat Functionality**
+   - Maintain separate chat histories for each notepad
+   - Chat history is automatically saved
+   - Clear chat history with a single button
+   - Delete individual messages as needed
+
+4. **Document Analysis**
+   - Ask questions about uploaded documents
+   - AI uses all selected documents to provide context-aware responses
+   - Supports complex multi-document queries
+
+### Best Practices
+- Use different notepads for different projects or topics
+- Regularly sync and manage your files
+- Take advantage of the selective file inclusion feature
+
+
+
 ## The UI
 
 This app uses [Streamlit](https://streamlit.io/), a Python framework for rapid prototyping.
