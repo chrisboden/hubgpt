@@ -3,12 +3,9 @@ PyPDF2
 Requests
 Wikipedia_API
 beautifulsoup4
-dataclasses
-dateutil
 duckdb
 duckduckgo_search
 fpdf
-frontmatter
 google-generativeai
 halo
 markdown
@@ -16,6 +13,7 @@ openai
 pandas
 protobuf
 pyht
+python-dateutil
 python-dotenv
 python_dateutil
 python_frontmatter

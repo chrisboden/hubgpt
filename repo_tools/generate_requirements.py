@@ -123,11 +123,13 @@ def generate_requirements():
                     packages.update(line.split('==')[0] for line in f.read().splitlines())
             
             # Add common package mappings for imports that don't match package names
+            # Add common package mappings for imports that don't match package names
             package_mappings = {
                 'google': 'google-generativeai',
                 'bs4': 'beautifulsoup4',
                 'dotenv': 'python-dotenv',
                 'genai': 'google-generativeai',
+                'dateutil': 'python-dateutil',  # Map dateutil to python-dateutil
                 # Add more mappings as needed
             }
             
@@ -138,14 +140,38 @@ def generate_requirements():
                 elif imp not in local_modules:  # Only add if not a local module
                     packages.add(imp)
             
-            # Filter out standard library modules
+            # Filter out standard library modules and built-in packages
             stdlib_modules = set([
                 'os', 'sys', 'json', 'datetime', 'time', 'uuid', 'shutil', 
                 'tempfile', 'pathlib', 'mimetypes', 'ast', 're', 'typing',
                 'traceback', 'subprocess', 'inspect', 'logging', 'importlib',
-                'glob', 'urllib'
+                'glob', 'urllib', 'dataclasses',  # dataclasses is built-in for Python 3.7+
+                'collections', 'contextlib', 'copy', 'enum', 'functools',
+                'itertools', 'math', 'operator', 'random', 'string', 'threading',
+                'warnings', 'weakref', 'xml', 'html', 'http', 'argparse',
+                'base64', 'bisect', 'calendar', 'configparser', 'csv',
+                'curses', 'dbm', 'decimal', 'difflib', 'email', 'fileinput',
+                'fnmatch', 'fractions', 'getopt', 'getpass', 'gettext',
+                'gzip', 'hashlib', 'hmac', 'imaplib', 'imp', 'io',
+                'ipaddress', 'json', 'keyword', 'linecache', 'locale',
+                'mailbox', 'mmap', 'numbers', 'pickle', 'pipes', 'platform',
+                'plistlib', 'poplib', 'posixpath', 'pprint', 'profile',
+                'pty', 'pwd', 'py_compile', 'queue', 'quopri', 'selectors',
+                'shelve', 'signal', 'smtplib', 'socket', 'socketserver',
+                'sqlite3', 'ssl', 'stat', 'statistics', 'struct', 'sunau',
+                'symbol', 'symtable', 'sysconfig', 'tabnanny', 'tarfile',
+                'telnetlib', 'tempfile', 'textwrap', 'threading', 'token',
+                'tokenize', 'turtle', 'tty', 'unicodedata', 'unittest',
+                'urllib', 'uu', 'wave', 'webbrowser', 'winreg', 'wsgiref',
+                'xdrlib', 'xml', 'xmlrpc', 'zipfile', 'zipimport', 'zlib'
             ])
             packages = {pkg for pkg in packages if pkg not in stdlib_modules and pkg not in local_modules}
+            
+            # Remove any duplicate package names (like dateutil when python-dateutil exists)
+            packages = {
+                pkg for pkg in packages 
+                if not any(alt for alt in packages if alt.endswith(pkg) and alt != pkg)
+            }
             
             # Write final requirements.txt
             requirements_path = os.path.join(root_dir, 'requirements.txt')
