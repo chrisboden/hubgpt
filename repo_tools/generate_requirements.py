@@ -123,22 +123,26 @@ def generate_requirements():
                     packages.update(line.split('==')[0] for line in f.read().splitlines())
             
             # Add common package mappings for imports that don't match package names
-            # Add common package mappings for imports that don't match package names
             package_mappings = {
                 'google': 'google-generativeai',
                 'bs4': 'beautifulsoup4',
                 'dotenv': 'python-dotenv',
+                'tavily': 'tavily-python',
                 'genai': 'google-generativeai',
                 'dateutil': 'python-dateutil',  # Map dateutil to python-dateutil
                 # Add more mappings as needed
             }
             
+            # Normalize package names (replace - with _)
+            normalized_packages = {pkg.replace('-', '_') for pkg in packages}
+            
             # Add mapped package names and filter out local modules
             for imp in all_imports:
                 if imp in package_mappings:
-                    packages.add(package_mappings[imp])
+                    normalized_name = package_mappings[imp].replace('-', '_')
+                    normalized_packages.add(normalized_name)
                 elif imp not in local_modules:  # Only add if not a local module
-                    packages.add(imp)
+                    normalized_packages.add(imp)
             
             # Filter out standard library modules and built-in packages
             stdlib_modules = set([
@@ -165,21 +169,45 @@ def generate_requirements():
                 'urllib', 'uu', 'wave', 'webbrowser', 'winreg', 'wsgiref',
                 'xdrlib', 'xml', 'xmlrpc', 'zipfile', 'zipimport', 'zlib'
             ])
-            packages = {pkg for pkg in packages if pkg not in stdlib_modules and pkg not in local_modules}
+            normalized_packages = {pkg for pkg in normalized_packages if pkg not in stdlib_modules and pkg not in local_modules}
             
-            # Remove any duplicate package names (like dateutil when python-dateutil exists)
-            packages = {
-                pkg for pkg in packages 
-                if not any(alt for alt in packages if alt.endswith(pkg) and alt != pkg)
+            # Remove any duplicate package names (considering normalized names)
+            final_packages = set()
+            for pkg in normalized_packages:
+                # Convert back to preferred format (with hyphens)
+                preferred_name = pkg.replace('_', '-')
+                final_packages.add(preferred_name)
+            
+            # Remove any duplicate package names (considering normalized names)
+            final_packages = set()
+            for pkg in normalized_packages:
+                # Convert back to preferred format (with hyphens)
+                preferred_name = pkg.replace('_', '-')
+                final_packages.add(preferred_name)
+            
+            # Remove any duplicate package names (considering normalized names)
+            final_packages = set()
+            for pkg in normalized_packages:
+                # Convert back to preferred format (with hyphens)
+                preferred_name = pkg.replace('_', '-')
+                final_packages.add(preferred_name)
+            
+            # Remove duplicates where one is a suffix of another
+            final_packages = {
+                pkg for pkg in final_packages 
+                if not any(alt for alt in final_packages 
+                          if (alt != pkg and 
+                              (alt.endswith(pkg.replace('-', '_')) or 
+                               alt.endswith(pkg.replace('_', '-')))))
             }
             
             # Write final requirements.txt
             requirements_path = os.path.join(root_dir, 'requirements.txt')
             with open(requirements_path, 'w') as f:
-                f.write('\n'.join(sorted(packages)))
+                f.write('\n'.join(sorted(final_packages)))
             
             print(colored("\nFound packages:", 'green'))
-            for pkg in sorted(packages):
+            for pkg in sorted(final_packages):
                 print(colored(f"- {pkg}", 'green'))
                 
     except Exception as e:
