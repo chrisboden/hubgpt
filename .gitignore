@@ -165,7 +165,7 @@ cython_debug/
 /advisors/chats/*
 /advisors/ideas/*
 /advisors/archive/*
-/advisors/*
+/advisors/*.json
 /logs/*
 /snippets/*
 /content/*
