@@ -164,6 +164,21 @@ def process_direct_stream(
 ) -> str:
     """Process direct stream response from tool and handle follow-on instructions"""
     full_response = ""
+    
+    # Check if the stream contains an error
+    if isinstance(stream, dict) and 'error' in stream:
+        error_message = f"❌ Error executing {tool_name}: {stream['error']}"
+        response_placeholder.markdown(error_message)
+        chat_history.append({
+            "role": "assistant",
+            "content": error_message,
+            "tool_name": tool_name
+        })
+        save_chat_history(chat_history, chat_history_path)
+        # Don't process follow-on instructions if there was an error
+        return error_message
+
+    # Process normal stream
     for chunk in stream:
         if not chunk.choices:
             continue
@@ -180,8 +195,8 @@ def process_direct_stream(
             "tool_name": tool_name
         })
     
-    # Handle follow-on instructions
-    if follow_on_instructions:
+    # Only handle follow-on instructions if we had a successful response
+    if follow_on_instructions and full_response.strip():
         if isinstance(follow_on_instructions, str):
             follow_on_instructions = [follow_on_instructions]
         

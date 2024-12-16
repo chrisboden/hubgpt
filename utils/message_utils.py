@@ -123,13 +123,22 @@ def display_messages(messages, save_callback, delete_callback, copy_enabled=True
                         gap: 8px;
                         width:10em;
                     }
-                    .stChatMessage .element-container + div button,
+                    .stChatMessage .element-container + div button{
+                        opacity: 0.025;
+                        margin:8px;
+                    }
                     .stChatMessage .element-container + div iframe {
                         opacity: 0.025;
+                        height:52px!important;
+                        width: 56px!important;
                     }
-                    .stChatMessage:hover .element-container + div button,
+                    .stChatMessage:hover .element-container + div button{
+                        opacity: 1;
+                     }
                     .stChatMessage:hover .element-container + div iframe {
                         opacity: 1;
+                        height:52px!important;
+                        width:56px!important
                     }
                     [data-testid="column"] {
                         height: 1.75em;
