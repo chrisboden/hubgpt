@@ -31,7 +31,7 @@ def sidebar_controls():
     selected_advisor = st.sidebar.selectbox("Choose an advisor", advisor_names)
     
     # Clear conversation button
-    clear_button = st.sidebar.button("Clear Conversation")
+    clear_button = st.sidebar.button("Clear Chat")
     
     return selected_advisor, clear_button
 

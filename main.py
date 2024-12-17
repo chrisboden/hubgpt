@@ -35,6 +35,13 @@ logging.basicConfig(
 # Load environment variables
 load_dotenv()
 
+HORIZONTAL_HUB = "static/logo_full.png"
+ICON_HUB = "static/logo.png"
+sidebar_logo = HORIZONTAL_HUB
+main_body_logo = ICON_HUB
+st.logo(sidebar_logo, icon_image=main_body_logo)
+
+
 # Initialize session state for tab selection if not exists
 if 'current_tab' not in st.session_state:
     st.session_state.current_tab = "Advisors"

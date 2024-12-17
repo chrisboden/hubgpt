@@ -119,31 +119,117 @@ def display_messages(messages, save_callback, delete_callback, copy_enabled=True
 
             # Inject CSS for subtle, hover-activated button interactions
             st.write(''' <style>
+                    [data-testid="stDecoration"] {
+                        background: #FFFFFF;
+                    }
+                    .stAppDeployButton {
+                        display: none;
+                    }
+                    [data-testid="stSidebarHeader"] .stLogo{
+                        height: 2.0rem;
+                    } 
+                    .stChatMessage p, ol, ul, dl {
+                        margin: 0px 0px 1rem;
+                        padding: 0px;
+                        font-size: 1rem;
+                        font-weight: 300;
+                    }
+                    .stChatMessage:has([data-testid="stChatMessageAvatarUser"]){
+                        background-color:rgba(232, 232, 232, 0.5)!important;
+                        border-color:rgb(227, 227, 227);
+                        border-radius:24px;
+                        border-image-outset 0
+                        border-image-repeat stretch;
+                        border-image-slice 100%;
+                        border-image-source none;
+                        border-image-width 1;
+                        color:rgb(13, 13, 13);
+                    }
+                    .stChatMessage:has([data-testid="stChatMessageAvatarUser"]) button{
+                        position:absolute;
+                        left: -4em;
+                        bottom: -2.2em;
+                    }
+                    .stChatMessage:has([data-testid="stChatMessageAvatarUser"]) [data-testid="stChatMessageAvatarUser"]{
+                        display:none;
+                    }
+                    .stChatMessage:has([data-testid="stChatMessageAvatarUser"]) {
+                        color:#0d0d0d!important;
+                        align-self: flex-end;
+                        min-width: 5%!important;
+                        max-width: 80%!important;
+                        width:auto!important;
+                    }
+                    .stChatMessage:has([data-testid="stChatMessageAvatarUser"]) * {
+                        width:auto!important;
+                    }
+                    .stChatMessage:has([data-testid="stChatMessageAvatarUser"]) .stHorizontalBlock:has(.stColumn button)  {
+                        position: absolute;
+                        bottom: -2em;
+                        left: 1.2em;
+                        background: transparent;
+                    }
+                    .stChatMessage:has([data-testid="stChatMessageAvatarAssistant"]){
+                        color:#0d0d0d!important;
+                    }
+                    .stChatMessage:has([data-testid="stChatMessageAvatarAssistant"]) [data-testid="stChatMessageAvatarAssistant"]{
+                        color:#0d0d0d!important;
+                        background:#fff;
+                    }
                     .stChatMessage [data-testid="stVerticalBlock"] {
                         gap: 8px;
-                        width:10em;
+                        width:4.25em;
                     }
                     .stChatMessage .element-container + div button{
                         opacity: 0.025;
                         margin:8px;
                     }
+                    .stChatMessage:hover .element-container + div button{
+                        opacity: 1;
+                     }
                     .stChatMessage .element-container + div iframe {
                         opacity: 0.025;
                         height:52px!important;
                         width: 56px!important;
                     }
-                    .stChatMessage:hover .element-container + div button{
-                        opacity: 1;
-                     }
+
                     .stChatMessage:hover .element-container + div iframe {
                         opacity: 1;
-                        height:52px!important;
-                        width:56px!important
                     }
                     [data-testid="column"] {
                         height: 1.75em;
                         color-scheme: none !important;
                     }
+                    .stChatMessage .stHorizontalBlock{
+                        zoom:0.5;
+                     }
+
+                    .stElementContainer:has(.stHeading){
+                        position: fixed;
+                        top: 0em;
+                        z-index: 30000000000000000; 
+                        margin-left: -1em;
+                        width: auto;
+                    }
+                    .stElementContainer:has(.stHeading) h1{
+                        color:#a6a1a1 !important;
+                        font-size: 1em;
+                        font-weight: 500;
+                        padding-left: 0.25em;
+                    }
+                    .stElementContainer:has(.stHeading) *{
+                        width:auto!important;
+                    }
+                    .stBottom [data-testid="stBottomBlockContainer"]{
+                        padding-bottom:1em;
+                    }
+                    .stBottom textarea{
+                        min-height: 4em;
+                        border: 1px solid rgb(238, 238, 238);
+                        border-radius: 24px;
+                        padding: 0.8em; 
+                    }
+
                 </style>''', unsafe_allow_html=True)
 
             # Contextual button rendering
