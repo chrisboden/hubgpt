@@ -128,7 +128,7 @@ def display_messages(messages, save_callback, delete_callback, copy_enabled=True
                     [data-testid="stSidebarHeader"] .stLogo{
                         height: 2.0rem;
                     } 
-                    .stChatMessage p, ol, ul, dl {
+                    .stChatMessage p, ol, ul, dl, td {
                         margin: 0px 0px 1rem;
                         padding: 0px;
                         font-size: 1rem;
@@ -149,6 +149,13 @@ def display_messages(messages, save_callback, delete_callback, copy_enabled=True
                         position:absolute;
                         left: -4em;
                         bottom: -2.2em;
+                    }
+                    
+                    [data-testid="stChatMessageAvatarAssistant"]{
+                        position: absolute;
+                        left: -2em;
+                        border-radius: 50%;
+                        border: 1px solid #ddd;
                     }
                     .stChatMessage:has([data-testid="stChatMessageAvatarUser"]) [data-testid="stChatMessageAvatarUser"]{
                         display:none;
@@ -177,7 +184,7 @@ def display_messages(messages, save_callback, delete_callback, copy_enabled=True
                         background:#fff;
                     }
                     .stChatMessage [data-testid="stVerticalBlock"] {
-                        gap: 8px;
+                        gap: 0px;
                         width:4.25em;
                     }
                     .stChatMessage .element-container + div button{
@@ -220,14 +227,48 @@ def display_messages(messages, save_callback, delete_callback, copy_enabled=True
                     .stElementContainer:has(.stHeading) *{
                         width:auto!important;
                     }
+                    .stButton p{
+                        padding: 0 !important;
+                        margin: 0 !important;
+                        text-align: center;
+                        padding-left: 3px !important; 
+                    }
                     .stBottom [data-testid="stBottomBlockContainer"]{
                         padding-bottom:1em;
                     }
+
+                    .stBottom .stChatInput{
+                        background:none;
+                    }                     
                     .stBottom textarea{
                         min-height: 4em;
                         border: 1px solid rgb(238, 238, 238);
                         border-radius: 24px;
                         padding: 0.8em; 
+                        background:#f9f9f9;
+                    }
+                    .st-aq {
+                        border-bottom-right-radius: 24px;
+                    }
+                    .st-ap {
+                        border-top-right-radius: 24px;
+                    }
+                    .st-ao {
+                        border-bottom-left-radius: 24px;
+                    }
+                    .st-an {
+                        border-top-left-radius: 24px;
+                    }
+                    [data-testid="stChatInputSubmitButton"]{
+                        border-radius: 50%;
+                        margin-right: 9px;
+                        margin-bottom: 12px;
+                        background-color:#0e132a;
+                        color:#ffffff;
+                    }
+                    [data-testid="stChatInputSubmitButton"]:hover{
+                        background-color:#0e132a;
+                        color:#ffffff;
                     }
 
                 </style>''', unsafe_allow_html=True)
