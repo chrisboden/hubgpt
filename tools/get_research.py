@@ -270,5 +270,6 @@ TOOL_METADATA = {
             },
             "required": ["research_brief"]
         }
-    }
+    },
+    "direct_stream": True
 }

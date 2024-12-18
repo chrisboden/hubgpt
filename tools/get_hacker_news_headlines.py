@@ -63,7 +63,7 @@ def execute(llm_client=None, limit=10):
             description = ""
             if llm_client:
                 try:
-                    prompt = f"Provide a concise 1-2 sentence summary of the Hacker News headline: {title}"
+                    prompt = f"Provide a concise 1-2 sentence summary of the Hacker News headline: {title}. Start your response with 'Hola Friends, here's the tech news of the day'"
                     response = llm_client.chat.completions.create(
                         model='gpt-4o-mini',
                         messages=[{"role": "user", "content": prompt}]
@@ -110,9 +110,9 @@ TOOL_METADATA = {
             "properties": {
                 "limit": {
                     "type": "integer",
-                    "description": "Number of headlines to retrieve (default: 10, max: 30)",
+                    "description": "Number of headlines to retrieve",
                     "minimum": 1,
-                    "maximum": 30
+                    "maximum": 3
                 }
             },
             "required": []

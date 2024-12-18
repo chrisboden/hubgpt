@@ -23,6 +23,9 @@ def initialize_openai_client():
         api_key=os.getenv("OPENROUTER_API_KEY")
     )
 
+st.cache_data.clear()
+st.cache_resource.clear()
+
 def sidebar_controls():
     # Get available advisors
     advisor_names = get_available_advisors()
@@ -80,6 +83,13 @@ def main():
 
     # Clear conversation logic
     if clear_button:
+        # Archive the chat history before clearing
+        archive_chat_history(
+            chat_history_path,
+            os.path.join("advisors"),  # advisors directory
+            f"{selected_advisor.replace(' ', '_')}.json"  # advisor filename
+        )
+        
         # Explicitly clear the chat history
         st.session_state.chat_history = []
         
@@ -118,12 +128,6 @@ def main():
             # Clear the follow-on instruction after using it
             del st.session_state.follow_on_instruction
 
-        # Initialize spinner status in session state
-        st.session_state.spinner_status = f"Preparing response with {selected_advisor}..."
-        
-        # Create a more robust spinner placeholder
-        st.session_state.spinner_placeholder = st.empty()
-        st.session_state.spinner_placeholder.markdown(f"*{st.session_state.spinner_status}*")
 
         # Only append user message if it's not from follow-on instructions
         if not st.session_state.get('process_follow_on'):
@@ -189,7 +193,7 @@ def main():
             del st.session_state.process_follow_on
             
         # Rerun to refresh the page
-        st.rerun()
+        # st.rerun()
 
 if __name__ == "__main__":
     main()

@@ -4,6 +4,7 @@ import json
 import logging
 from typing import Dict, Any, List, Optional, Union, Tuple
 import streamlit as st
+from termcolor import colored
 from openai.types.chat import ChatCompletion
 from utils.tool_utils import execute_tool, TOOL_METADATA_REGISTRY
 from utils.chat_utils import save_chat_history
@@ -11,231 +12,314 @@ from utils.chat_utils import save_chat_history
 # Configure logging
 LOGGING_ENABLED = True
 
-def get_default_llm_params() -> Dict[str, Any]:
-    """Default parameters for LLM API calls"""
-    return {
-        'model': 'gpt-4o-mini',
-        'temperature': 1.0,
-        'max_tokens': 8092,
-        'top_p': 1,
-        'frequency_penalty': 0,
-        'presence_penalty': 0,
-        'stream': True
-    }
+class LLMParams:
+    """Manages LLM API parameters and configuration"""
+    @staticmethod
+    def get_default():
+        return {
+            'model': 'gpt-4o-mini',
+            'temperature': 1.0,
+            'max_tokens': 8092,
+            'top_p': 1,
+            'frequency_penalty': 0,
+            'presence_penalty': 0,
+            'stream': True
+        }
 
-def prepare_api_params(messages: List[Dict[str, Any]], tools: List[str], tool_choice: str, **overrides) -> Dict[str, Any]:
-    """Prepare API parameters for LLM call"""
-    api_params = {**get_default_llm_params()}
-    
-    # Add overrides
-    for key, value in overrides.items():
-        if key not in ['spinner_placeholder', 'status_placeholder']:
-            api_params[key] = value
-    
-    # Add messages and tools
-    api_params['messages'] = messages
-    if tools:
-        api_params['tools'] = resolve_tools(tools)
-        api_params['tool_choice'] = tool_choice
-    
-    if LOGGING_ENABLED:
-        logging.info(f"Prepared API parameters: {api_params}")
-    
-    return api_params
+    @staticmethod
+    def build_api_params(default_params: Dict, overrides: Dict, messages: List, tools: List) -> Dict:
+        api_params = {**default_params}
+        for key, value in overrides.items():
+            if key not in ['spinner_placeholder', 'status_placeholder']:
+                api_params[key] = value
+        
+        api_params['messages'] = messages
+        if tools:
+            api_params['tools'] = tools
+            api_params['tool_choice'] = 'auto'
+        
+        return api_params
 
-def process_tool_call(
-    delta: Any, 
-    accumulated_args: str
-) -> Tuple[Optional[str], Optional[str], Optional[Dict[str, Any]], str]:
-    """Process a tool call from the LLM response"""
-    tool_name = None
-    tool_id = None
-    function_data = None
-    
-    if hasattr(delta, 'tool_calls') and delta.tool_calls:
-        tool_call = delta.tool_calls[0]
+class ToolManager:
+    """Handles tool resolution and execution"""
+    @staticmethod
+    def resolve_tools(tool_names: List[str]) -> List[Dict]:
+        resolved_tools = []
+        for tool_name in tool_names:
+            metadata = TOOL_METADATA_REGISTRY.get(tool_name)
+            if metadata:
+                resolved_tools.append(metadata)
+            else:
+                logging.warning(f"Tool '{tool_name}' metadata not found. Skipping tool.")
+        return resolved_tools
+
+    @staticmethod
+    def execute_tool_call(tool_name: str, function_call_data: Dict, llm_client) -> Dict:
+        return execute_tool(tool_name, function_call_data, llm_client=llm_client)
+
+class ResponseHandler:
+    """Manages LLM response processing and UI updates"""
+    def __init__(self, client, status_placeholder, response_placeholder):
+        print(colored("Initializing ResponseHandler", "cyan"))
+        self.client = client
+        self.status_placeholder = status_placeholder
+        self.response_placeholder = response_placeholder
+        self.full_response = ""
+
+    def handle_non_streamed_response(self, completion: ChatCompletion) -> tuple[str, Optional[Dict]]:
+        """Handle non-streamed responses with tool call support"""
+        print(colored("Starting handle_non_streamed_response", "yellow"))
         
-        if hasattr(tool_call.function, 'name') and tool_call.function.name:
-            tool_name = tool_call.function.name
-            if LOGGING_ENABLED:
-                logging.info(f"Tool name detected: {tool_name}")
+        function_call_data = None
+        full_response = ""
         
-        if hasattr(tool_call, 'id'):
-            tool_id = tool_call.id
+        if not completion.choices:
+            return full_response, function_call_data
+            
+        message = completion.choices[0].message
         
-        if hasattr(tool_call.function, 'arguments') and tool_call.function.arguments:
-            accumulated_args += tool_call.function.arguments
+        # Handle tool calls
+        if hasattr(message, 'tool_calls') and message.tool_calls:
+            tool_call = message.tool_calls[0]
+            print(colored(f"Tool call detected: {tool_call.function.name}", "cyan"))
+            st.session_state.last_tool_name = tool_call.function.name
+            st.session_state.last_tool_call_id = tool_call.id
+            
             try:
-                function_data = json.loads(accumulated_args)
-                if LOGGING_ENABLED:
-                    logging.info(f"Complete tool call data: {function_data}")
-            except json.JSONDecodeError:
-                if LOGGING_ENABLED:
-                    logging.debug(f"Partial arguments received: {accumulated_args}")
-    
-    return tool_name, tool_id, function_data, accumulated_args
+                args = json.loads(tool_call.function.arguments)
+                function_call_data = args
+                print(colored(f"Tool arguments: {args}", "green"))
+            except json.JSONDecodeError as e:
+                print(colored(f"Error decoding tool arguments: {e}", "red"))
+        
+        # Handle content
+        if message.content:
+            full_response = message.content
+            self.response_placeholder.markdown(full_response)
+            print(colored("Response displayed", "green"))
+        
+        return full_response, function_call_data
 
-def handle_tool_execution(
-    tool_name: str,
-    function_data: Dict[str, Any],
-    client: Any,
-    chat_history: List[Dict[str, Any]],
-    chat_history_path: str,
-    response_placeholder: Any,
-    status_placeholder: Any
-) -> None:
-    """Handle tool execution and response processing"""
-    if LOGGING_ENABLED:
-        logging.info(f"Executing tool '{tool_name}' with arguments: {function_data}")
-    
-    status_placeholder.markdown(f"*🔧 Executing tool: {tool_name}*")
-    
-    tool_response_data = execute_tool(
-        tool_name, 
-        function_data,
-        llm_client=client
-    )
-    
-    if LOGGING_ENABLED:
-        logging.info(f"Tool response received: {tool_response_data}")
-    
-    if tool_response_data:
-        if tool_response_data.get('direct_stream', False):
-            stream = tool_response_data.get('result', '')
-            status_placeholder.empty()
+
+    def handle_streamed_response(self, stream) -> tuple[str, Optional[Dict]]:
+        """Handle streamed responses with improved tool call handling"""
+        print(colored("Starting handle_streamed_response", "yellow"))
+        
+        function_call_data = None
+        current_tool_args = ""
+        tool_name = None
+        
+        for chunk in stream:
+            if not chunk.choices:
+                continue
             
-            follow_on = tool_response_data.get('follow_on_instructions')
+            delta = chunk.choices[0].delta
             
-            process_direct_stream(
-                stream,
-                chat_history,
-                tool_name,
-                response_placeholder,
-                chat_history_path,
-                follow_on
+            # Handle tool calls
+            if hasattr(delta, 'tool_calls') and delta.tool_calls:
+                tool_call = delta.tool_calls[0]
+                
+                # Handle function name
+                if hasattr(tool_call, 'function'):
+                    if hasattr(tool_call.function, 'name') and tool_call.function.name:
+                        tool_name = tool_call.function.name
+                        print(colored(f"Tool call detected: {tool_name}", "cyan"))
+                        st.session_state.last_tool_name = tool_name
+                        # Update status for tool usage
+                        self.status_placeholder.markdown(f"*🔧 Using tool: {tool_name}*")
+                    
+                    # Accumulate arguments
+                    if hasattr(tool_call.function, 'arguments'):
+                        current_tool_args += tool_call.function.arguments
+                
+                # When we have complete arguments, process them
+                if current_tool_args and not function_call_data:
+                    try:
+                        args = json.loads(current_tool_args)
+                        function_call_data = {
+                            'name': tool_name,
+                            'arguments': args
+                        }
+                        print(colored(f"Complete tool arguments for {tool_name}: {args}", "green"))
+                    except json.JSONDecodeError:
+                        # Still accumulating arguments
+                        pass
+            
+            # Handle content
+            chunk_text = delta.content or ""
+            if chunk_text:
+                self.full_response += chunk_text
+                # Update response with thinking indicator when processing
+                self.response_placeholder.markdown(f"{self.full_response}{'▌' if not function_call_data else ''}")
+        
+        return self.full_response, function_call_data
+
+
+    def _process_tool_call(self, tool_call) -> Optional[Dict]:
+        """Process tool calls with better argument handling"""
+        print(colored(f"Processing tool call: {tool_call.function.name}", "yellow"))
+        
+        # Store tool info in session state
+        st.session_state.last_tool_call_id = tool_call.id
+        st.session_state.last_tool_name = tool_call.function.name
+        self.status_placeholder.markdown(f"*🔧 Using tool: {tool_call.function.name}*")
+        
+        # Handle arguments
+        try:
+            # Ensure we have complete arguments
+            if not hasattr(tool_call.function, 'arguments') or not tool_call.function.arguments:
+                print(colored("No arguments provided", "red"))
+                return None
+                
+            # Clean the arguments string
+            args_str = tool_call.function.arguments.strip()
+            if not args_str:
+                print(colored("Empty arguments string", "red"))
+                return None
+                
+            print(colored(f"Raw arguments: {args_str}", "cyan"))
+            
+            # Parse JSON
+            args = json.loads(args_str)
+            print(colored(f"Parsed arguments: {args}", "green"))
+            return args
+            
+        except json.JSONDecodeError as e:
+            print(colored(f"Error decoding tool arguments: {e}", "red"))
+            print(colored(f"Problematic arguments string: {tool_call.function.arguments}", "red"))
+            return None
+        except Exception as e:
+            print(colored(f"Unexpected error processing tool call: {e}", "red"))
+            return None
+
+    def handle_tool_execution(
+        self,
+        tool_name: str,
+        function_data: Dict[str, Any],
+        chat_history: List[Dict[str, Any]],
+        chat_history_path: str
+    ) -> Optional[Dict[str, Any]]:
+        """Handle tool execution with support for direct streaming and structured responses."""
+        print(colored(f"\nStarting tool execution for: {tool_name}", "cyan"))
+        print(colored(f"Function data: {function_data}", "cyan"))
+        
+        try:
+            # Set up spinner placeholder for tool updates
+            st.session_state.spinner_placeholder = self.status_placeholder
+            
+            print(colored("Executing tool...", "yellow"))
+            tool_response = execute_tool(
+                tool_name, 
+                function_data,
+                llm_client=self.client
             )
             
-            if follow_on:
-                if LOGGING_ENABLED:
-                    logging.info("Triggering rerun for follow-on instructions")
-                st.rerun()
-
-def resolve_tools(tools: List[str]) -> List[Dict[str, Any]]:
-    """Resolve tool names to their metadata"""
-    resolved_tools = []
-    for tool_name in tools:
-        metadata = TOOL_METADATA_REGISTRY.get(tool_name)
-        if metadata:
-            resolved_tools.append(metadata)
-        else:
-            logging.warning(f"Tool '{tool_name}' metadata not found. Skipping tool.")
-    return resolved_tools
-
-def handle_tool_call(delta: Any, tool_call_args: str) -> Optional[Dict[str, Any]]:
-    """Handle tool calls from LLM response"""
-    if not hasattr(delta, 'tool_calls') or not delta.tool_calls:
-        return None
-    
-    tool_call = delta.tool_calls[0]
-    
-    if hasattr(tool_call, 'id') and tool_call.id:
-        st.session_state.last_tool_call_id = tool_call.id
-    
-    if hasattr(tool_call.function, 'name') and tool_call.function.name:
-        st.session_state.last_tool_name = tool_call.function.name
-    
-    if hasattr(tool_call.function, 'arguments') and tool_call.function.arguments:
-        try:
-            # Try to parse the complete arguments
-            return json.loads(tool_call.function.arguments)
-        except json.JSONDecodeError:
-            # If parsing fails, accumulate partial arguments
-            return None
-    
-    return None
-
-def process_direct_stream(
-    stream: Any,
-    chat_history: List[Dict[str, Any]],
-    tool_name: str,
-    response_placeholder: Any,
-    chat_history_path: str,
-    follow_on_instructions: Optional[Union[str, List[str]]] = None
-) -> str:
-    """Process direct stream response from tool and handle follow-on instructions"""
-    full_response = ""
-    
-    # Check if the stream contains an error
-    if isinstance(stream, dict) and 'error' in stream:
-        error_message = f"❌ Error executing {tool_name}: {stream['error']}"
-        response_placeholder.markdown(error_message)
-        chat_history.append({
-            "role": "assistant",
-            "content": error_message,
-            "tool_name": tool_name
-        })
-        save_chat_history(chat_history, chat_history_path)
-        # Don't process follow-on instructions if there was an error
-        return error_message
-
-    # Process normal stream
-    for chunk in stream:
-        if not chunk.choices:
-            continue
-        
-        delta = chunk.choices[0].delta
-        chunk_text = delta.content or ""
-        full_response += chunk_text
-        response_placeholder.markdown(full_response)
-    
-    if full_response.strip():
-        chat_history.append({
-            "role": "assistant",
-            "content": full_response,
-            "tool_name": tool_name
-        })
-    
-    # Only handle follow-on instructions if we had a successful response
-    if follow_on_instructions and full_response.strip():
-        if isinstance(follow_on_instructions, str):
-            follow_on_instructions = [follow_on_instructions]
-        
-        for instruction in follow_on_instructions:
-            if LOGGING_ENABLED:
-                logging.info(f"Adding follow-on instruction to chat history: {instruction}")
-            chat_history.append({"role": "user", "content": instruction})
-            save_chat_history(chat_history, chat_history_path)
+            # Clear spinner placeholder after tool execution
+            if hasattr(st.session_state, 'spinner_placeholder'):
+                delattr(st.session_state, 'spinner_placeholder')
             
-            # Set a session state flag to process the follow-on instruction
-            st.session_state.process_follow_on = True
-            st.session_state.follow_on_instruction = instruction
-    
-    return full_response
+            print(colored(f"Tool response received: {tool_response}", "green"))
+            
+            if not tool_response:
+                print(colored("No tool response received", "red"))
+                return None
+                
+            # Handle direct output tools
+            if tool_response.get('direct_stream', False):
+                print(colored("Processing direct stream response", "yellow"))
+                result = tool_response.get('result', '')
+                
+                # Handle error responses
+                if isinstance(result, dict) and 'error' in result:
+                    error_msg = f"❌ Error: {result['error']}"
+                    print(colored(error_msg, "red"))
+                    self.response_placeholder.markdown(error_msg)
+                    return None
+                
+                # Handle streaming responses
+                if hasattr(result, 'choices'):
+                    print(colored("Processing streaming response", "yellow"))
+                    full_response = ""
+                    for chunk in result:
+                        if not chunk.choices:
+                            continue
+                        
+                        delta = chunk.choices[0].delta
+                        if hasattr(delta, 'content') and delta.content:
+                            chunk_text = delta.content
+                            full_response += chunk_text
+                            self.response_placeholder.markdown(full_response)
+                            print(colored("Streaming chunk displayed", "green"))
+                
+                # Handle markdown or structured responses
+                else:
+                    print(colored("Processing non-streaming response", "yellow"))
+                    if isinstance(result, str):
+                        print(colored("Rendering markdown string", "yellow"))
+                        self.response_placeholder.markdown(result)
+                    else:
+                        print(colored("Rendering structured data", "yellow"))
+                        self.response_placeholder.markdown(f"```json\n{json.dumps(result, indent=2)}\n```")
+                    
+                    chat_history.append({
+                        "role": "assistant",
+                        "content": result if isinstance(result, str) else json.dumps(result, indent=2),
+                        "tool_name": tool_name
+                    })
+                    print(colored("Response added to chat history", "green"))
+                
+                save_chat_history(chat_history, chat_history_path)
+                print(colored("Chat history saved", "green"))
+                return None
+                
+            # Return tool response for standard flow
+            print(colored("Returning standard tool response", "yellow"))
+            return tool_response
 
-def process_follow_on_instructions(
-    client: Any,
-    messages: List[Dict[str, Any]],
-    initial_messages: List[Dict[str, Any]],
-    chat_history: List[Dict[str, Any]],
-    chat_history_path: str,
-    advisor_data: Dict[str, Any],
-    selected_advisor: str,
-    tools: List[str],
-    tool_choice: str,
-    follow_on_instructions: Union[str, List[str]],
-    **overrides
-) -> None:
-    """Process follow-on instructions after tool execution"""
-    if isinstance(follow_on_instructions, str):
-        follow_on_instructions = [follow_on_instructions]
-    
-    for instruction in follow_on_instructions:
-        # Add instruction to chat history
-        chat_history.append({"role": "user", "content": instruction})
-        save_chat_history(chat_history, chat_history_path)
+        except Exception as e:
+            error_msg = f"Error executing tool '{tool_name}': {str(e)}"
+            print(colored(error_msg, "red"))
+            print(colored(f"Full error: {str(e)}", "red"))
+            logging.error(error_msg)
+            logging.exception(e)
+            self.response_placeholder.markdown(f"❌ {error_msg}")
+            return None
+
+class ChatHistoryManager:
+    """Manages chat history updates and persistence"""
+    def __init__(self, chat_history: List, chat_history_path: str):
+        self.chat_history = chat_history
+        self.chat_history_path = chat_history_path
+
+    def add_assistant_response(self, content: str):
+        if content.strip():
+            self.chat_history.append({"role": "assistant", "content": content})
+
+    def add_tool_interaction(self, tool_name: str, tool_call_id: str, function_call_data: Dict, tool_response: Dict):
+        assistant_tool_message = {
+            "role": "assistant",
+            "content": "null",
+            "tool_calls": [{
+                "id": tool_call_id,
+                "type": "function",
+                "function": {
+                    "name": tool_name,
+                    "arguments": json.dumps(function_call_data)
+                }
+            }]
+        }
+        self.chat_history.append(assistant_tool_message)
         
-        # Process the follow-on instruction
-        st.rerun()
+        tool_message = {
+            "role": "tool",
+            "name": tool_name,
+            "tool_call_id": tool_call_id,
+            "content": json.dumps(tool_response, indent=2)
+        }
+        self.chat_history.append(tool_message)
+
+    def save(self):
+        save_chat_history(self.chat_history, self.chat_history_path)
 
 def get_llm_response(
     client: Any,
@@ -249,68 +333,70 @@ def get_llm_response(
     tool_choice: str = 'auto',
     **overrides
 ) -> List[Dict[str, Any]]:
-    """Main function to handle LLM responses and tool execution"""
+    """Main orchestrator function using the refactored components"""
     try:
         with st.chat_message("assistant"):
             status_placeholder = st.empty()
-            response_placeholder = st.empty()
             
             with st.spinner(f"{selected_advisor} is thinking..."):
-                # Prepare API parameters
-                api_params = prepare_api_params(messages, tools, tool_choice, **overrides)
+                # Initialize components
+                params = LLMParams.get_default()
+                resolved_tools = ToolManager.resolve_tools(tools)
+                api_params = LLMParams.build_api_params(params, overrides, messages, resolved_tools)
                 
+                response_placeholder = st.empty()
+                response_handler = ResponseHandler(client, status_placeholder, response_placeholder)
+                history_manager = ChatHistoryManager(chat_history, chat_history_path)
+
                 try:
-                    # Initialize tracking variables
-                    accumulated_args = ""
-                    current_tool_name = None
-                    function_call_data = None
-                    full_response = ""
-                    
-                    # Get LLM response stream
-                    stream = client.chat.completions.create(**api_params)
-                    
-                    # Process stream
-                    for chunk in stream:
-                        if not chunk.choices:
-                            continue
-                        
-                        delta = chunk.choices[0].delta
-                        
-                        # Handle tool calls
-                        tool_name, tool_id, function_data, accumulated_args = process_tool_call(
-                            delta, accumulated_args)
-                        
-                        if tool_name:
-                            current_tool_name = tool_name
-                        if function_data:
-                            function_call_data = function_data
-                        
-                        # Handle content
-                        if hasattr(delta, 'content') and delta.content:
-                            chunk_text = delta.content
-                            full_response += chunk_text
-                            response_placeholder.markdown(full_response)
-                    
-                    # Important: Add the response to chat history BEFORE executing tools
+                    # Get initial LLM response
+                    if api_params.get('stream', True):
+                        stream = client.chat.completions.create(**api_params)
+                        full_response, function_call_data = response_handler.handle_streamed_response(stream)
+                    else:
+                        completion = client.chat.completions.create(**api_params)
+                        full_response, function_call_data = response_handler.handle_non_streamed_response(completion)
+
+                    # Add response to history if it's not a pure tool call
                     if full_response.strip():
-                        chat_history.append({
-                            "role": "assistant",
-                            "content": full_response
-                        })
-                        save_chat_history(chat_history, chat_history_path)
-                    
-                    # Execute tool if we have complete data
-                    if current_tool_name and function_call_data:
-                        handle_tool_execution(
-                            current_tool_name,
-                            function_call_data,
-                            client,
+                        history_manager.add_assistant_response(full_response)
+
+                    # Handle tool calls if present
+                    if function_call_data:
+                        tool_name = function_call_data['name']  # Get tool name from function_call_data
+                        tool_args = function_call_data['arguments']
+                        print(colored(f"Executing tool: {tool_name}", "yellow"))
+                        tool_result = response_handler.handle_tool_execution(
+                            tool_name,
+                            tool_args,
                             chat_history,
-                            chat_history_path,
-                            response_placeholder,
-                            status_placeholder
+                            chat_history_path
                         )
-                
+                        
+                        print(colored(f"Tool result: {tool_result}", "green"))
+                        
+                        # Only proceed with synthesis if tool_result is not None
+                        # (None indicates direct streaming was handled)
+                        if tool_result is not None:
+                            # Add tool interaction to history
+                            history_manager.add_tool_interaction(
+                                tool_name,
+                                st.session_state.last_tool_call_id,
+                                function_call_data,
+                                tool_result
+                            )
+                            
+                            # Get final response from LLM
+                            api_params['messages'] = initial_messages + chat_history
+                            if api_params.get('stream', True):
+                                stream = client.chat.completions.create(**api_params)
+                                final_response = response_handler.handle_streamed_response(stream)[0]
+                            else:
+                                completion = client.chat.completions.create(**api_params)
+                                final_response = response_handler.handle_non_streamed_response(completion)[0]
+                            
+                            history_manager.add_assistant_response(final_response)
+
                 except Exception as e:
                     st.error(f"An error occurred: {e}")
                     logging.error(f"LLM Response Error: {e}")
@@ -318,11 +404,11 @@ def get_llm_response(
                 
                 finally:
                     status_placeholder.empty()
-    
+                    history_manager.save()
+
     except Exception as main_e:
         st.error(f"An unexpected error occurred: {main_e}")
         logging.error(f"Unexpected error in get_llm_response: {main_e}")
         logging.exception(main_e)
-    
-    save_chat_history(chat_history, chat_history_path)
+
     return chat_history

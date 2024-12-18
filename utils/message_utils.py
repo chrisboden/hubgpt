@@ -270,7 +270,6 @@ def display_messages(messages, save_callback, delete_callback, copy_enabled=True
                         background-color:#0e132a;
                         color:#ffffff;
                     }
-
                 </style>''', unsafe_allow_html=True)
 
             # Contextual button rendering

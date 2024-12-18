@@ -37,7 +37,8 @@ def initialize_session_state():
         st.session_state.follow_on_instruction = None
     if 'process_follow_on' not in st.session_state:
         st.session_state.process_follow_on = False
-
+    if 'spinner_placeholder' not in st.session_state:
+        st.session_state.spinner_placeholder = st.empty()
 def load_chat_history(chat_history_path):
     """
     Load chat history from a JSON file.

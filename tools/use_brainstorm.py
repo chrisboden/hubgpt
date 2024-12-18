@@ -3,6 +3,7 @@
 import json
 from typing import List, Dict, Any
 from termcolor import colored
+from utils.ui_utils import update_spinner_status
 
 class TreeNode:
     def __init__(self, content):
@@ -80,37 +81,44 @@ Brief to analyze: {brief}
 List 6 key questions in bullet points:"""
 }
 
-def execute(llm_client=None, brief: str = None, method: str = "six_hats") -> Dict[str, Any]:
+
+def tree_to_markdown(node: dict, level: int = 0) -> str:
     """
-    Generate brainstorming ideas using various methods.
+    Recursively converts a tree structure into a Markdown-formatted string.
+    """
+    # Use `#` for headers for the root and `-` for child points
+    indent = "  " * level  # Indentation for nested levels
+    if level == 0:
+        # Top-level idea as a Markdown header
+        markdown = f"# {node['content']}\n\n"
+    else:
+        # Nested levels as bullet points
+        markdown = f"{indent}- **{node['content']}**\n"
     
-    Parameters:
-    - brief (str): The topic or question to brainstorm about
-    - method (str): Brainstorming method to use (defaults to six_hats)
-    - llm_client: LLM client for generating ideas
+    # Recursively add children
+    for child in node.get("children", []):
+        markdown += tree_to_markdown(child, level + 1)
     
-    Returns:
-    - dict: Tree structure of brainstorming results
+    return markdown
+
+def execute(llm_client=None, brief: str = None, method: str = "six_hats") -> str:
+    """
+    Generate brainstorming ideas using various methods and return Markdown-formatted output.
     """
     if not llm_client or not brief:
-        print(colored("Error: LLM client and brief are required", "red"))
-        return {"error": "LLM client and brief are required"}
+        return "Error: LLM client and brief are required."
 
     try:
         # Validate method
         if method not in PROMPTS:
-            print(colored(f"Invalid method. Using default (six_hats). Valid methods are: {', '.join(PROMPTS.keys())}", "yellow"))
-            method = "six_hats"
-
-        print(colored(f"\nStarting brainstorming session:", "cyan"))
-        print(colored(f"Brief: {brief}", "cyan"))
-        print(colored(f"Method: {method}", "cyan"))
+            method = "six_hats"  # Default to Six Thinking Hats
 
         # Create root node
         root = TreeNode(brief)
 
-        # Get initial ideas
-        print(colored("\nGenerating initial ideas...", "blue"))
+        # Generate initial ideas
+        update_spinner_status("Generating initial ideas...")
+        print(colored("Generating initial ideas...", "green"))
         initial_response = llm_client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
@@ -119,18 +127,17 @@ def execute(llm_client=None, brief: str = None, method: str = "six_hats") -> Dic
             ]
         )
         initial_ideas = parse_bullet_points(initial_response.choices[0].message.content)
-        print(colored(f"Generated {len(initial_ideas)} initial ideas", "green"))
+        update_spinner_status(f"Received {len(initial_ideas)} initial ideas.")
+        print(colored(f"Received {len(initial_ideas)} initial ideas.", "green"))
 
-        # Process each initial idea
+        # Process each idea
         for i, idea in enumerate(initial_ideas, 1):
-            print(colored(f"\nProcessing initial idea {i}/{len(initial_ideas)}:", "blue"))
-            print(colored(f"Idea: {idea}", "white"))
-            
             idea_node = TreeNode(idea)
             root.add_child(idea_node)
+            update_spinner_status(f"Processing idea {i} of {len(initial_ideas)}: {idea}")
+            print(colored(f"Processing idea {i} of {len(initial_ideas)}: {idea}", "green"))
 
-            # Generate method-specific expansions
-            print(colored(f"Applying {method} method...", "blue"))
+            # Generate expansions for each idea using the specified method
             method_response = llm_client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
@@ -139,30 +146,32 @@ def execute(llm_client=None, brief: str = None, method: str = "six_hats") -> Dic
                 ]
             )
             method_ideas = parse_bullet_points(method_response.choices[0].message.content)
-            print(colored(f"Generated {len(method_ideas)} {method} ideas", "green"))
 
-            # Add method-specific ideas
+            # Add expanded ideas as children
             for method_idea in method_ideas:
                 method_node = TreeNode(method_idea)
                 idea_node.add_child(method_node)
 
-        print(colored("\nBrainstorming session completed successfully!", "green"))
-        
-        # Convert tree to JSON-friendly format
-        result = print_tree(root)
-        return {"result": result}
+        # Convert the tree to Markdown
+        update_spinner_status("Converting tree to Markdown...")
+        print(colored("Converting tree to Markdown...", "green"))
+        tree_result = print_tree(root)  # JSON-like tree structure
+        markdown_result = tree_to_markdown(tree_result)  # Clean Markdown output
+        update_spinner_status("Markdown conversion complete.")
+        print(colored("Markdown conversion complete.", "green"))
+        return markdown_result
 
     except Exception as e:
-        error_msg = f"Brainstorming failed: {str(e)}"
-        print(colored(error_msg, "red"))
-        return {"error": error_msg}
+        update_spinner_status(f"Error occurred: {str(e)}")
+        print(colored(f"Error occurred: {str(e)}", "red"))
+        return f"Error: {str(e)}"
 
 # Tool metadata
 TOOL_METADATA = {
     "type": "function",
     "function": {
         "name": "use_brainstorm",
-        "description": "Generate creative ideas using various brainstorming techniques",
+        "description": "Generate creative ideas using various brainstorming techniques. Respond with clean markdown format.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -183,8 +192,8 @@ TOOL_METADATA = {
                     ]
                 }
             },
-            "required": ["brief"],
-            
+            "required": ["brief"]
         }
-    }
+    },
+    "direct_stream": True
 }
