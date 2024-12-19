@@ -14,6 +14,15 @@ html, body, [class*="css"] {
     font-family: "Geist";
 }
 
-.stApp *{
-    font-family:"Geist"!important;
+[data-testid="stMainMenuPopover"].stMainMenuPopover {
+    font-family: "Geist"!important;
+}
+
+.stApp *:not(pre):not(code):not(kbd):not(.stJson *) {
+    font-family: "Geist" !important;
+}
+
+pre, code, kbd {
+    font-family: "Source Code Pro", monospace !important;
+    font-size: 1em;
 }
