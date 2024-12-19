@@ -14,10 +14,11 @@ import shutil
 import datetime
 import mimetypes
 from pathlib import Path
-import shortuuid  # Install via pip install shortuuid
+import shortuuid
 from utils.prompt_utils import load_prompt
 from utils.message_utils import save_snippet, display_messages
-import time  # Added for wait_for_files_active
+from utils.ui_utils import update_spinner_status
+import time
 
 load_dotenv()
 os.getenv("GEMINI_API_KEY")
@@ -420,12 +421,56 @@ Please ensure you use ALL of the available documents for your response."""
 
     # Send message and get response
     try:
-        response = chat.send_message(message_parts)
-        return response
+        # Create a placeholder for spinner status
+        spinner_placeholder = st.empty()
+        st.session_state.spinner_placeholder = spinner_placeholder
+        
+        with st.spinner("Processing your question..."):
+            update_spinner_status("Analyzing provided documents...")
+            
+            response = chat.send_message(message_parts)
+            
+            if response:
+                update_spinner_status("Generating response...")
+                
+                # Add message to history
+                message = {"role": "assistant", "content": response.text}
+                st.session_state.messages.append(message)
+
+                # Display just the new message
+                st.markdown(response.text)
+                
+                # Add action buttons for the new message
+                col1, col2, col3 = st.columns([0.2, 0.2, 0.2])
+                with col1:
+                    if st.button("💾", key=f"save_new_{len(st.session_state.messages)-1}"):
+                        save_notepad_snippet(response.text)
+                with col2:
+                    st_copy_to_clipboard(response.text, key=f"copy_new_{len(st.session_state.messages)-1}")
+                with col3:
+                    if st.button("🗑️", key=f"delete_new_{len(st.session_state.messages)-1}"):
+                        delete_notepad_message(len(st.session_state.messages) - 1)
+
+                # Save the updated chat history to index.json
+                selected_notepad_dir = Path(f'notepads/{st.session_state.selected_notepad_id}')
+                index_file = selected_notepad_dir / 'index.json'
+                with open(index_file, 'r') as f:
+                    index_data = json.load(f)
+                index_data['chat'] = st.session_state.messages
+                with open(index_file, 'w') as f:
+                    json.dump(index_data, f, indent=4)
+
+                update_spinner_status("Response complete!")
+                return response
+                
     except Exception as e:
         st.error(f"Error generating response: {str(e)}")
         print(f"Error details: {str(e)}")
         return None
+    finally:
+        # Clean up spinner placeholder
+        if hasattr(st.session_state, 'spinner_placeholder'):
+            delattr(st.session_state, 'spinner_placeholder')
 
 def save_notepad_snippet(message_content):
     snippets_dir = os.path.join("snippets")
@@ -560,11 +605,23 @@ def main():
 
             # Now display the list of uploaded files with checkboxes
             if st.session_state.uploaded_files:
-                st.write("Select files to include in the prompt:")
+                st.markdown("Select files to include")
+                
                 for idx, file_info in enumerate(st.session_state.uploaded_files):
-                    key = f"{st.session_state.selected_notepad_id}_{file_info['name']}_{idx}"
-                    file_info["selected"] = st.checkbox(
-                        file_info["name"], value=file_info.get("selected", True), key=key)
+                    # Create a unique key for each checkbox
+                    checkbox_key = f"file_select_{st.session_state.selected_notepad_id}_{idx}"
+                    
+                    # Display checkbox with file name
+                    selected = st.checkbox(
+                        label=file_info["name"],
+                        value=file_info.get("selected", True),
+                        key=checkbox_key
+                    )
+                    
+                    # Update the selection state in session state
+                    st.session_state.uploaded_files[idx]["selected"] = selected
+                
+                st.markdown("---")
 
             st.button('Clear Chat History', on_click=clear_chat_history)
 
@@ -575,12 +632,21 @@ def main():
     # Main content area for displaying chat messages
     st.write("Welcome to the chat!")
 
-    display_messages(
-        messages=st.session_state.messages,
-        save_callback=save_notepad_snippet,
-        delete_callback=delete_notepad_message,
-        context_id=st.session_state.selected_notepad_id
-    )
+    for idx, message in enumerate(st.session_state.messages):
+        with st.chat_message(message["role"]):
+            if message["role"] == "assistant":
+                st.markdown(message["content"])
+                col1, col2, col3 = st.columns([0.2, 0.2, 0.2])
+                with col1:
+                    if st.button("💾", key=f"save_{idx}"):
+                        save_notepad_snippet(message["content"])
+                with col2:
+                    st_copy_to_clipboard(message["content"], key=f"copy_{idx}")
+                with col3:
+                    if st.button("🗑️", key=f"delete_{idx}"):
+                        delete_notepad_message(idx)
+            else:
+                st.markdown(message["content"])
 
     if prompt := st.chat_input():
         st.session_state.messages.append({"role": "user", "content": prompt})
@@ -590,18 +656,9 @@ def main():
         # Display chat messages and bot response
         if st.session_state.uploaded_files:
             with st.chat_message("assistant"):
-                with st.spinner("Thinking..."):
-                    response = user_input(prompt)
-                    full_response = response.text
-                    st.write(full_response)
-            if response is not None:
-                message = {"role": "assistant", "content": full_response}
-                st.session_state.messages.append(message)
-
-                # Save the updated chat history to index.json
-                index_data['chat'] = st.session_state.messages
-                with open(index_file, 'w') as f:
-                    json.dump(index_data, f, indent=4)
+                response = user_input(prompt)
+                if response is None:
+                    st.error("Failed to get response from the model")
         else:
             st.warning("Please upload and select at least one file before asking a question.")
 

@@ -6,7 +6,13 @@
 }
 [data-testid="stSidebarHeader"] .stLogo{
     height: 2.0rem;
-} 
+}
+.stAppHeader .stAppToolbar .stStatusWidget img{
+    opacity:0;
+}
+.stAppHeader .stAppToolbar .stStatusWidget label{
+    opacity:0;
+}
 .stChatMessage p, ol, ul, dl, td {
     margin: 0px 0px 1rem;
     padding: 0px;
