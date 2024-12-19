@@ -108,6 +108,7 @@ class ResponseHandler:
         function_call_data = None
         current_tool_args = ""
         tool_name = None
+        tool_call_id = None  # Add this to track the tool call ID
         
         for chunk in stream:
             if not chunk.choices:
@@ -118,6 +119,12 @@ class ResponseHandler:
             # Handle tool calls
             if hasattr(delta, 'tool_calls') and delta.tool_calls:
                 tool_call = delta.tool_calls[0]
+                
+                # Capture tool call ID
+                if hasattr(tool_call, 'id') and tool_call.id:
+                    tool_call_id = tool_call.id
+                    st.session_state.last_tool_call_id = tool_call_id
+                    print(colored(f"Tool call ID captured: {tool_call_id}", "cyan"))
                 
                 # Handle function name
                 if hasattr(tool_call, 'function'):
@@ -138,9 +145,10 @@ class ResponseHandler:
                         args = json.loads(current_tool_args)
                         function_call_data = {
                             'name': tool_name,
-                            'arguments': args
+                            'arguments': args,
+                            'id': tool_call_id  # Include the tool call ID
                         }
-                        print(colored(f"Complete tool arguments for {tool_name}: {args}", "green"))
+                        print(colored(f"Complete tool arguments for {tool_name} (ID: {tool_call_id}): {args}", "green"))
                     except json.JSONDecodeError:
                         # Still accumulating arguments
                         pass

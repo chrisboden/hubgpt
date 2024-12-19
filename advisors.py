@@ -107,15 +107,19 @@ def main():
     # Main chat area
     st.title(f"Chat with {selected_advisor}")
     
-    # Display previous messages
-    display_messages(
-        messages=st.session_state.chat_history,
-        save_callback=save_advisor_snippet,
-        delete_callback=delete_advisor_message,
-        context_id=selected_advisor.replace(' ', '_')
-    )
+    # Create a container for messages to prevent UI flicker
+    chat_container = st.container()
+    
+    with chat_container:
+        # Display previous messages
+        display_messages(
+            messages=st.session_state.chat_history,
+            save_callback=save_advisor_snippet,
+            delete_callback=delete_advisor_message,
+            context_id=selected_advisor.replace(' ', '_')
+        )
 
-    # Handle success message
+    # Handle success message outside the chat container
     if st.session_state.get('save_success'):
         st.success("Snippet saved successfully!")
         st.session_state.save_success = False  # Reset after displaying
@@ -125,18 +129,17 @@ def main():
         # If we have a follow-on instruction, use that instead of the user input
         if st.session_state.get('follow_on_instruction'):
             prompt = st.session_state.follow_on_instruction
-            # Clear the follow-on instruction after using it
             del st.session_state.follow_on_instruction
-
 
         # Only append user message if it's not from follow-on instructions
         if not st.session_state.get('process_follow_on'):
             user_message = {"role": "user", "content": prompt}
             st.session_state.chat_history.append(user_message)
             
-            # Display user message
-            with st.chat_message("user"):
-                st.markdown(prompt)
+            # Display user message in the container
+            with chat_container:
+                with st.chat_message("user"):
+                    st.markdown(prompt)
 
         # Logging
         logging.info(f"Processing {'follow-on' if st.session_state.get('process_follow_on') else 'user'} input: {prompt}")
@@ -165,8 +168,10 @@ def main():
         
         # Prepare for assistant response
         try:
-            # Spinner placeholder
-            spinner_placeholder = st.session_state.spinner_placeholder
+            # Create spinner placeholder inside the container
+            with chat_container:
+                spinner_placeholder = st.empty()
+                st.session_state.spinner_placeholder = spinner_placeholder
             
             # Get LLM response
             get_llm_response(
@@ -184,16 +189,14 @@ def main():
             )
 
         except Exception as e:
-            # Error handling
-            st.error(f"An error occurred: {e}")
+            # Error handling inside the container
+            with chat_container:
+                st.error(f"An error occurred: {e}")
             logging.error(f"LLM Response Error: {e}")
         
         # Clear process_follow_on flag if it was set
         if st.session_state.get('process_follow_on'):
             del st.session_state.process_follow_on
-            
-        # Rerun to refresh the page
-        # st.rerun()
 
 if __name__ == "__main__":
     main()
