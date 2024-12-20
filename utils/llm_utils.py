@@ -347,7 +347,14 @@ def get_llm_response(
             status_placeholder = st.empty()
             
             with st.spinner(f"{selected_advisor} is thinking..."):
-                # ... existing initialization code ...
+                # Initialize components
+                params = LLMParams.get_default()
+                resolved_tools = ToolManager.resolve_tools(tools)
+                api_params = LLMParams.build_api_params(params, overrides, messages, resolved_tools)
+                
+                response_placeholder = st.empty()
+                response_handler = ResponseHandler(client, status_placeholder, response_placeholder)
+                history_manager = ChatHistoryManager(chat_history, chat_history_path)
 
                 try:
                     # Get initial LLM response
@@ -361,12 +368,12 @@ def get_llm_response(
                     # Add response to history if it's not a pure tool call
                     if full_response.strip():
                         history_manager.add_assistant_response(full_response)
-                        history_manager.save()
 
                     # Handle tool calls if present
                     if function_call_data:
                         tool_name = function_call_data['name']
                         tool_args = function_call_data['arguments']
+                        print(colored(f"Executing tool: {tool_name}", "yellow"))
                         tool_result = response_handler.handle_tool_execution(
                             tool_name,
                             tool_args,
@@ -391,7 +398,6 @@ def get_llm_response(
                                 final_response = response_handler.handle_non_streamed_response(completion)[0]
                             
                             history_manager.add_assistant_response(final_response)
-                            history_manager.save()
 
                 except Exception as e:
                     st.error(f"An error occurred: {e}")
@@ -400,7 +406,11 @@ def get_llm_response(
                 
                 finally:
                     status_placeholder.empty()
-                    # Remove the rerun - let natural Streamlit updates handle UI
+                    history_manager.save()
+                    
+                    # Trigger rerun after everything is saved
+                    if not function_call_data or (function_call_data and tool_result is not None):
+                        st.rerun()
 
     except Exception as main_e:
         st.error(f"An unexpected error occurred: {main_e}")
