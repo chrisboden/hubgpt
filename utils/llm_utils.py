@@ -371,7 +371,7 @@ def get_llm_response(
 
                     # Handle tool calls if present
                     if function_call_data:
-                        tool_name = function_call_data['name']  # Get tool name from function_call_data
+                        tool_name = function_call_data['name']
                         tool_args = function_call_data['arguments']
                         print(colored(f"Executing tool: {tool_name}", "yellow"))
                         tool_result = response_handler.handle_tool_execution(
@@ -381,12 +381,7 @@ def get_llm_response(
                             chat_history_path
                         )
                         
-                        print(colored(f"Tool result: {tool_result}", "green"))
-                        
-                        # Only proceed with synthesis if tool_result is not None
-                        # (None indicates direct streaming was handled)
                         if tool_result is not None:
-                            # Add tool interaction to history
                             history_manager.add_tool_interaction(
                                 tool_name,
                                 st.session_state.last_tool_call_id,
@@ -394,7 +389,6 @@ def get_llm_response(
                                 tool_result
                             )
                             
-                            # Get final response from LLM
                             api_params['messages'] = initial_messages + chat_history
                             if api_params.get('stream', True):
                                 stream = client.chat.completions.create(**api_params)
@@ -413,6 +407,10 @@ def get_llm_response(
                 finally:
                     status_placeholder.empty()
                     history_manager.save()
+                    
+                    # Trigger rerun after everything is saved
+                    if not function_call_data or (function_call_data and tool_result is not None):
+                        st.rerun()
 
     except Exception as main_e:
         st.error(f"An unexpected error occurred: {main_e}")
