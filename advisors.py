@@ -17,18 +17,24 @@ from utils.chat_utils import (
 )
 from utils.message_utils import save_snippet, delete_message, display_messages
 
+@st.cache_resource
 def initialize_openai_client():
     return OpenAI(
         base_url=os.getenv('API_BASE_URL'),
         api_key=os.getenv("OPENROUTER_API_KEY")
     )
 
-st.cache_data.clear()
-st.cache_resource.clear()
+@st.cache_data
+def load_cached_tools(tools_directory):
+    return load_tools(tools_directory)
+
+@st.cache_data
+def get_cached_advisors():
+    return get_available_advisors()
 
 def sidebar_controls():
-    # Get available advisors
-    advisor_names = get_available_advisors()
+    # Get available advisors using cached function
+    advisor_names = get_cached_advisors()
     
     # Advisor selection
     selected_advisor = st.sidebar.selectbox("Choose an advisor", advisor_names)
@@ -37,21 +43,6 @@ def sidebar_controls():
     clear_button = st.sidebar.button("Clear Chat")
     
     return selected_advisor, clear_button
-
-def save_advisor_snippet(message_content):
-    snippets_dir = os.path.join("snippets")
-    source_type = "advisor"
-    source_name = st.session_state.selected_advisor
-    save_snippet(message_content, source_type, source_name, snippets_dir)
-    st.session_state.save_success = True  # Trigger confirmation message
-
-def delete_advisor_message(index):
-    delete_message(st.session_state.chat_history, index)
-    selected_advisor = st.session_state.selected_advisor
-    chat_history_path = os.path.join("advisors", "chats", f"{selected_advisor.replace(' ', '_')}.json")
-    save_chat_history(st.session_state.chat_history, chat_history_path)
-    st.rerun()
-
 
 def initialize_session_state():
     """Initialize all required session state variables"""
@@ -63,15 +54,16 @@ def initialize_session_state():
         st.session_state.save_success = False
     if 'spinner_placeholder' not in st.session_state:
         st.session_state.spinner_placeholder = None
-
+    if 'is_processing' not in st.session_state:
+        st.session_state.is_processing = False
 
 def main():
-    # Initialize OpenAI client
+    # Initialize OpenAI client (cached)
     client = initialize_openai_client()
 
-    # Load tools
+    # Load tools (cached)
     tools_directory = os.path.join(os.getcwd(), "tools")
-    load_tools(tools_directory)
+    load_cached_tools(tools_directory)
 
     # Initialize session state
     initialize_session_state()
@@ -79,8 +71,12 @@ def main():
     # Sidebar controls
     selected_advisor, clear_button = sidebar_controls()
 
-    # Load advisor data
-    advisor_data = load_advisor_data(selected_advisor)
+    # Load advisor data with caching
+    @st.cache_data
+    def get_advisor_data(advisor_name):
+        return load_advisor_data(advisor_name)
+
+    advisor_data = get_advisor_data(selected_advisor)
     
     # Set chat history path
     chat_history_path = os.path.join(
@@ -89,126 +85,103 @@ def main():
         f"{selected_advisor.replace(' ', '_')}.json"
     )
 
-    # Load or initialize chat history
-    st.session_state.chat_history = load_chat_history(chat_history_path)
-    st.session_state.selected_advisor = selected_advisor
+    # Load chat history only if needed
+    if (st.session_state.selected_advisor != selected_advisor or 
+        'chat_history' not in st.session_state):
+        st.session_state.chat_history = load_chat_history(chat_history_path)
+        st.session_state.selected_advisor = selected_advisor
 
     # Clear conversation logic
     if clear_button:
-        # Archive the chat history before clearing
         archive_chat_history(
             chat_history_path,
-            os.path.join("advisors"),  # advisors directory
-            f"{selected_advisor.replace(' ', '_')}.json"  # advisor filename
+            os.path.join("advisors"),
+            f"{selected_advisor.replace(' ', '_')}.json"
         )
-        
-        # Explicitly clear the chat history
         st.session_state.chat_history = []
-        
-        # Remove the chat history file
         try:
             os.remove(chat_history_path)
         except FileNotFoundError:
             pass
-        
-        # Reinitialize the chat history file
         save_chat_history([], chat_history_path)
-        
         st.rerun()
 
     # Main chat area
     st.title(f"Chat with {selected_advisor}")
     
-    # Create a container for messages to prevent UI flicker
+    # Create a container for messages
     chat_container = st.container()
     
+    # Display messages in container
     with chat_container:
-        # Display previous messages
         display_messages(
             messages=st.session_state.chat_history,
-            save_callback=save_advisor_snippet,
-            delete_callback=delete_advisor_message,
+            save_callback=save_snippet,
+            delete_callback=delete_message,
             context_id=selected_advisor.replace(' ', '_')
         )
 
-    # Handle success message outside the chat container
+    # Handle success message
     if st.session_state.get('save_success'):
         st.success("Snippet saved successfully!")
-        st.session_state.save_success = False  # Reset after displaying
+        st.session_state.save_success = False
 
     # Handle user input
-    if prompt := st.chat_input(f"Chat with {selected_advisor}") or st.session_state.get('follow_on_instruction'):
-        # If we have a follow-on instruction, use that instead of the user input
-        if st.session_state.get('follow_on_instruction'):
-            prompt = st.session_state.follow_on_instruction
-            del st.session_state.follow_on_instruction
-
-        # Only append user message if it's not from follow-on instructions
-        if not st.session_state.get('process_follow_on'):
+    if prompt := st.chat_input(f"Chat with {selected_advisor}"):
+        if not st.session_state.is_processing:
+            st.session_state.is_processing = True
+            
             user_message = {"role": "user", "content": prompt}
             st.session_state.chat_history.append(user_message)
             
-            # Display user message in the container
             with chat_container:
                 with st.chat_message("user"):
                     st.markdown(prompt)
 
-        # Logging
-        logging.info(f"Processing {'follow-on' if st.session_state.get('process_follow_on') else 'user'} input: {prompt}")
+            save_chat_history(st.session_state.chat_history, chat_history_path)
 
-        # Save chat history
-        save_chat_history(st.session_state.chat_history, chat_history_path)
+            initial_messages = load_prompt(advisor_data, st.session_state.chat_history)
+            messages = initial_messages + st.session_state.chat_history
 
-        # Process messages
-        initial_messages = load_prompt(advisor_data, st.session_state.chat_history)
-        messages = initial_messages + st.session_state.chat_history
+            llm_params_keys = [
+                'model', 'temperature', 'max_tokens', 'top_p', 
+                'frequency_penalty', 'presence_penalty', 'stream'
+            ]
+            llm_params = {
+                key: advisor_data[key] 
+                for key in llm_params_keys 
+                if key in advisor_data
+            }
 
-        # Extract LLM parameters
-        llm_params_keys = [
-            'model', 'temperature', 'max_tokens', 'top_p', 
-            'frequency_penalty', 'presence_penalty', 'stream'
-        ]
-        llm_params = {
-            key: advisor_data[key] 
-            for key in llm_params_keys 
-            if key in advisor_data
-        }
-
-        # Extract tools configuration
-        tools = advisor_data.get('tools', [])
-        tool_choice = advisor_data.get('tool_choice', 'auto')
-        
-        # Prepare for assistant response
-        try:
-            # Create spinner placeholder inside the container
-            with chat_container:
-                spinner_placeholder = st.empty()
-                st.session_state.spinner_placeholder = spinner_placeholder
+            tools = advisor_data.get('tools', [])
+            tool_choice = advisor_data.get('tool_choice', 'auto')
             
-            # Get LLM response
-            get_llm_response(
-                client=client,
-                messages=messages,
-                initial_messages=initial_messages,
-                chat_history=st.session_state.chat_history,
-                chat_history_path=chat_history_path,
-                advisor_data=advisor_data,
-                selected_advisor=selected_advisor,
-                tools=tools,
-                tool_choice=tool_choice,
-                spinner_placeholder=spinner_placeholder,
-                **llm_params
-            )
+            try:
+                with chat_container:
+                    spinner_placeholder = st.empty()
+                    st.session_state.spinner_placeholder = spinner_placeholder
+                
+                get_llm_response(
+                    client=client,
+                    messages=messages,
+                    initial_messages=initial_messages,
+                    chat_history=st.session_state.chat_history,
+                    chat_history_path=chat_history_path,
+                    advisor_data=advisor_data,
+                    selected_advisor=selected_advisor,
+                    tools=tools,
+                    tool_choice=tool_choice,
+                    spinner_placeholder=spinner_placeholder,
+                    **llm_params
+                )
 
-        except Exception as e:
-            # Error handling inside the container
-            with chat_container:
-                st.error(f"An error occurred: {e}")
-            logging.error(f"LLM Response Error: {e}")
-        
-        # Clear process_follow_on flag if it was set
-        if st.session_state.get('process_follow_on'):
-            del st.session_state.process_follow_on
+            except Exception as e:
+                with chat_container:
+                    st.error(f"An error occurred: {e}")
+                logging.error(f"LLM Response Error: {e}")
+            
+            finally:
+                st.session_state.is_processing = False
 
 if __name__ == "__main__":
     main()
