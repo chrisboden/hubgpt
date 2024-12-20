@@ -260,75 +260,63 @@ def sync_notepad_files(notepad_id):
     with open(index_file, 'r') as f:
         index_data = json.load(f)
 
-    # Use cloud files from session state
-    cloud_file_names = st.session_state.cloud_file_names
-
     files_updated = False
-    reuploaded_files = []  # Collect re-uploaded Gemini file objects
+    reuploaded_files = []
+
+    # Clear existing file states to prevent duplicates
+    st.session_state.uploaded_files = []
+    st.session_state.uploaded_file_names = set()
+    st.session_state.cloud_files = []
+    st.session_state.cloud_file_names = set()
 
     for file_info in index_data['files']:
         cloud_name = file_info.get('cloud_name')
         local_name = file_info['local_name']
-
-        # Ensure we're using the correct path relative to the notepad's files directory
         local_file_path = selected_notepad_dir / local_name
 
-        if local_file_path.exists():  # Only proceed if file exists
-            # Add more detailed logging
-            print(f"Checking file: {local_file_path}")
-            print(f"Cloud name in index: {cloud_name}")
-            print(f"Cloud file names in session: {cloud_file_names}")
+        if not local_file_path.exists():
+            print(f"Warning: Local file missing: {local_file_path}")
+            continue
 
-            # More stringent check to prevent unnecessary re-uploads
-            if not cloud_name or cloud_name not in cloud_file_names:
-                print(f"Preparing to re-upload: {local_file_path.name}")
-                
-                # Additional check: verify file is not already in cloud_files
-                existing_cloud_file = next((f for f in st.session_state.cloud_files if f.display_name == local_file_path.name), None)
-                
-                if existing_cloud_file:
-                    print(f"File {local_file_path.name} already exists in cloud files. Skipping re-upload.")
-                    file_info['cloud_name'] = existing_cloud_file.name
-                    files_updated = True
-                    continue
-
-                # Re-upload the file
+        try:
+            # Try to get existing cloud file
+            gemini_file = genai.get_file(name=cloud_name) if cloud_name else None
+            
+            # If file doesn't exist in cloud, upload it
+            if not gemini_file:
+                print(f"Uploading new file: {local_file_path.name}")
                 mime_type = mimetypes.guess_type(local_file_path)[0] or 'application/octet-stream'
-                with st.spinner(f"Re-uploading {local_file_path.name} to Gemini..."):
-                    try:
-                        gemini_file = genai.upload_file(
-                            str(local_file_path),
-                            mime_type=mime_type,
-                            display_name=local_file_path.name
-                        )
-                        reuploaded_files.append(gemini_file)
-                        print(f"Re-uploaded file '{gemini_file.name}' successfully.")
-                    except Exception as e:
-                        st.warning(f"Failed to upload {local_file_path.name}: {str(e)}")
-                        print(f"Error uploading {local_file_path.name}: {str(e)}")
-                        continue  # Skip to the next file
-
-                # Update cloud_name
+                gemini_file = genai.upload_file(
+                    str(local_file_path),
+                    mime_type=mime_type,
+                    display_name=local_file_path.name
+                )
+                reuploaded_files.append(gemini_file)
                 file_info['cloud_name'] = gemini_file.name
                 files_updated = True
 
-                # Update cloud files in session state
+            # Update session state
+            if not any(f["name"] == local_file_path.name for f in st.session_state.uploaded_files):
+                st.session_state.uploaded_files.append({
+                    "name": local_file_path.name,
+                    "gemini_file": gemini_file,
+                    "selected": True
+                })
+                st.session_state.uploaded_file_names.add(local_file_path.name)
                 st.session_state.cloud_files.append(gemini_file)
                 st.session_state.cloud_file_names.add(gemini_file.name)
-        else:
-            st.warning(f"File not found: {local_file_path}")
+                
+        except Exception as e:
+            st.warning(f"Failed to process {local_file_path.name}: {str(e)}")
+            print(f"Error processing {local_file_path.name}: {str(e)}")
 
     if files_updated:
-        # Save the updated index.json
         with open(index_file, 'w') as f:
             json.dump(index_data, f, indent=4)
-        st.success("Local and cloud files are synced.")
 
-        # Wait for re-uploaded files to become ACTIVE
         if reuploaded_files:
             try:
                 wait_for_files_active(reuploaded_files)
-                st.success("Re-uploaded files are active and synced.")
             except Exception as e:
                 st.error(str(e))
                 print(str(e))
@@ -502,37 +490,26 @@ def main():
 
     # Handle cold start
     if not notepads:
-        # Create default notepad
         create_default_notepad()
         notepads = load_notepads()
 
     # Sidebar for notepad selection
     with st.sidebar:
+
         notepad_names = [notepad['name'] for notepad in notepads]
 
         # Determine the current notepad name and index
         if st.session_state.selected_notepad_id is None:
             selected_notepad_name = st.selectbox("Choose a notepad", notepad_names)
         else:
-            # Get current notepad name
             current_notepad = next((n for n in notepads if n['id'] == st.session_state.selected_notepad_id), None)
             current_notepad_name = current_notepad['name'] if current_notepad else ''
             selected_notepad_name = st.selectbox("Choose a notepad", notepad_names, index=notepad_names.index(current_notepad_name))
 
         # Get the selected notepad ID
         selected_notepad = next((n for n in notepads if n['name'] == selected_notepad_name), None)
-        if selected_notepad:
-            if st.session_state.selected_notepad_id != selected_notepad['id']:
-                st.session_state.selected_notepad_id = selected_notepad['id']
-                st.session_state.messages = []
-                st.session_state.uploaded_files = []
-                st.session_state.uploaded_file_names = set()
-                st.session_state.cloud_files = []
-                st.session_state.cloud_file_names = set()
-        else:
-            st.session_state.selected_notepad_id = None
 
-        # Create a two-column layout for the buttons
+                # Add notepad management buttons in a horizontal layout
         col1, col2 = st.columns(2)
         with col1:
             if st.button("New Notepad"):
@@ -540,30 +517,52 @@ def main():
         with col2:
             if st.button("Rename"):
                 rename_notepad_dialog()
+        
+        # Handle notepad selection change
+        if selected_notepad and st.session_state.selected_notepad_id != selected_notepad['id']:
+            # Clear all relevant session state
+            st.session_state.selected_notepad_id = selected_notepad['id']
+            st.session_state.messages = []
+            st.session_state.uploaded_files = []
+            st.session_state.uploaded_file_names = set()
+            st.session_state.cloud_files = []
+            st.session_state.cloud_file_names = set()
+            st.session_state.notepad_loaded = None  # Force reload
+            st.rerun()  # Force UI refresh
 
     if st.session_state.selected_notepad_id:
-        # Load chat history and uploaded files before syncing
+        # Load chat history and uploaded files
         selected_notepad_dir = Path(f'notepads/{st.session_state.selected_notepad_id}')
         index_file = selected_notepad_dir / 'index.json'
+        
+        if not index_file.exists():
+            st.error(f"Notepad index file not found: {index_file}")
+            st.stop()
+
         with open(index_file, 'r') as f:
             index_data = json.load(f)
 
+        # Only load messages and files if notepad hasn't been loaded or if it's a different notepad
         if "messages" not in st.session_state or st.session_state.get('notepad_loaded') != st.session_state.selected_notepad_id:
+            # Load messages
             st.session_state.messages = index_data.get('chat', [])
-            st.session_state.notepad_loaded = st.session_state.selected_notepad_id
-
-        # Initialize uploaded_files and cloud_files in session state
-        if "uploaded_files" not in st.session_state:
+            
+            # Reset file states
             st.session_state.uploaded_files = []
             st.session_state.uploaded_file_names = set()
             st.session_state.cloud_files = []
             st.session_state.cloud_file_names = set()
 
-        # Load uploaded files from index.json
-        st.session_state.uploaded_files = []
-        st.session_state.uploaded_file_names = set()
-        st.session_state.cloud_files = []
-        st.session_state.cloud_file_names = set()
+            # Load and sync files if they exist
+            if index_data.get('files'):
+                sync_notepad_files(st.session_state.selected_notepad_id)
+            
+            # Mark notepad as loaded
+            st.session_state.notepad_loaded = st.session_state.selected_notepad_id
+
+        # Now sync files only if needed
+        if index_data.get('files'):
+            sync_notepad_files(st.session_state.selected_notepad_id)
 
         uploaded_gemini_files = []  # Collect files to wait for activation
 
