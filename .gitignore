@@ -216,6 +216,8 @@ scrape.md
 
 *test*
 *demo*
+/temp/*
+*temp*
 *.db
 *.db.wal
 *.vscode*
