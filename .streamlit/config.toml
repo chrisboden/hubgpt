@@ -3,3 +3,19 @@ primaryColor="#66bde6"
 backgroundColor="#FFFFFF"
 secondaryBackgroundColor="#f9f9f9"
 textColor="#0d0d0d!important"
+
+[server]
+runOnSave = false
+maxUploadSize = 200
+maxMessageSize = 200
+
+[browser]
+serverAddress = "0.0.0.0"
+gatherUsageStats = false
+
+[theme]
+base = "light"
+
+[runner]
+fastReruns = true
+magicEnabled = false

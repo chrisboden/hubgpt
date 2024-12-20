@@ -131,13 +131,14 @@ def main():
         if not st.session_state.is_processing:
             st.session_state.is_processing = True
             
-            user_message = {"role": "user", "content": prompt}
-            st.session_state.chat_history.append(user_message)
-            
+            # Update UI immediately with user message
             with chat_container:
                 with st.chat_message("user"):
                     st.markdown(prompt)
-
+            
+            # Add message to history after displaying
+            user_message = {"role": "user", "content": prompt}
+            st.session_state.chat_history.append(user_message)
             save_chat_history(st.session_state.chat_history, chat_history_path)
 
             initial_messages = load_prompt(advisor_data, st.session_state.chat_history)
