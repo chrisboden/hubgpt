@@ -52,7 +52,19 @@ def delete_advisor_message(index):
     save_chat_history(st.session_state.chat_history, chat_history_path)
     st.rerun()
 
-# advisors.py
+
+def initialize_session_state():
+    """Initialize all required session state variables"""
+    if 'chat_history' not in st.session_state:
+        st.session_state.chat_history = []
+    if 'selected_advisor' not in st.session_state:
+        st.session_state.selected_advisor = None
+    if 'save_success' not in st.session_state:
+        st.session_state.save_success = False
+    if 'spinner_placeholder' not in st.session_state:
+        st.session_state.spinner_placeholder = None
+
+
 def main():
     # Initialize OpenAI client
     client = initialize_openai_client()
