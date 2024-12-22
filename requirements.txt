@@ -11,6 +11,7 @@ halo
 markdown
 openai
 pandas
+pathspec
 protobuf
 pyht
 python-dateutil
@@ -24,6 +25,5 @@ streamlit
 tavily-python
 termcolor
 urllib3
-utils
 youtube-transcript-api
 yt-dlp

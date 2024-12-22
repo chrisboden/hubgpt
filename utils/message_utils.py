@@ -67,28 +67,40 @@ def delete_message(messages, index):
     """
     messages.pop(index)
 
+
 def display_messages(messages, save_callback, delete_callback, copy_enabled=True, context_id=""):
     """
     Renders messages in a Streamlit chat interface with interactive features.
     """
     for idx, message in enumerate(messages):
-        # Skip empty assistant messages to prevent clutter
+        # Skip empty assistant messages
         if message['role'] == 'assistant' and message.get('content') == 'null':
+            # We'll skip rendering artifacts here and let the tool response handle it
             continue
             
         # Special handling for tool response messages
         if message['role'] == 'tool':
             try:
                 tool_content = json.loads(message.get('content', '{}'))
-                with st.expander(f"Tool Response: {message.get('name', 'Unknown Tool')}"):
-                    st.json(tool_content)
+                # Special handling for make_artifact tool
+                if message.get('name') == 'make_artifact' and 'artifact_html' in tool_content:
+                    with st.chat_message("assistant"):
+                        st.components.v1.html(
+                            tool_content['artifact_html'],
+                            height=400,
+                            scrolling=True
+                        )
+                else:
+                    # Standard tool response display in expander
+                    with st.expander(f"Tool Response: {message.get('name', 'Unknown Tool')}"):
+                        st.json(tool_content)
                 continue
             except json.JSONDecodeError:
                 with st.expander(f"Tool Response: {message.get('name', 'Unknown Tool')}"):
                     st.text(message.get('content', ''))
                 continue
-
-        # Render chat messages with role-based styling
+        
+        # Handle regular messages
         with st.chat_message(message['role']):
             st.markdown(message.get('content', ''))
             

@@ -24,53 +24,31 @@ def get_full_path(file_path):
 def include_directory_content(match, depth=5, file_delimiter=None):
     """
     Recursively include contents of files matching a directory pattern.
-    
-    Key Features:
-    - Supports nested file inclusions with depth control
-    - Handles potential errors in file reading
-    - Optional file delimiter for separating multiple file contents
-    
-    Args:
-        match (re.Match): Regex match object containing directory pattern
-        depth (int): Maximum recursion depth for nested inclusions
-        file_delimiter (str, optional): Format string for file name headers
-    
-    Returns:
-        str: Concatenated file contents or error message
     """
-    # Check if the maximum depth has been reached
     if depth <= 0:
         return "[ERROR: Maximum inclusion depth reached]"
     
-    # Extract and convert the directory pattern to an absolute path
     dir_pattern = match.group(1).strip()
     full_dir_pattern = get_full_path(dir_pattern)
     
     try:
-        # Find all files matching the directory pattern
         matching_files = glob.glob(full_dir_pattern)
         if not matching_files:
             return f"[ERROR: No files found matching {dir_pattern}]"
         
         contents = []
-        # Iterate over each matching file
         for file_path in matching_files:
-            # Read the content of the file
             with open(file_path, 'r') as f:
                 content = f.read()
-            # Process any nested inclusions in the file content
-            content = process_inclusions(content, depth - 1, file_delimiter)
+            content = process_inclusions(content, depth - 1)
             
-            # Optionally add a file delimiter before the content
-            if file_delimiter is not None:
-                contents.append(f"{file_delimiter.format(filename=os.path.basename(file_path))}\n{content}")
-            else:
-                contents.append(content)
+            # Simple consistent delimiter format
+            filename = os.path.basename(file_path)
+            delimiter = f"\n\n---------- {filename} ------------\n\n"
+            contents.append(f"{delimiter}{content}")
         
-        # Join all contents into a single string separated by newlines
         return "\n".join(contents)
     except Exception as e:
-        # Return an error message if an exception occurs
         return f"[ERROR: Failed to process directory {dir_pattern}: {str(e)}]"
 
 def include_file_content(match, depth=5):

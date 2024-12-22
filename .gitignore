@@ -166,6 +166,7 @@ cython_debug/
 /advisors/ideas/*
 /advisors/archive/*
 /advisors/*.json
+
 /logs/*
 /snippets/*
 /content/*
@@ -211,7 +212,7 @@ logs/advisorchat.log
 /cbnotes/*
 
 scrape.md
-
+/generated_artifacts
 /tests
 
 *test*
@@ -225,4 +226,6 @@ scrape.md
 *cbtools*
 /data/*
 
-/repo_tools
+# note ready to commit teams yet
+/teams
+teams.py

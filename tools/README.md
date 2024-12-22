@@ -436,35 +436,11 @@ The code will have access to all standard Python libraries plus the agent's tool
 
 ---
 
-## file_delete
+## file_operations
 
-**Source File:** `file_delete.py`
+**Source File:** `file_operations.py`
 
-**Description:** Deletes a specified file from the filesystem. Use this tool when you need to remove files that are no longer needed, manage storage space, or clean up temporary files created during operations. Exercise caution to avoid deleting important files.
-
----
-
-## file_list
-
-**Source File:** `file_list.py`
-
-**Description:** Lists all files and directories within a specified directory. Use this tool to explore the filesystem, check for the existence of files, or organize files and directories. When the user's instruction is fuzzy, you should follow your curiosity to see whether there are any files that could help you learn more about the task. This can help in decision-making processes, such as determining whether a file needs to be created or modified.
-
----
-
-## file_read
-
-**Source File:** `file_read.py`
-
-**Description:** Reads and returns the content of a specified file. Use this tool to access the contents of scripts, data files, or any text-based file, including pdf, md, txt. When the user's instruction is fuzzy, you should follow your curiosity to read files that could potentially help you learn more about the task. This is useful when you need to analyze existing code, extract information, or incorporate content into your responses or decision-making processes.
-
----
-
-## file_write
-
-**Source File:** `file_write.py`
-
-**Description:** Writes content to a file, supporting multiple file types (txt, pdf, md, json, py, csv) and optional directory creation. Use this tool to create or update files with specific content. Can create directories if they don't exist.
+**Description:** A secure tool for performing various file system operations with timeout protection and size limits. 
 
 ---
 
@@ -473,6 +449,14 @@ The code will have access to all standard Python libraries plus the agent's tool
 **Source File:** `get_advice.py`
 
 **Description:** Get advice from a specified advisor based on the given query posed by a user
+
+---
+
+## get_company_updates
+
+**Source File:** `get_company_updates.py`
+
+**Description:** Fetch the recent LinkedIn updates posted by a given list of companies
 
 ---
 
@@ -489,14 +473,6 @@ The code will have access to all standard Python libraries plus the agent's tool
 **Source File:** `get_hacker_news_headlines.py`
 
 **Description:** Retrieve the top headlines from Hacker News with optional additional context
-
----
-
-## get_hub_co_updates
-
-**Source File:** `get_hub_co_updates.py`
-
-**Description:** Fetch recent LinkedIn updates from hub companies within the last 30 days
 
 ---
 
@@ -615,7 +591,7 @@ messages=[
 
 **Source File:** `use_brainstorm.py`
 
-**Description:** Generate creative ideas using various brainstorming techniques, including big_mind_mapping, reverse_brainstorming, role_storming, scamper" six_hats. starbursting
+**Description:** Generate creative ideas using various brainstorming techniques. Respond with a clean markdown format that presents the ideas in the most useful format for the user. Methods: Reverse brainstorming involves identifying ways to cause a problem or achieve the opposite effect. Perfect for spotting potential issues and coming up with innovative solutions. Role storming adopting the perspective of someone else to generate ideas. Great for gathering insights from different viewpoints. SCAMPER stands for Substitute, Combine, Adapt, Modify, Put to another use, Eliminate, and Reverse. It encourages thinking from multiple perspectives to generate diverse ideas. Edward de Bono, looks at a problem from six different perspectives - White (Data), Red (Emotions), Black (Risks), Yellow (Benefits), Green (Creativity), and Blue (Process management). Focuses on generating questions rather than answers using the 5 W's and 1 H (Who, What, Where, When, Why, How). Ideal for comprehensive topic exploration.
 
 ---
 
@@ -623,7 +599,15 @@ messages=[
 
 **Source File:** `use_notion.py`
 
-**Description:** This tool enables you to create pages in Notion using content you generate. It also allows you to fetch page content from Notion.
+**Description:** This tool allows you to interact with Notion by either creating new pages or fetching existing page content. Use 'create_page' to add new content and 'fetch_content' to retrieve existing content.
+
+---
+
+## use_sequential_thinking
+
+**Source File:** `use_reasoning.py`
+
+**Description:** A tool for dynamic, reflective, and self-directed sequential reasoning. It stores a chain of thoughts, supports revisions and branching, and can optionally suggest next steps using an LLM if needed.
 
 ---
 

@@ -1,4 +1,4 @@
-# repo_tools/generate_tools_list.py
+# repo_tools/generate_tools_readme.py
 
 import os
 import importlib.util

@@ -207,13 +207,24 @@ class ResponseHandler:
         chat_history: List[Dict[str, Any]],
         chat_history_path: str
     ) -> Optional[Dict[str, Any]]:
-        """Handle tool execution with support for direct streaming and structured responses."""
+        """Handle tool execution with support for artifacts and structured responses."""
         print(colored(f"\nStarting tool execution for: {tool_name}", "cyan"))
         print(colored(f"Function data: {function_data}", "cyan"))
         
         try:
             # Set up spinner placeholder for tool updates
             st.session_state.spinner_placeholder = self.status_placeholder
+            
+            # Handle nested function data structure from LLM
+            if isinstance(function_data, str):
+                try:
+                    function_data = json.loads(function_data)
+                except json.JSONDecodeError:
+                    pass
+                    
+            # Extract actual arguments if nested
+            if 'arguments' in function_data:
+                function_data = function_data['arguments']
             
             print(colored("Executing tool...", "yellow"))
             tool_response = execute_tool(
@@ -231,57 +242,16 @@ class ResponseHandler:
             if not tool_response:
                 print(colored("No tool response received", "red"))
                 return None
-                
-            # Handle direct output tools
-            if tool_response.get('direct_stream', False):
-                print(colored("Processing direct stream response", "yellow"))
-                result = tool_response.get('result', '')
-                
-                # Handle error responses
-                if isinstance(result, dict) and 'error' in result:
-                    error_msg = f"❌ Error: {result['error']}"
-                    print(colored(error_msg, "red"))
-                    self.response_placeholder.markdown(error_msg)
-                    return None
-                
-                # Handle streaming responses
-                if hasattr(result, 'choices'):
-                    print(colored("Processing streaming response", "yellow"))
-                    full_response = ""
-                    for chunk in result:
-                        if not chunk.choices:
-                            continue
-                        
-                        delta = chunk.choices[0].delta
-                        if hasattr(delta, 'content') and delta.content:
-                            chunk_text = delta.content
-                            full_response += chunk_text
-                            self.response_placeholder.markdown(full_response)
-                            print(colored("Streaming chunk displayed", "green"))
-                
-                # Handle markdown or structured responses
-                else:
-                    print(colored("Processing non-streaming response", "yellow"))
-                    if isinstance(result, str):
-                        print(colored("Rendering markdown string", "yellow"))
-                        self.response_placeholder.markdown(result)
-                    else:
-                        print(colored("Rendering structured data", "yellow"))
-                        self.response_placeholder.markdown(f"```json\n{json.dumps(result, indent=2)}\n```")
-                    
-                    chat_history.append({
-                        "role": "assistant",
-                        "content": result if isinstance(result, str) else json.dumps(result, indent=2),
-                        "tool_name": tool_name
-                    })
-                    print(colored("Response added to chat history", "green"))
-                
-                save_chat_history(chat_history, chat_history_path)
-                print(colored("Chat history saved", "green"))
-                return None
-                
-            # Return tool response for standard flow
-            print(colored("Returning standard tool response", "yellow"))
+            
+            # Handle artifact generation tool specifically
+            if tool_name == 'make_artifact' and 'artifact_html' in tool_response:
+                print(colored("Processing artifact response", "yellow"))
+                return {
+                    "result": tool_response.get('result', ''),
+                    "artifact_html": tool_response['artifact_html'],
+                    "artifact_id": tool_response['artifact_id']
+                }
+            
             return tool_response
 
         except Exception as e:
@@ -341,13 +311,12 @@ def get_llm_response(
     tool_choice: str = 'auto',
     **overrides
 ) -> List[Dict[str, Any]]:
-    """Main orchestrator function using the refactored components"""
     try:
         with st.chat_message("assistant"):
             status_placeholder = st.empty()
+            tool_result = None
             
             with st.spinner(f"{selected_advisor} is thinking..."):
-                # Initialize components
                 params = LLMParams.get_default()
                 resolved_tools = ToolManager.resolve_tools(tools)
                 api_params = LLMParams.build_api_params(params, overrides, messages, resolved_tools)
@@ -365,18 +334,14 @@ def get_llm_response(
                         completion = client.chat.completions.create(**api_params)
                         full_response, function_call_data = response_handler.handle_non_streamed_response(completion)
 
-                    # Add response to history if it's not a pure tool call
-                    if full_response.strip():
-                        history_manager.add_assistant_response(full_response)
-
-                    # Handle tool calls if present
-                    if function_call_data:
+                    # Handle tool calls immediately if present
+                    if function_call_data and 'name' in function_call_data:
                         tool_name = function_call_data['name']
-                        tool_args = function_call_data['arguments']
-                        print(colored(f"Executing tool: {tool_name}", "yellow"))
+                        
+                        # Execute tool and get response
                         tool_result = response_handler.handle_tool_execution(
                             tool_name,
-                            tool_args,
+                            function_call_data,
                             chat_history,
                             chat_history_path
                         )
@@ -389,6 +354,12 @@ def get_llm_response(
                                 tool_result
                             )
                             
+                            # Force a rerun here to ensure tool response is rendered
+                            if tool_name == 'make_artifact':
+                                history_manager.save()
+                                st.rerun()
+                            
+                            # Get final LLM response after tool execution
                             api_params['messages'] = initial_messages + chat_history
                             if api_params.get('stream', True):
                                 stream = client.chat.completions.create(**api_params)
@@ -398,6 +369,10 @@ def get_llm_response(
                                 final_response = response_handler.handle_non_streamed_response(completion)[0]
                             
                             history_manager.add_assistant_response(final_response)
+                    else:
+                        # Add response to history if it's not a tool call
+                        if full_response.strip():
+                            history_manager.add_assistant_response(full_response)
 
                 except Exception as e:
                     st.error(f"An error occurred: {e}")
@@ -408,9 +383,10 @@ def get_llm_response(
                     status_placeholder.empty()
                     history_manager.save()
                     
-                    # Trigger rerun after everything is saved
-                    if not function_call_data or (function_call_data and tool_result is not None):
-                        st.rerun()
+                    # Only rerun at the end if we haven't already rerun for an artifact
+                    if not (function_call_data and function_call_data.get('name') == 'make_artifact'):
+                        if not function_call_data or (function_call_data and tool_result is not None):
+                            st.rerun()
 
     except Exception as main_e:
         st.error(f"An unexpected error occurred: {main_e}")

@@ -1,5 +1,3 @@
-#utils/file_utils.py
-
 # utils/file_utils.py
 
 import os

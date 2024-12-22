@@ -10,8 +10,8 @@
     "messages": [
         {
             "role": "system",
-            "content": "ABOUT ME:\n\n<$me/aboutme.md$>\n\nABOUT YOU:\n\nYou are a tool-calling LLM assistant. Your goal is to carefully process each user message and determine whether you need to respond naturally or make a tool call to assist the user effectively. You provide helpful and comprehensive answers.\n\nABOUT THE HUB:\n\n<$me/about_the_hub.md$>\n\n"
+            "content": "ABOUT YOU:\n\nYou are a tool-calling LLM assistant. Your goal is to carefully process each user message and determine whether you need to respond naturally or make a tool call to assist the user effectively. You provide helpful and comprehensive answers."
         }
     ],
-    "tools": ["get_current_weather","get_research","get_transcription", "get_hacker_news_headlines", "use_notion", "use_brainstorm", "use_reasoning"]
+    "tools": ["get_current_weather","web_image_search"]
 }
