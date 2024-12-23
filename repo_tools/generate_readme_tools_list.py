@@ -44,7 +44,7 @@ def truncate_description(description, max_words=60):
 
 def generate_tools_list():
     """Generate a detailed markdown list of tools with their descriptions."""
-    tools_dir = "tools"
+    tools_dir = "../tools"
     if not os.path.exists(tools_dir):
         print(colored("Tools directory not found!", "red"))
         return
@@ -74,7 +74,7 @@ def generate_tools_list():
                 failed_imports.append((filename, "No TOOL_METADATA found"))
     
     # Write successful tools with their descriptions to repo_readme_tool_list.md
-    with open('repo_tools/repo_readme_tool_list.md', 'w') as f:
+    with open('repo_readme_tool_list.md', 'w') as f:
         for index, (tool_name, tool_description) in enumerate(sorted(successful_tools), start=1):
             truncated_description = truncate_description(tool_description)
             f.write(f"{index}. `{tool_name}`: {truncated_description}\n")

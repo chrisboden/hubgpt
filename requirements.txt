@@ -1,14 +1,13 @@
-Markdown
-PyPDF2
+PIL
+Pillow
 Requests
 Wikipedia-API
+asyncio
 beautifulsoup4
 duckdb
 duckduckgo-search
-fpdf
 google-generativeai
 halo
-markdown
 openai
 pandas
 pathspec

@@ -13,6 +13,7 @@ from typing import List, Dict
 from dotenv import load_dotenv
 import uuid
 import pathlib
+from utils.search_utils import perform_image_search, ImageSearchResult
 
 # Load environment variables
 load_dotenv()
@@ -261,7 +262,7 @@ def get_llm_image_selection(grid_image_path: str, query: str, client) -> str:
         messages = [
             {
                 "role": "system",
-                "content": "You are an expert image selector. You are given a grid of images to select from and an image brief. Below each image in the grid is a uuid. You select the image which best meets the brief by replying with the uuid of that image.\n\nYou must strictly reply with the following json format: {\n \"uuid\": \"the uuid of the image you have selected\",\n \"rationale\": \"your rationale for choosing this image over the others and why you think it best meets the brief\",\n \"caption\": \"a suggested caption to accompany the image\"\n}"
+                "content": "You are an expert image selector having had a distinguished career as an image editor for the world's leading magazine publisher. For your task today, you are given a grid of images to select from and an image brief from. Below each image in the grid is a uuid. You select the image which best meets the brief by replying with the uuid of that image.\n\nEDITORIAL GUIDELINES: You have been selected for this role because of your excellent taste. In selecting your preferred image, consider composition, resolution, detail, and narrative. Unless otherwise requested, avoid selecting what are obviously stock photos and skip photos that have watermarks or other annotations. When choosing between very similar/same images, prefer the one with larger image size.\n\nRESPONSE FORMAT: You must strictly reply with the following json format: {\n \"uuid\": \"the uuid of the image you have selected\",\n \"rationale\": \"your rationale for choosing this image over the others and why you think it best meets the brief\",\n \"caption\": \"a suggested caption to accompany the image\"\n}"
             },
             {
                 "role": "user",
@@ -321,6 +322,8 @@ def execute(query: str = None, count: int = 12, llm_client=None, **kwargs) -> di
         if isinstance(query, dict) and 'arguments' in query:
             args = query['arguments']
             if isinstance(args, dict):
+                if 'arguments' in args:
+                    args = args['arguments']
                 query = args.get('query')
                 count = args.get('count', count)
         
@@ -330,26 +333,39 @@ def execute(query: str = None, count: int = 12, llm_client=None, **kwargs) -> di
         # Create session ID and directories
         session_id = str(uuid.uuid4())[:5]
         temp_dir, data_dir = create_session_dirs(session_id)
-        cprint(f"Created session {session_id}", "blue")
-
-        cprint(f"Processing query: {query} with count: {count}", "green")
-        images = fetch_images(query, count)
+        
+        # Use the search utils to get images
+        images = perform_image_search(query, count, llm_client)
         
         if not images:
             return {"result": "No images found for the given query."}
 
-        # Save search results with session ID and temp_dir
-        processed_results = save_search_results(images, session_id, temp_dir)
+        # Convert ImageSearchResult objects to dictionaries for processing
+        processed_results = []
+        for img in images:
+            processed_results.append({
+                "url": img.url,
+                "thumbnail": img.thumbnail_url,
+                "title": img.title,
+                "uuid": img.uuid,
+                "size": f"{img.width}x{img.height}" if img.width and img.height else "unknown"
+            })
+
+        # Create session ID and directories
+        session_id = str(uuid.uuid4())[:5]
+        temp_dir, data_dir = create_session_dirs(session_id)
+
+        # Save results file
         results_path = temp_dir / f"{session_id}.json"
-        
-        # Create the composite grid image
+        with open(results_path, 'w') as f:
+            json.dump(processed_results, f, indent=4)
+
+        # Create grid image and continue with existing logic...
         grid_image = create_image_grid(processed_results)
         
         if grid_image:
-            # Save the grid image with session ID
             grid_path = temp_dir / f"{session_id}_grid.jpg"
             grid_image.save(grid_path, "JPEG")
-            cprint(f"Saved grid image to {grid_path}", "green")
             
             # Create initial markdown output
             markdown = f"### Image Search Results for '{query}'\n\n"

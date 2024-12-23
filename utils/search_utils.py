@@ -1,12 +1,15 @@
 # utils/search_utils.py
 
 import os
-from typing import List, Dict, Optional, Union
+from typing import List, Dict, Optional, Union, Tuple
 from duckduckgo_search import DDGS
 import requests
 import json
 from tavily import TavilyClient, MissingAPIKeyError, InvalidAPIKeyError, UsageLimitExceededError, BadRequestError
 import openai
+import uuid
+from PIL import Image
+from io import BytesIO
 
 # Represents a structured search result with title, URL, and description
 class SearchResult:
@@ -307,6 +310,90 @@ class TavilySearchProvider(SearchProvider):
             return []
 
 
+class ImageSearchResult:
+    def __init__(self, title: str, url: str, thumbnail_url: str, width: Optional[int] = None, height: Optional[int] = None):
+        self.title = title
+        self.url = url
+        self.thumbnail_url = thumbnail_url
+        self.width = width
+        self.height = height
+        self.uuid = str(uuid.uuid4())[:5]
+
+# Add new abstract provider for image search
+class ImageSearchProvider(SearchProvider):
+    def image_search(self, query: str, max_results: int = 10) -> List[ImageSearchResult]:
+        raise NotImplementedError
+
+# Add Brave image search provider
+class BraveImageSearchProvider(BraveSearchProvider):
+    def __init__(self, api_key: Optional[str] = None):
+        super().__init__(api_key)  # Initialize parent with API key
+    
+    def image_search(self, query: str, max_results: int = 10) -> List[ImageSearchResult]:
+        try:
+            headers = {"X-Subscription-Token": self.api_key}
+            params = {
+                "q": query,
+                "count": max_results,
+                "search_lang": "en",
+                "country": "us"
+            }
+            response = requests.get("https://api.search.brave.com/res/v1/images/search", 
+                                 headers=headers, 
+                                 params=params)
+            response.raise_for_status()
+            data = response.json()
+            
+            return [
+                ImageSearchResult(
+                    title=img.get("title", "No title"),
+                    url=img["properties"]["url"],
+                    thumbnail_url=img["thumbnail"]["src"],
+                    width=img.get("width"),
+                    height=img.get("height")
+                ) for img in data.get("results", [])
+            ]
+        except Exception as e:
+            print(f"Brave image search failed: {str(e)}")
+            return []
+
+class SerperImageSearchProvider(SerperSearchProvider):
+    def __init__(self, api_key: Optional[str] = None):
+        super().__init__(api_key)  # Initialize parent with API key
+    
+    def image_search(self, query: str, max_results: int = 10) -> List[ImageSearchResult]:
+        try:
+            headers = {
+                "X-API-KEY": self.api_key,
+                "Content-Type": "application/json"
+            }
+            
+            data = {
+                "q": query,
+                "num": max_results
+            }
+            
+            response = requests.post(
+                "https://google.serper.dev/images",
+                headers=headers,
+                json=data
+            )
+            response.raise_for_status()
+            data = response.json()
+            
+            return [
+                ImageSearchResult(
+                    title=img.get("title", "No title"),
+                    url=img["imageUrl"],
+                    thumbnail_url=img["thumbnailUrl"],
+                    width=img.get("imageWidth"),
+                    height=img.get("imageHeight")
+                ) for img in data.get("images", [])
+            ]
+        except Exception as e:
+            print(f"Serper image search failed: {str(e)}")
+            return []
+
 # Resilient search mechanism that tries multiple search providers
 class ResilientSearcher:
     def __init__(self):
@@ -330,6 +417,11 @@ class ResilientSearcher:
             DDGSearchProvider(),  # Always available as a fallback
             SerpApiSearchProvider() if os.getenv("SERPAPI_API_KEY") else None,
         ]
+
+        self.image_providers = [
+            SerperImageSearchProvider() if os.getenv("SERPER_API_KEY") else None,
+            BraveImageSearchProvider() if os.getenv("BRAVE_API_KEY") else None,
+        ]
         
         # Additional debug logging to show active providers
         print("🔍 Active Providers:")
@@ -337,6 +429,24 @@ class ResilientSearcher:
             if provider:
                 print(f" - {type(provider).__name__}")
 
+
+    def image_search(self, query: str, max_results: int = 10) -> List[ImageSearchResult]:
+        """Attempt image search using multiple providers"""
+        print(f"🔎 Attempting image search with query: {query}")
+        
+        for provider in self.image_providers:
+            if provider is not None:
+                print(f"Trying image provider: {type(provider).__name__}")
+                try:
+                    results = provider.image_search(query, max_results)
+                    if results:
+                        print(f"✅ Successfully retrieved images from {type(provider).__name__}")
+                        return results
+                except Exception as e:
+                    print(f"❌ {type(provider).__name__} failed: {str(e)}")
+        
+        return []
+    
     def search(self, query: str, max_results: int = 10) -> List[SearchResult]:
         """
         Attempt to search using multiple providers in a resilient manner.
@@ -451,6 +561,13 @@ Your goal is to design a query that best matches the objective you have been giv
             "max_results": 10  # Default fallback
         }
     
+def perform_image_search(objective: str, max_results: int = 10, llm_client=None) -> List[ImageSearchResult]:
+    """High-level image search function with query optimization"""
+    search_params = generate_search_query(objective, llm_client)
+    searcher = ResilientSearcher()
+    return searcher.image_search(search_params['query'], max_results)
+
+
 def perform_search(objective: str, max_results: int = 10, llm_client=None) -> List[Dict[str, str]]:
     """
     High-level search function that combines query generation and execution.

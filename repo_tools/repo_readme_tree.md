@@ -8,6 +8,7 @@
 ├── .gitignore
 ├── .streamlit
 │   └── config.toml
+├── Peregian_Digital_Hub_Book.md
 ├── README.md
 ├── advisors
 │   ├── .DS_Store
@@ -53,9 +54,13 @@
 │   ├── README.md
 │   ├── generate_env_file.py
 │   ├── generate_readme_tools_list.py
+│   ├── generate_repo_readme.py
 │   ├── generate_repo_tree.py
 │   ├── generate_requirements.py
 │   ├── generate_tools_readme.py
+│   ├── repo_readme_advisors.md
+│   ├── repo_readme_intro.md
+│   ├── repo_readme_notepads.md
 │   ├── repo_readme_tool_list.md
 │   ├── repo_readme_tree.md
 │   ├── tools_readme_howto.md
@@ -90,11 +95,14 @@
 │   ├── handoff_to_agent.py
 │   ├── handoff_to_coordinator.py
 │   ├── linkedin_research.py
+│   ├── make_artifact.py
+│   ├── make_book.py
 │   ├── make_podcast.py
 │   ├── use_ai.py
 │   ├── use_brainstorm.py
 │   ├── use_notion.py
 │   ├── use_reasoning.py
+│   ├── web_image_search.py
 │   ├── web_scrape.py
 │   └── web_search.py
 └── utils

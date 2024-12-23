@@ -2,7 +2,7 @@
 
 ## Overview
 
-Spinner status updates are a critical component of creating user-friendly, transparent tools that keep users informed during long-running or complex processes. By leveraging the `update_spinner_status()` function from `utils/ui_utils.py`, you can provide real-time feedback about the progress of your tool's execution.
+Spinner status updates are a critical component of creating user-friendly, transparent tools that keep users informed during long-running or complex processes. By leveraging the `update_spinner_status()` function from `utils/ui_utils.py`, you can provide real-time feedback about the progress of your tool's execution. Your directive is to add spinner status, not to refactor, remove or edit other code. 
 
 ## Key Principles
 
@@ -120,6 +120,8 @@ def execute(...):
 2. **Be Specific**: Provide meaningful context in updates
 3. **Handle Errors Gracefully**: Always have an error status update
 4. **Use Consistent Formatting**: Maintain a uniform update style
+5. Do not make changes to existing code, just add spinner status
+6. Do not remove docstrings or comments
 
 ## Recommended Practices
 

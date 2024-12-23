@@ -1,41 +1,284 @@
-# HubGPT: A Conversational AI Agent Framework for the Peregian Digital Hub
+# Hubgpt
 
-HubGPT is a conversational AI agent framework designed to empower members and friends of the Peregian Digital Hub.  It utilizes a low-code approach, enabling the creation of sophisticated AI assistants and automated workflows through Python. Users interact with predefined "advisors," each representing an expert persona, and access various tools to perform tasks and answer questions.
+A conversational AI agent framework that allows the creation of personalised advisors with tool support. Developed for low code tinkering by members and friends of the Peregian Digital Hub.
 
-## Key Concepts
+The Hubgpt project is a customisable conversational AI framework that allows users to create AI-powered advisors using prompt templates and tools. Each advisor is configured with specific LLM parameters (like model and temperature) and system instructions, offering granular control over the advisor's behavior and expertise. 
 
-* **Advisors:**  These are predefined expert personas (e.g., Naval Ravikant, Steve Jobs). Each advisor is represented by a configuration file (`.md` or `.json`) within the `advisors` directory. This configuration specifies:
-    * **Instructions:** A detailed system prompt that defines the advisor's persona, knowledge base (often including excerpts from relevant books, articles, or podcasts). These are used to form context for the user interaction or response. This is handled dynamically, adding resilience to how the advisor can access its specific content
-    * **Messages:** A set of example conversation starters or background information used to initiate and set context for conversations specific to an advisor type
-    * **Tools:** A list of tools this advisor can invoke. These tools are implemented as separate Python modules, offering specific functionalities (e.g., web search, code execution, interacting with an external database, or invoking additional tools).
+A key feature is the ability to include external files directly in the system prompts using a special tag notation. This enables developers to inject rich context into the advisor’s instructions by specifying custom files, such as personal biographies or detailed guidelines. This functionality not only personalises the output but also allows the AI to be grounded in extensive data sources, like long-form biographies or research documents. This is particularly powerful when leveraging large context window models that can accept prompts containing hundreds of thousands of tokens, enabling the advisor to operate with far deeper and more nuanced knowledge. 
 
-* **Tools:** These are Python modules within the `tools` directory. Each tool's core is an `execute()` function that can take various inputs, including tools from the `tools/` directory. This allows complex operations (like iterative research or complex workflows), without making errors more difficult to trace, or the code more difficult to modify through separate files. Tools have sophisticated support for direct streaming to the UI (`"direct_stream": True`), enabling real-time information updates making the user interface much more responsive.
-    * Flexibility: Tools are designed to be reusable, able to accommodate various data types and formats. They can also call other tools, creating complex workflows.
-    * Multimodality: The system can handle text, images, and potentially other media types when appropriate (`image_url` type in messages).
+Built on Streamlit for an intuitive user interface, the app makes it easy to interact with advisors, load chat histories, and integrate new tools and context-rich instructions for highly customized AI experiences.
 
-* **Language Model (LLM):** An external Language Model (LLM) API (like OpenAI) acts as the central engine. The LLM:
-    * Interprets user prompts and context from conversations.
-    *  Decides if a direct response is needed or if it should invoke a tool.
-    * Passes instructions and parameters to chosen tools within the `tools/` directory based on tools available to that advisor, and their metadata.
-    * Integrates the results of invoked tools back into the conversation.
+## Clone the Repository
 
-* **Conversation Memory (Persistent Chat History):** A system for managing conversations,  saving the complete dialogue including the results of executing any tools within each turn to maintain consistency of context between interactions maintaining multi-turn consistency, and providing resilience to unexpected shutdowns or lost connectivity as it is written out to an associated file.
+```bash
+git clone https://github.com/chrisboden/hubgpt.git
+```
 
+## Install Dependencies
 
-* **Filesystem Handling (`file_utils`):** Addresses file safety and permissions with security in mind. Crucially, this also manages the addition of new directories if a tool or API necessitates it which increases overall robustness when writing external files.
+```bash
+pip install -r requirements.txt
+```
 
-* **Notion Integrations (`notion_utils`):** Permits functionality to link the tools to the notion collaborative tools and platforms
+## Setup Environment Variables
 
-* **Database Logging (`db_utils`):** A robust database logs the entirety of every agent interaction including user input, and tool calls, thus enabling robust debugging, auditing, or retrospective querying on any type of interaction with this application
+1. Rename the `.env_copy` file to `.env`.
+2. Add your API keys to the `.env` file.
 
+## Running the App
 
-## Workflow
+To run the app, use:
 
-1. **User Input:** The user interacts with the application via the Streamlit-powered chat interface.
-2. **LLM Processing:** The framework prepares relevant information into an LLM request, which could include the history (context) obtained by the chat application, current prompt, plus an array of tool metadata associated with the selected advisor to facilitate tool selection logic by the LLM. (This information is not stored to avoid loss or corruption during unexpected interaction interruptions).  
-3. **Tool Invocation (Optional):** If a tool needs to execute and external processes, the LLM provides arguments and the framework uses `subprocess` to execute it in isolation. If the invoked function delivers its tools results, then that result is parsed back to the llm. if a tool outputs a stream of data, then the data is obtained in real time as a stream delivered to the user interface.
-4. **LLM Response:** The LLM processes the tool results (or directly answers without a tool call) to create the final response for the user. This is displayed in the Streamlit chat pane. This entire flow is logged to the DuckDB database for monitoring, replay, and auditing purposes.
-5. **Conversation Persistence:** The conversation history, including tool executions and responses, is logged into associated files for replay and for use in other areas of the application
+```bash
+streamlit run main.py
+```
 
 
-The framework aims to provide a flexible and robust platform for creating AI assistants at the Peregian Hub, suitable for handling diverse tasks and intricate interactions.  The inclusion of `.gitignore` based security and robust database handling significantly improves production performance.  Tools in the repo.py are designed for integration with the framework via direct imports and are designed to be dynamically loadable, executable without the need for generating files separately.  These tools support a form of streaming data from interacting external api results or from completing complex internal calculations needed for responding to user inputs in an accessible manner for the end-user
+## The UI
+
+This app uses [Streamlit](https://streamlit.io/), a Python framework for rapid prototyping.
+
+- Advisors populate a dropdown list in the sidebar.
+- Upon selecting an advisor, the current chat history is loaded into the UI, allowing for long-running conversations. The conversation history is saved in the `/chats` directory
+- The "Clear Conversation" button archives the current chat history to a JSON file in the `/archive` directory.
+- Each assistant (aka advisor) message includes:
+    - A **Save** button to append the message to a `snippets.json` file in the `/ideas` directory.
+    - A **Copy** button to add the content to your clipboard.
+
+# Repository Structure
+
+```
+├── .DS_Store
+├── .cursorignore
+├── .cursorrules
+├── .env_copy
+├── .gitignore
+├── .streamlit
+│   └── config.toml
+├── Peregian_Digital_Hub_Book.md
+├── README.md
+├── advisors
+│   ├── .DS_Store
+│   ├── Bob_Smith.json
+│   ├── Mr_Feedreader.json
+│   ├── Naval_Ravikant.json
+│   ├── Ted_Smith.md
+│   ├── Yuval_Harari.json
+│   ├── archive
+│   ├── chats
+│   └── jane_smith.md
+├── advisors.py
+├── content
+├── cursor_prompts
+│   ├── howto_add_comments.md
+│   ├── howto_add_spinner_status.md
+│   ├── howto_computer-use.md
+│   ├── howto_researcher.md
+│   ├── howto_understand_this_app.md
+│   ├── howto_use_openrouter.md
+│   ├── howto_write_docs.md
+│   ├── howto_write_tools.md
+│   ├── linkedin_tool_notes.txt
+│   ├── tools.py
+│   └── use_and_make_tools.md
+├── data
+├── logs
+├── main.py
+├── me
+│   ├── example_aboutme.txt
+│   ├── example_custom_instructions.txt
+│   ├── example_tips_copywriting.txt
+├── notepads
+│   ├── default
+│   │   ├── .DS_Store
+│   │   ├── files
+│   │   │   ├── .DS_Store
+│   │   │   └── example_paper.pdf
+│   │   └── index.json
+│   └── notepad_prompt.json
+├── notepads.py
+├── repo_tools
+│   ├── README.md
+│   ├── generate_env_file.py
+│   ├── generate_readme_tools_list.py
+│   ├── generate_repo_readme.py
+│   ├── generate_repo_tree.py
+│   ├── generate_requirements.py
+│   ├── generate_tools_readme.py
+│   ├── repo_readme_advisors.md
+│   ├── repo_readme_intro.md
+│   ├── repo_readme_notepads.md
+│   ├── repo_readme_tool_list.md
+│   ├── repo_readme_tree.md
+│   ├── tools_readme_howto.md
+│   └── tools_readme_intro.md
+├── requirements.txt
+├── snippets
+├── static
+│   ├── README.md
+│   ├── css
+│   │   ├── advisors.css
+│   │   └── style.css
+│   └── images
+│       ├── logo.png
+│       └── logo_full.png
+├── tools
+│   ├── .DS_Store
+│   ├── README.md
+│   ├── code_run.py
+│   ├── code_write.py
+│   ├── email_create.py
+│   ├── file_operations.py
+│   ├── get_advice.py
+│   ├── get_company_updates.py
+│   ├── get_current_weather.py
+│   ├── get_hacker_news_headlines.py
+│   ├── get_news.py
+│   ├── get_research.py
+│   ├── get_transcription.py
+│   ├── get_tweets.py
+│   ├── get_website.py
+│   ├── get_wikipedia.py
+│   ├── handoff_to_agent.py
+│   ├── handoff_to_coordinator.py
+│   ├── linkedin_research.py
+│   ├── make_artifact.py
+│   ├── make_book.py
+│   ├── make_podcast.py
+│   ├── use_ai.py
+│   ├── use_brainstorm.py
+│   ├── use_notion.py
+│   ├── use_reasoning.py
+│   ├── web_image_search.py
+│   ├── web_scrape.py
+│   └── web_search.py
+└── utils
+    ├── README.md
+    ├── chat_utils.py
+    ├── db_utils.py
+    ├── file_utils.py
+    ├── llm_utils.py
+    ├── message_utils.py
+    ├── notion_utils.py
+    ├── prompt_utils.py
+    ├── scrape_utils.py
+    ├── search_utils.py
+    ├── tool_utils.py
+    └── ui_utils.py
+```
+
+## Advisors
+
+An "Advisor" is created by adding a prompt template (JSON file) to the `advisors` directory. Each prompt template consists of:
+
+1. **LLM API Parameters**: These control aspects such as temperature, model, etc., and are defined in the template rather than in the main code. This allows for individual control at the advisor level.
+Here's an updated version of the documentation section, including the new `<$datetime$>` tag:
+
+2. **System Instruction**: Defines the role of the advisor. You can include text files in the system prompt using the `<$file.txt$>` tag notation. For instance, to include an `aboutme.txt` file located in the `/me` directory, you would write `<$me/aboutme.txt$>`. Or if you had a document called `transcript.json` in JSON format in the `/content/raw` directory, you could include that with `<$content/raw/transcript.json$>`. 
+
+You can also include multiple files from a directory using the directory inclusion tag `<$dir:path/to/directory/*.ext$>`. For example, to include all text files from a 'knowledge' directory, you would write `<$dir:knowledge/*.txt$>`. 
+
+Additionally, you can insert the current date or time into the system prompt using the `<$datetime$>` tag. For example, `<$datetime:%Y-%m-%d$>` will be replaced with the current date in the format `YYYY-MM-DD`. This enables you to inject customized instructions, dynamic content, and custom files into the system message. The text of the system instruction is written as escaped markdown.
+
+3. **Tools**: You can optionally specify an array of tools that the advisor has access to. Each tool should correspond to a Python file in the `tools` directory and must have an `execute` function.
+
+### Creating Advisors
+
+To create a new advisor, copy an existing advisor JSON file and modify it as necessary. The app assumes you are using OpenRouter to route your LLM calls.
+
+### Using Tools
+
+Tools in this framework provide powerful, modular functionality that can be leveraged by advisors and the AI assistant. Here's how to effectively use tools:
+
+#### Tool Calling Mechanism
+
+1. **Automatic Discovery**: Tools in the `tools/` directory are automatically discovered and registered.
+2. **Dynamic Execution**: Tools can be called dynamically by the AI based on the task requirements.
+3. **Flexible Parameters**: Each tool supports various input parameters defined in its metadata.
+
+#### Example Tool Assignment
+
+```json
+{
+    "model": "openai/gpt-4o-mini",
+    "tool_choice": "auto",
+    "messages": [
+        {
+            "role": "system",
+            "content": "ABOUT ME:\n\n<$me/aboutme.md$>\n\nABOUT YOU:\n\nYou are a tool-calling LLM assistant. Your goal is to carefully process each user message and determine whether you need to respond naturally or make a tool call to assist the user effectively. You provide helpful and comprehensive answers."
+        }
+    ],
+    "tools": ["get_current_weather","get_research","get_transcription", "get_hacker_news_headlines", "use_notion", "use_brainstorm"]
+}
+```
+
+#### Tool Capabilities
+
+1. `code_run`: Executes a Python script file and returns its output. The script will have access to all agent tools.
+2. `code_write`: Creates or overwrites a Python script with the provided code. The script will automatically have access to all agent tools through pre-configured imports. Example usage patterns: 1. Using the AI tool: from tools import use_ai result = use_ai.execute( messages=[{'role': 'user', 'content': 'Your prompt here'}] ) 2. Using web search: from tools import web_search results = web_search.execute(query='Your search query') 3. File...
+3. `email_create`: Send an HTML email using a Zapier webhook. Creates rich HTML emails with optional plain text fallback.
+4. `file_operations`: A secure tool for performing various file system operations with timeout protection and size limits. 
+5. `get_advice`: Get advice from a specified advisor based on the given query posed by a user
+6. `get_company_updates`: Fetch the recent LinkedIn updates posted by a given list of companies
+7. `get_current_weather`: Provide the current weather for a given location when asked by a user
+8. `get_hacker_news_headlines`: Retrieve the top headlines from Hacker News with optional additional context
+9. `get_news`: Use this tool if you need to get up to date news from the web about a specific subject or topic. This tool provides the latest news and works best with a detailed search query. Make sure to rephrase the user's question as a detailed search_query
+10. `get_research`: This tool is a very intelligent web research agent that can search, find, gather and synthesise highly relevant information for a given topic. Use this tool whenever you are asked to perform research on topic. You simply give the agent a research_brief in natural language, eg 'please research the spacex starship launch schedule'. It will return a comprehensive research dossier...
+11. `get_transcription`: Download captions and transcript from a YouTube video, with optional AI-powered summarization
+12. `get_tweets`: Get the latest tweets from a given Twitter list
+13. `get_website`: Get the definitive website url for a given term
+14. `get_wikipedia`: Retrieve comprehensive Wikipedia content for a given search term and use that content to provide an information dense response to the user. Response MUST be >500 words
+15. `handoff_to_agent`: Use this to hand off work to another agent when their expertise is needed
+16. `handoff_to_coordinator`: Use this to hand work back to the coordinator agent when you have completed your part
+17. `linkedin_research`: This tool performs comprehensive LinkedIn research on a person or company, collecting profile data and posts, analyzing them, and providing detailed insights.
+18. `make_artifact`: Generate self-contained HTML artifacts (widgets) with embedded JavaScript and CSS
+19. `make_book`: Generate a complete book with multiple chapters on any topic using AI. The tool handles research, writing, and formatting.
+20. `make_podcast`: Generate a podcast from raw content using LLM and text-to-speech capabilities.
+21. `use_ai`: Makes a call to an AI language model API with specified messages and model selection. Importantly, this tool supports file inclusion in message content using special syntax. Key Features: 1. File Inclusion: Use <$filename$> syntax to include file contents 2. Directory Inclusion: Use <$dir:pattern$> for multiple files 3. Context Preservation: Include previous results or conversation history Common Usage Patterns: 1....
+22. `use_brainstorm`: Generate creative ideas using various brainstorming techniques. Respond with a clean markdown format that presents the ideas in the most useful format for the user. Methods: Reverse brainstorming involves identifying ways to cause a problem or achieve the opposite effect. Perfect for spotting potential issues and coming up with innovative solutions. Role storming adopting the perspective of someone else to...
+23. `use_notion`: This tool allows you to interact with Notion by either creating new pages or fetching existing page content. Use 'create_page' to add new content and 'fetch_content' to retrieve existing content.
+24. `use_sequential_thinking`: A tool for dynamic, reflective, and self-directed sequential reasoning. It stores a chain of thoughts, supports revisions and branching, and can optionally suggest next steps using an LLM if needed.
+25. `web_image_search`: Perform an image search to find the best matching image for a given user request
+26. `web_scrape`: Fetches and extracts textual content from a specified URL and saves it to a file. The content is saved in markdown format with proper formatting and structure. Use this tool to gather information from web pages for learning, data analysis, or incorporating external knowledge into your responses. This is helpful when you need to access the latest information or data...
+27. `web_search`: Performs a comprehensive web search using multiple search providers (Brave, Tavily, DuckDuckGo, etc.). The tool optimizes the search query using AI and returns ranked results. Use this tool when you need to find current information about any topic, verify facts, or gather data from multiple sources. Results include titles, URLs, and descriptions from various web pages.
+
+
+## Notepads
+
+Notepads is a powerful document-based chat interface that allows you to:
+
+### Key Features
+- Create multiple independent notepads
+- Upload and analyze multiple documents per notepad
+- Maintain separate chat histories for each notepad
+- Sync files between local storage and cloud (Gemini)
+
+### How Notepads Work
+
+1. **Creating Notepads**
+   - Click "New Notepad" to create a unique workspace
+   - Each notepad gets a unique ID and can be renamed
+   - Notepads are stored in the `notepads/` directory
+
+2. **File Management**
+   - Upload documents directly into a notepad
+   - Select which files to include in your chat context
+   - Files are automatically synced with Gemini's cloud storage
+   - Supports multiple file types for comprehensive analysis
+
+3. **Chat Functionality**
+   - Maintain separate chat histories for each notepad
+   - Chat history is automatically saved
+   - Clear chat history with a single button
+   - Delete individual messages as needed
+
+4. **Document Analysis**
+   - Ask questions about uploaded documents
+   - AI uses all selected documents to provide context-aware responses
+   - Supports complex multi-document queries
+
+### Best Practices
+- Use different notepads for different projects or topics
+- Regularly sync and manage your files
+- Take advantage of the selective file inclusion feature
+
