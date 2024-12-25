@@ -32,7 +32,8 @@ def generate_repo_readme():
     scripts = [
         "generate_repo_tree.py",
         "generate_readme_tools_list.py",
-        "generate_requirements.py"
+        "generate_requirements.py",
+        "generate_tools_readme.py"
     ]
     
     # Run the scripts

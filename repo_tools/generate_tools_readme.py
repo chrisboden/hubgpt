@@ -10,7 +10,7 @@ def import_module_from_path(file_path):
     try:
         # Add project root and tools directory to sys.path
         project_root = os.path.dirname(os.path.dirname(file_path))
-        tools_dir = os.path.dirname(file_path)
+        tools_dir = os.path.join(project_root, "tools")
         
         for path in [project_root, tools_dir]:
             if path not in sys.path:
@@ -65,7 +65,9 @@ def get_howto_text():
 
 def generate_tools_list():
     """Generate a detailed markdown list of tools with their descriptions."""
-    tools_dir = "tools"
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    tools_dir = os.path.join(project_root, "tools")
+    print(colored(f"Checking for tools directory at: {tools_dir}", "magenta"))
     if not os.path.exists(tools_dir):
         print(colored("Tools directory not found!", "red"))
         return
