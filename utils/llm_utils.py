@@ -307,10 +307,158 @@ class ChatHistoryManager:
         save_chat_history(self.chat_history, self.chat_history_path)
 
 
+class LLMResponseManager:
+    """Manages the entire LLM response flow including tool execution and chat history"""
+    
+    def __init__(self, client, messages, chat_history, chat_history_path, advisor_data, selected_advisor, tools=[], **overrides):
+        self.client = client
+        self.messages = messages
+        self.chat_history = chat_history
+        self.chat_history_path = chat_history_path
+        self.advisor_data = advisor_data
+        self.selected_advisor = selected_advisor
+        self.tools = tools
+        self.overrides = overrides
+        
+        # Initialize components
+        self.status_placeholder = None
+        self.response_placeholder = None
+        self.response_handler = None
+        self.history_manager = None
+        
+        # Set up params
+        self.params = LLMParams.get_default()
+        self.resolved_tools = ToolManager.resolve_tools(tools)
+        self.api_params = LLMParams.build_api_params(self.params, overrides, messages, self.resolved_tools)
+
+    def setup_ui_components(self):
+        """Initialize Streamlit UI components"""
+        with st.chat_message("assistant"):
+            self.status_placeholder = st.empty()
+            self.response_placeholder = st.empty()
+            self.response_handler = ResponseHandler(self.client, self.status_placeholder, self.response_placeholder)
+            self.history_manager = ChatHistoryManager(self.chat_history, self.chat_history_path)
+            return True
+
+    def make_llm_call(self, messages=None):
+        """Make LLM API call and handle response"""
+        if messages:
+            self.api_params['messages'] = messages
+            
+        log_llm_request(self.api_params)
+        
+        try:
+            if self.api_params.get('stream', True):
+                stream = self.client.chat.completions.create(**self.api_params)
+                response, function_call_data = self.response_handler.handle_streamed_response(stream)
+            else:
+                completion = self.client.chat.completions.create(**self.api_params)
+                response, function_call_data = self.response_handler.handle_non_streamed_response(completion)
+                
+            return response, function_call_data
+            
+        except Exception as e:
+            print(colored(f"LLM call failed: {e}", "red"))
+            raise
+
+    def handle_tool_response(self, tool_name, function_call_data):
+        """Process tool execution and prepare follow-up messages"""
+        tool_result = self.response_handler.handle_tool_execution(
+            tool_name,
+            function_call_data,
+            self.chat_history,
+            self.chat_history_path
+        )
+        
+        if tool_result is None:
+            return None, None
+            
+        self.history_manager.add_tool_interaction(
+            tool_name,
+            st.session_state.last_tool_call_id,
+            function_call_data,
+            tool_result
+        )
+        
+        follow_up_messages = self._construct_follow_up_messages(
+            tool_name, 
+            function_call_data, 
+            tool_result
+        )
+        
+        return tool_result, follow_up_messages
+
+    def _construct_follow_up_messages(self, tool_name, function_call_data, tool_result):
+        """Construct messages for follow-up LLM call after tool execution"""
+        return [
+            *self.messages,
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [{
+                    "id": st.session_state.last_tool_call_id,
+                    "type": "function",
+                    "function": {
+                        "name": tool_name,
+                        "arguments": json.dumps(function_call_data)
+                    }
+                }]
+            },
+            {
+                "role": "tool",
+                "name": tool_name,
+                "tool_call_id": st.session_state.last_tool_call_id,
+                "content": str(tool_result.get('result')) if isinstance(tool_result, dict) else str(tool_result)
+            }
+        ]
+
+    def process_response(self):
+        """Main method to process LLM response flow"""
+        try:
+            with st.spinner(f"{self.selected_advisor} is thinking..."):
+                if not self.setup_ui_components():
+                    return self.chat_history
+                    
+                # Initial LLM call
+                full_response, function_call_data = self.make_llm_call()
+                
+                # Handle tool execution if present
+                if function_call_data and 'name' in function_call_data:
+                    tool_name = function_call_data['name']
+                    tool_result, follow_up_messages = self.handle_tool_response(tool_name, function_call_data)
+                    
+                    if tool_result is not None:
+                        if tool_name == 'make_artifact':
+                            self.history_manager.save()
+                            st.rerun()
+                            
+                        # Make follow-up LLM call
+                        final_response, _ = self.make_llm_call(follow_up_messages)
+                        self.history_manager.add_assistant_response(final_response)
+                else:
+                    # Handle non-tool responses
+                    if full_response.strip():
+                        self.history_manager.add_assistant_response(full_response)
+                        
+        except Exception as e:
+            st.error(f"An error occurred: {e}")
+            logging.error(f"LLM Response Error: {e}")
+            logging.exception(e)
+            
+        finally:
+            self.status_placeholder.empty()
+            self.history_manager.save()
+            
+            if not (function_call_data and function_call_data.get('name') == 'make_artifact'):
+                if not function_call_data or (function_call_data and tool_result is not None):
+                    st.rerun()
+                    
+        return self.chat_history
+
 def get_llm_response(
     client: Any,
-    messages: List[Dict[str, Any]],  # Already contains system + chat messages
-    initial_messages: List[Dict[str, Any]],  # We don't need to use this for follow-up
+    messages: List[Dict[str, Any]],
+    initial_messages: List[Dict[str, Any]],
     chat_history: List[Dict[str, Any]],
     chat_history_path: str,
     advisor_data: Dict[str, Any],
@@ -319,144 +467,22 @@ def get_llm_response(
     tool_choice: str = 'auto',
     **overrides
 ) -> List[Dict[str, Any]]:
+    """Main entry point for LLM interactions"""
     try:
-        with st.chat_message("assistant"):
-            status_placeholder = st.empty()
-            tool_result = None
-            
-            with st.spinner(f"{selected_advisor} is thinking..."):
-                # Initial setup
-                params = LLMParams.get_default()
-                resolved_tools = ToolManager.resolve_tools(tools)
-                api_params = LLMParams.build_api_params(params, overrides, messages, resolved_tools)
-                
-                # Log initial request with full params
-                log_llm_request(api_params)
-                print(colored("\nINITIAL REQUEST MESSAGES:", "yellow"))
-                for msg in api_params['messages']:
-                    content = msg.get('content')
-                    content_preview = f"{content[:100]}..." if content else "None"
-                    print(colored(f"Role: {msg.get('role')}, Content: {content_preview}", "cyan"))
-                
-                response_placeholder = st.empty()
-                response_handler = ResponseHandler(client, status_placeholder, response_placeholder)
-                history_manager = ChatHistoryManager(chat_history, chat_history_path)
-
-                try:
-                    # Initial LLM call
-                    if api_params.get('stream', True):
-                        stream = client.chat.completions.create(**api_params)
-                        full_response, function_call_data = response_handler.handle_streamed_response(stream)
-                        log_llm_response({
-                            "debug_note": "INITIAL STREAMED RESPONSE",
-                            "response_text": full_response,
-                            "function_call": function_call_data
-                        })
-                    else:
-                        completion = client.chat.completions.create(**api_params)
-                        log_llm_response(completion.model_dump())
-                        full_response, function_call_data = response_handler.handle_non_streamed_response(completion)
-
-                    # Handle tool calls
-                    if function_call_data and 'name' in function_call_data:
-                        tool_name = function_call_data['name']
-                        
-                        # Execute tool
-                        tool_result = response_handler.handle_tool_execution(
-                            tool_name,
-                            function_call_data,
-                            chat_history,
-                            chat_history_path
-                        )
-                        
-                        # Log tool result
-                        log_llm_response({
-                            "debug_note": "TOOL EXECUTION RESULT",
-                            "tool": tool_name,
-                            "result": tool_result
-                        })
-                        
-                        if tool_result is not None:
-                            history_manager.add_tool_interaction(
-                                tool_name,
-                                st.session_state.last_tool_call_id,
-                                function_call_data,
-                                tool_result
-                            )
-                            
-                            if tool_name == 'make_artifact':
-                                history_manager.save()
-                                st.rerun()
-                            
-                            # Construct follow-up messages - using messages directly
-                            follow_up_messages = [
-                                *messages,  # Contains system + all chat messages
-                                {
-                                    "role": "assistant",
-                                    "content": None,
-                                    "tool_calls": [{
-                                        "id": st.session_state.last_tool_call_id,
-                                        "type": "function",
-                                        "function": {
-                                            "name": tool_name,
-                                            "arguments": json.dumps(function_call_data)
-                                        }
-                                    }]
-                                },
-                                {
-                                    "role": "tool",
-                                    "name": tool_name,
-                                    "tool_call_id": st.session_state.last_tool_call_id,
-                                    "content": str(tool_result.get('result')) if isinstance(tool_result, dict) else str(tool_result)
-                                }
-                            ]
-                            
-                            # Log message sequence for verification
-                            print(colored("\nFOLLOW-UP REQUEST MESSAGES:", "yellow"))
-                            for msg in follow_up_messages:
-                                content = msg.get('content')
-                                content_preview = f"{content[:100]}..." if content else "None"
-                                print(colored(f"Role: {msg.get('role')}, Content: {content_preview}", "cyan"))
-                            
-                            # Update API params and make request
-                            api_params['messages'] = follow_up_messages
-                            log_llm_request(api_params)
-                            
-                            # Make follow-up LLM call
-                            if api_params.get('stream', True):
-                                stream = client.chat.completions.create(**api_params)
-                                final_response = response_handler.handle_streamed_response(stream)[0]
-                                log_llm_response({
-                                    "debug_note": "FINAL STREAMED RESPONSE",
-                                    "response_text": final_response
-                                })
-                            else:
-                                completion = client.chat.completions.create(**api_params)
-                                log_llm_response(completion.model_dump())
-                                final_response = response_handler.handle_non_streamed_response(completion)[0]
-                            
-                            history_manager.add_assistant_response(final_response)
-                    else:
-                        # Handle non-tool responses
-                        if full_response.strip():
-                            history_manager.add_assistant_response(full_response)
-
-                except Exception as e:
-                    st.error(f"An error occurred: {e}")
-                    logging.error(f"LLM Response Error: {e}")
-                    logging.exception(e)
-                
-                finally:
-                    status_placeholder.empty()
-                    history_manager.save()
-                    
-                    if not (function_call_data and function_call_data.get('name') == 'make_artifact'):
-                        if not function_call_data or (function_call_data and tool_result is not None):
-                            st.rerun()
-
-    except Exception as main_e:
-        st.error(f"An unexpected error occurred: {main_e}")
-        logging.error(f"Unexpected error in get_llm_response: {main_e}")
-        logging.exception(main_e)
-
-    return chat_history
+        manager = LLMResponseManager(
+            client=client,
+            messages=messages,
+            chat_history=chat_history,
+            chat_history_path=chat_history_path,
+            advisor_data=advisor_data,
+            selected_advisor=selected_advisor,
+            tools=tools,
+            **overrides
+        )
+        return manager.process_response()
+        
+    except Exception as e:
+        st.error(f"An unexpected error occurred: {e}")
+        logging.error(f"Unexpected error in get_llm_response: {e}")
+        logging.exception(e)
+        return chat_history
