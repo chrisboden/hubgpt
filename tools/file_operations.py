@@ -178,69 +178,42 @@ def apply_file_edits(filePath: str, edits: List[Dict[str, str]], dry_run: bool =
         # Apply edits sequentially
         modified_content = content
         for edit in edits:
-            normalized_old = normalize_line_endings(edit['oldText'])
-            normalized_new = normalize_line_endings(edit['newText'])
+            old_text = normalize_line_endings(edit['oldText'])
+            new_text = normalize_line_endings(edit['newText'])
 
-            # If exact match exists, use it
-            if normalized_old in modified_content:
-                modified_content = modified_content.replace(
-                    normalized_old, normalized_new)
+            # Special handling for prepending text
+            if old_text == '':
+                modified_content = new_text + modified_content
                 continue
 
-            # Otherwise, try line-by-line matching with flexibility for whitespace
-            old_lines = normalized_old.split('\n')
-            content_lines = modified_content.split('\n')
-            match_found = False
+            # Exact replacement
+            if old_text in modified_content:
+                modified_content = modified_content.replace(old_text, new_text)
+                continue
 
-            for i in range(len(content_lines) - len(old_lines) + 1):
-                potential_match = content_lines[i:i + len(old_lines)]
-
-                # Compare lines with normalized whitespace
-                is_match = all(
-                    old_line.strip() == content_line.strip()
-                    for old_line, content_line in zip(old_lines, potential_match)
-                )
-
-                if is_match:
-                    # Preserve original indentation of first line
-                    original_indent = re.match(
-                        r'^\s*', content_lines[i]).group(0) if content_lines[i] else ''
-                    new_lines = [
-                        f"{original_indent}{line.lstrip()}" for line in normalized_new.split('\n')]
-
-                    # For subsequent lines, try to preserve relative indentation
-                    for j in range(1, len(new_lines)):
-                        old_indent = re.match(
-                            r'^\s*', old_lines[j]).group(0) if j < len(old_lines) else ''
-                        new_indent = re.match(r'^\s*', new_lines[j]).group(0)
-                        if old_indent and new_indent:
-                            relative_indent = len(new_indent) - len(old_indent)
-                            new_lines[j] = f"{original_indent}{' ' * max(0, relative_indent)}{new_lines[j].lstrip()}"
-
-                    content_lines[i:i + len(old_lines)] = new_lines
-                    modified_content = '\n'.join(content_lines)
-                    match_found = True
+            # More robust line-by-line matching
+            lines = modified_content.split('\n')
+            for i, line in enumerate(lines):
+                if old_text.strip() == line.strip():
+                    lines[i] = new_text
+                    modified_content = '\n'.join(lines)
                     break
-
-            if not match_found:
+            else:
+                # If no match found, raise a more informative error
                 raise ValueError(
-                    f"Could not find exact match for edit:\n{edit['oldText']}")
+                    f"Could not find match for edit:\nOld Text: '{old_text}'\n"
+                    f"Current File Content (first 500 chars): '{content[:500]}'"
+                )
 
         # Create unified diff
         diff = create_unified_diff(content, modified_content, filePath)
-
-        # Format diff with appropriate number of backticks
-        num_backticks = 3
-        while diff in ('`' * num_backticks):
-            num_backticks += 1
-        formatted_diff = f"{'`' * num_backticks}\ndiff\n{diff}\n{'`' * num_backticks}\n\n"
 
         if not dry_run:
             with timeout(30):
                 with open(filePath, 'w', encoding='utf-8') as file:
                     file.write(modified_content)
 
-        return formatted_diff
+        return diff
 
     except Exception as e:
         raise ValueError(f"Error applying edits to {filePath}: {str(e)}")
