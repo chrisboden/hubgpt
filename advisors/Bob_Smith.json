@@ -1,5 +1,5 @@
 {
-    "model": "openai/gpt-4o-mini",
+    "model": "deepseek/deepseek-chat",
     "temperature": 1.125,
     "max_output_tokens": 8092,
     "top_p": 1,

@@ -229,3 +229,5 @@ scrape.md
 # note ready to commit teams yet
 /teams
 teams.py
+
+.webui_secret_key

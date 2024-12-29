@@ -21,17 +21,6 @@ def execute(llm_client=None, location=None, unit="celsius"):
         "forecast": ["cloudy", "rainy"]
     }
 
-    # Optionally, the tool can make LLM calls if llm_client is provided
-    if llm_client:
-        # Use llm_client to process or generate additional information
-        prompt = f"Provide a brief description of the weather in {weather_info['location']}."
-        response = llm_client.chat.completions.create(
-            model='gpt-3.5-turbo',
-            messages=[{"role": "user", "content": prompt}]
-        )
-        description = response.choices[0].message.content.strip()
-        weather_info["description"] = description
-
     return weather_info
 
 # Tool metadata
@@ -57,7 +46,7 @@ TOOL_METADATA = {
                 }
             },
             "required": [
-                "location", "unit"
+                "location"
             ]
         }
     }

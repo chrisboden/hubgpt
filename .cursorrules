@@ -34,7 +34,7 @@ Stick to the current architecture choices unless the user suggests a new method.
 
 # HOW THIS APP WORKS
 
-This app is a conversational AI agent framework that allows the creation of personalized advisors with tool support. It leverages the OpenRouter API to route calls to various language models, with the default model being `gpt-4o-mini`. The app is built using Streamlit for an intuitive user interface, enabling easy interaction with advisors, loading chat histories, and integrating new tools and context-rich instructions.
+The HubGPT app that you are helping me build, is a conversational AI agent framework that allows the creation of personalized advisors with tool support. It leverages the OpenRouter API to route calls to various language models, with the default model being `gpt-4o-mini`. The app is built using Streamlit for an intuitive user interface, enabling easy interaction with advisors, loading chat histories, and integrating new tools and context-rich instructions.
 
 Advisors are defined by JSON templates located in the `advisors` directory. Each template specifies the LLM parameters, system instructions, and available tools. System instructions can include dynamic content and file inclusions using special tags like `<$file.txt$>` and `<$dir:path/to/directory/*.ext$>`. Tools are Python modules in the `tools` directory, each implementing an `execute` function and a `TOOL_METADATA` dictionary for description and parameters.
 
