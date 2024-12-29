@@ -202,7 +202,7 @@ class ResponseHandler:
 
     def handle_tool_execution(
         self,
-        tool_name: str,
+        tool_name: str, 
         function_data: Dict[str, Any],
         chat_history: List[Dict[str, Any]],
         chat_history_path: str
@@ -222,11 +222,17 @@ class ResponseHandler:
                 except json.JSONDecodeError:
                     pass
                     
-            # Extract actual arguments if nested
+            # Extract actual arguments, handling potential double nesting
             if 'arguments' in function_data:
-                function_data = function_data['arguments']
+                args = function_data['arguments']
+                # Handle double nesting case
+                if isinstance(args, dict) and 'arguments' in args:
+                    function_data = args['arguments']
+                else:
+                    function_data = args
             
-            print(colored("Executing tool...", "yellow"))
+            print(colored(f"Cleaned function data: {function_data}", "yellow"))
+            
             tool_response = execute_tool(
                 tool_name, 
                 function_data,

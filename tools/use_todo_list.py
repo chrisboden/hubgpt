@@ -63,24 +63,38 @@ def read_todo_list(todo_id):
     }
 
 def update_todo_list(todo_id, items):
-    """Update the contents of a todo list"""
+    """Update the contents of a todo list while preserving existing items"""
     file_path = DATA_DIR / f"{todo_id}.json"
     
     if not file_path.exists():
         print(colored(f"ERROR: Todo list '{todo_id}' does not exist at {file_path}", "red"))
         return {"error": f"Todo list {todo_id} does not exist"}
     
-    # Validate and normalize items according to schema
-    validated_items = [validate_todo_item(item) for item in items]
+    # Read existing items
+    with open(file_path, 'r') as f:
+        existing_items = json.load(f)
+    
+    # Create a map of existing items by ID for easy lookup
+    existing_map = {item['id']: item for item in existing_items}
+    
+    # Process updates
+    for item in items:
+        if isinstance(item, dict) and 'id' in item:
+            if item['id'] in existing_map:
+                # Update existing item while preserving other fields
+                existing_map[item['id']].update(item)
+    
+    # Keep all items in their original order
+    updated_items = existing_items
     
     with open(file_path, 'w') as f:
-        json.dump(validated_items, f)
+        json.dump(updated_items, f, indent=2)
     
-    print(colored(f"SUCCESS: Updated todo list '{todo_id}' with {len(validated_items)} items", "yellow"))
+    print(colored(f"SUCCESS: Updated todo list '{todo_id}' with {len(updated_items)} items", "yellow"))
     return {
-        "result": f"Todo list `{todo_id}` has been updated. New state is {validated_items}",
+        "result": f"Todo list `{todo_id}` has been updated. New state is {updated_items}",
         "todo_id": todo_id,
-        "items": validated_items
+        "items": updated_items
     }
 
 def execute(llm_client=None, operation=None, todo_id=None, items=None, **kwargs):
@@ -149,6 +163,5 @@ TOOL_METADATA = {
             },
             "required": ["operation"]
         }
-    },
-    "direct_stream": False
+    }
 }
