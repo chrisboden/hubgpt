@@ -8,6 +8,7 @@ from termcolor import colored
 from openai.types.chat import ChatCompletion
 from utils.tool_utils import execute_tool, TOOL_METADATA_REGISTRY
 from utils.chat_utils import save_chat_history
+from utils.log_utils import log_llm_request, log_llm_response, toggle_detailed_llm_logging
 
 # Configure logging
 LOGGING_ENABLED = True
@@ -305,10 +306,11 @@ class ChatHistoryManager:
     def save(self):
         save_chat_history(self.chat_history, self.chat_history_path)
 
+
 def get_llm_response(
     client: Any,
-    messages: List[Dict[str, Any]],
-    initial_messages: List[Dict[str, Any]],
+    messages: List[Dict[str, Any]],  # Already contains system + chat messages
+    initial_messages: List[Dict[str, Any]],  # We don't need to use this for follow-up
     chat_history: List[Dict[str, Any]],
     chat_history_path: str,
     advisor_data: Dict[str, Any],
@@ -323,34 +325,56 @@ def get_llm_response(
             tool_result = None
             
             with st.spinner(f"{selected_advisor} is thinking..."):
+                # Initial setup
                 params = LLMParams.get_default()
                 resolved_tools = ToolManager.resolve_tools(tools)
                 api_params = LLMParams.build_api_params(params, overrides, messages, resolved_tools)
+                
+                # Log initial request with full params
+                log_llm_request(api_params)
+                print(colored("\nINITIAL REQUEST MESSAGES:", "yellow"))
+                for msg in api_params['messages']:
+                    content = msg.get('content')
+                    content_preview = f"{content[:100]}..." if content else "None"
+                    print(colored(f"Role: {msg.get('role')}, Content: {content_preview}", "cyan"))
                 
                 response_placeholder = st.empty()
                 response_handler = ResponseHandler(client, status_placeholder, response_placeholder)
                 history_manager = ChatHistoryManager(chat_history, chat_history_path)
 
                 try:
-                    # Get initial LLM response
+                    # Initial LLM call
                     if api_params.get('stream', True):
                         stream = client.chat.completions.create(**api_params)
                         full_response, function_call_data = response_handler.handle_streamed_response(stream)
+                        log_llm_response({
+                            "debug_note": "INITIAL STREAMED RESPONSE",
+                            "response_text": full_response,
+                            "function_call": function_call_data
+                        })
                     else:
                         completion = client.chat.completions.create(**api_params)
+                        log_llm_response(completion.model_dump())
                         full_response, function_call_data = response_handler.handle_non_streamed_response(completion)
 
-                    # Handle tool calls immediately if present
+                    # Handle tool calls
                     if function_call_data and 'name' in function_call_data:
                         tool_name = function_call_data['name']
                         
-                        # Execute tool and get response
+                        # Execute tool
                         tool_result = response_handler.handle_tool_execution(
                             tool_name,
                             function_call_data,
                             chat_history,
                             chat_history_path
                         )
+                        
+                        # Log tool result
+                        log_llm_response({
+                            "debug_note": "TOOL EXECUTION RESULT",
+                            "tool": tool_name,
+                            "result": tool_result
+                        })
                         
                         if tool_result is not None:
                             history_manager.add_tool_interaction(
@@ -360,23 +384,60 @@ def get_llm_response(
                                 tool_result
                             )
                             
-                            # Force a rerun here to ensure tool response is rendered
                             if tool_name == 'make_artifact':
                                 history_manager.save()
                                 st.rerun()
                             
-                            # Get final LLM response after tool execution
-                            api_params['messages'] = initial_messages + chat_history
+                            # Construct follow-up messages - using messages directly
+                            follow_up_messages = [
+                                *messages,  # Contains system + all chat messages
+                                {
+                                    "role": "assistant",
+                                    "content": None,
+                                    "tool_calls": [{
+                                        "id": st.session_state.last_tool_call_id,
+                                        "type": "function",
+                                        "function": {
+                                            "name": tool_name,
+                                            "arguments": json.dumps(function_call_data)
+                                        }
+                                    }]
+                                },
+                                {
+                                    "role": "tool",
+                                    "name": tool_name,
+                                    "tool_call_id": st.session_state.last_tool_call_id,
+                                    "content": str(tool_result.get('result')) if isinstance(tool_result, dict) else str(tool_result)
+                                }
+                            ]
+                            
+                            # Log message sequence for verification
+                            print(colored("\nFOLLOW-UP REQUEST MESSAGES:", "yellow"))
+                            for msg in follow_up_messages:
+                                content = msg.get('content')
+                                content_preview = f"{content[:100]}..." if content else "None"
+                                print(colored(f"Role: {msg.get('role')}, Content: {content_preview}", "cyan"))
+                            
+                            # Update API params and make request
+                            api_params['messages'] = follow_up_messages
+                            log_llm_request(api_params)
+                            
+                            # Make follow-up LLM call
                             if api_params.get('stream', True):
                                 stream = client.chat.completions.create(**api_params)
                                 final_response = response_handler.handle_streamed_response(stream)[0]
+                                log_llm_response({
+                                    "debug_note": "FINAL STREAMED RESPONSE",
+                                    "response_text": final_response
+                                })
                             else:
                                 completion = client.chat.completions.create(**api_params)
+                                log_llm_response(completion.model_dump())
                                 final_response = response_handler.handle_non_streamed_response(completion)[0]
                             
                             history_manager.add_assistant_response(final_response)
                     else:
-                        # Add response to history if it's not a tool call
+                        # Handle non-tool responses
                         if full_response.strip():
                             history_manager.add_assistant_response(full_response)
 
@@ -389,7 +450,6 @@ def get_llm_response(
                     status_placeholder.empty()
                     history_manager.save()
                     
-                    # Only rerun at the end if we haven't already rerun for an artifact
                     if not (function_call_data and function_call_data.get('name') == 'make_artifact'):
                         if not function_call_data or (function_call_data and tool_result is not None):
                             st.rerun()

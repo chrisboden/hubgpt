@@ -2,35 +2,19 @@
 
 import os
 import sys
-import logging
 import streamlit as st
 from dotenv import load_dotenv
 import advisors
 import notepads
+from utils.log_utils import setup_logging
 #import teams
 
 # Add the project root to PYTHONPATH
 project_root = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(project_root)
 
-# Ensure the logs directory exists
-logs_dir = os.path.join(project_root, "logs")
-if not os.path.exists(logs_dir):
-    os.makedirs(logs_dir)
-
-# Remove any existing handlers to prevent conflicts
-for handler in logging.root.handlers[:]:
-    logging.root.removeHandler(handler)
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s %(levelname)s:%(message)s',
-    handlers=[
-        logging.FileHandler(os.path.join(logs_dir, "app.log")),
-        logging.StreamHandler()
-    ]
-)
+# Setup logging
+logger = setup_logging(project_root)
 
 # Load environment variables
 load_dotenv()
@@ -77,18 +61,8 @@ col2.button(
     use_container_width=True
 )
 
-#col3.button(
-#    "🧑‍🤝‍🧑",
-#    key="teams_btn",
-#    type="primary" if st.session_state.current_tab == "Teams" else "secondary",
-#    on_click=lambda: setattr(st.session_state, 'current_tab', 'Teams'),
-#    use_container_width=True
-#)
-
 # Load content in main area based on selected tab
 if st.session_state.current_tab == "Advisors":
     advisors.main()
 elif st.session_state.current_tab == "Notepads":
     notepads.main()
-#elif st.session_state.current_tab == "Teams":
-#    teams.main()
