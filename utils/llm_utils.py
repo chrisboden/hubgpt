@@ -390,6 +390,12 @@ class LLMResponseManager:
 
     def _construct_follow_up_messages(self, tool_name, function_call_data, tool_result):
         """Construct messages for follow-up LLM call after tool execution"""
+        # Convert tool result to string representation
+        tool_content = (
+            json.dumps(tool_result) if isinstance(tool_result, dict) 
+            else str(tool_result)
+        )
+        
         return [
             *self.messages,
             {
@@ -408,7 +414,7 @@ class LLMResponseManager:
                 "role": "tool",
                 "name": tool_name,
                 "tool_call_id": st.session_state.last_tool_call_id,
-                "content": str(tool_result.get('result')) if isinstance(tool_result, dict) else str(tool_result)
+                "content": tool_content  # Use the properly formatted tool content
             }
         ]
 
