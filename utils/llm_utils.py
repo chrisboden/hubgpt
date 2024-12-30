@@ -240,15 +240,35 @@ class ResponseHandler:
                 llm_client=self.client
             )
             
-            # Clear spinner placeholder after tool execution
-            if hasattr(st.session_state, 'spinner_placeholder'):
-                delattr(st.session_state, 'spinner_placeholder')
-            
             print(colored(f"Tool response received: {tool_response}", "green"))
             
             if not tool_response:
                 print(colored("No tool response received", "red"))
                 return None
+
+            # Handle direct streaming tools
+            if tool_response.get('direct_stream'):
+                print(colored("Processing direct stream response", "yellow"))
+                stream = tool_response.get('result')
+                if stream:
+                    full_response = ""
+                    logging.info("\n" + "="*50 + "\nPROCESSING DIRECT STREAM:\n" + "="*50)
+                    
+                    for chunk in stream:
+                        if not chunk.choices:
+                            continue
+                        delta = chunk.choices[0].delta
+                        chunk_text = delta.content or ""
+                        full_response += chunk_text
+                        self.response_placeholder.markdown(full_response)
+                    
+                    logging.info(f"\nFinal streamed response length: {len(full_response)} characters")
+                    logging.info("="*50)
+                    
+                    return {
+                        "result": full_response,
+                        "direct_stream": True
+                    }
             
             # Handle artifact generation tool specifically
             if tool_name == 'make_artifact' and 'artifact_html' in tool_response:
@@ -437,8 +457,15 @@ class LLMResponseManager:
                         if tool_name == 'make_artifact':
                             self.history_manager.save()
                             st.rerun()
+                        
+                        # Handle direct stream responses differently
+                        if tool_result.get('direct_stream'):
+                            self.history_manager.add_assistant_response(tool_result['result'])
+                            self.history_manager.save()
+                            st.rerun()
+                            return self.chat_history
                             
-                        # Make follow-up LLM call
+                        # Make follow-up LLM call for non-direct stream responses
                         final_response, _ = self.make_llm_call(follow_up_messages)
                         self.history_manager.add_assistant_response(final_response)
                 else:

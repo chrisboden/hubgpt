@@ -1,6 +1,12 @@
 # tools/get_news.py
 
+import logging
+from termcolor import colored
+from utils.log_utils import log_llm_request, log_llm_response
+
 def execute(llm_client=None, search_query=None):
+    print(colored("Starting get_news tool execution", "cyan"))
+    
     if not llm_client:
         raise ValueError("LLM client is required for this tool")
     
@@ -19,33 +25,45 @@ def execute(llm_client=None, search_query=None):
         }
     ]
 
+    # Prepare API parameters
+    api_params = {
+        "model": "perplexity/llama-3.1-sonar-huge-128k-online",
+        "messages": messages,
+        "temperature": 1.15,
+        "max_tokens": 8092,
+        "top_p": 1,
+        "frequency_penalty": 0,
+        "presence_penalty": 0,
+        "stream": True
+    }
+
+    print(colored(f"Preparing news search with query: {search_query}", "yellow"))
+    
+    # Log the API request parameters
+    log_llm_request(api_params)
+
     # Make the completion call
     try:
-        response = llm_client.chat.completions.create(
-            model="perplexity/llama-3.1-sonar-huge-128k-online",
-            messages=messages,
-            temperature=1.15,
-            max_tokens=8092,
-            top_p=1,
-            frequency_penalty=0,
-            presence_penalty=0,
-            stream=False  # Set to false to get full response
-        )
+        print(colored("Making LLM API call for news search", "yellow"))
+        stream = llm_client.chat.completions.create(**api_params)
         
-        # Return a serializable dictionary with the content and metadata
+        print(colored("Successfully received stream response", "green"))
+        
+        # Log that we're returning a direct stream
+        logging.info("\n" + "="*50 + "\nDIRECT STREAM RESPONSE:\n" + "="*50 + 
+                    "\nReturning stream object for direct UI updates\n" + "="*50)
+        
         return {
-            "content": response.choices[0].message.content,
-            "model": response.model,
-            "usage": {
-                "total_tokens": response.usage.total_tokens,
-                "prompt_tokens": response.usage.prompt_tokens,
-                "completion_tokens": response.usage.completion_tokens
-            }
+            "result": stream,
+            "direct_stream": True
         }
         
     except Exception as e:
+        error_msg = f"Failed to get news analysis: {str(e)}"
+        print(colored(error_msg, "red"))
+        logging.error(error_msg)
         return {
-            "error": f"Failed to get news analysis: {str(e)}"
+            "error": error_msg
         }
 
 # Tool metadata remains the same
@@ -66,5 +84,6 @@ TOOL_METADATA = {
                 "search_query"
             ]
         }
-    }
+    },
+    "direct_stream": True
 }
