@@ -28,6 +28,9 @@ def read_file_content(file_path):
 
 def generate_repo_readme():
     """Generate the repository README by combining multiple markdown files."""
+    # Get the directory of this script
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    
     # Define the paths to the scripts
     scripts = [
         "generate_repo_tree.py",
@@ -38,7 +41,8 @@ def generate_repo_readme():
     
     # Run the scripts
     for script in scripts:
-        if not run_script(script):
+        script_path = os.path.join(script_dir, script)
+        if not run_script(script_path):
             print(f"Failed to run script {script}. Exiting.")
             return
     
@@ -53,7 +57,7 @@ def generate_repo_readme():
     readme_content = ""
     
     for file_name in readme_files:
-        file_path =  file_name
+        file_path = os.path.join(script_dir, file_name)
         content = read_file_content(file_path)
         if content:
             if readme_content:  # Add a newline between sections
@@ -61,7 +65,7 @@ def generate_repo_readme():
             readme_content += content
     
     # Write the combined content to the README.md file in the root directory
-    root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    root_dir = os.path.dirname(script_dir)
     readme_path = os.path.join(root_dir, "README.md")
     
     with open(readme_path, 'w') as readme_file:

@@ -8,7 +8,6 @@
 ├── .gitignore
 ├── .streamlit
 │   └── config.toml
-├── Peregian_Digital_Hub_Book.md
 ├── README.md
 ├── advisors
 │   ├── .DS_Store
@@ -24,6 +23,7 @@
 ├── content
 ├── cursor_prompts
 │   ├── howto_add_comments.md
+│   ├── howto_add_logging.md
 │   ├── howto_add_spinner_status.md
 │   ├── howto_computer-use.md
 │   ├── howto_researcher.md
@@ -85,7 +85,7 @@
 │   ├── get_advice.py
 │   ├── get_company_updates.py
 │   ├── get_current_weather.py
-│   ├── get_hacker_news_headlines.py
+│   ├── get_hacker_news.py
 │   ├── get_news.py
 │   ├── get_research.py
 │   ├── get_transcription.py
@@ -94,15 +94,17 @@
 │   ├── get_wikipedia.py
 │   ├── handoff_to_agent.py
 │   ├── handoff_to_coordinator.py
+│   ├── linkedin_bio_writer.py
 │   ├── linkedin_research.py
 │   ├── make_artifact.py
 │   ├── make_book.py
-│   ├── make_podcast.py
 │   ├── use_ai.py
 │   ├── use_brainstorm.py
 │   ├── use_notion.py
 │   ├── use_reasoning.py
+│   ├── use_todo_list.py
 │   ├── web_image_search.py
+│   ├── web_read_page.py
 │   ├── web_scrape.py
 │   └── web_search.py
 └── utils
@@ -111,6 +113,7 @@
     ├── db_utils.py
     ├── file_utils.py
     ├── llm_utils.py
+    ├── log_utils.py
     ├── message_utils.py
     ├── notion_utils.py
     ├── prompt_utils.py

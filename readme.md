@@ -1,12 +1,26 @@
 # Hubgpt
 
-A conversational AI agent framework that allows the creation of personalised advisors with tool support. Developed for low code tinkering by members and friends of the Peregian Digital Hub.
+A conversational AI agent framework that allows the creation of personalised advisors/agents with tool support. Developed for low code tinkering by members and friends of the Peregian Digital Hub. 
 
 The Hubgpt project is a customisable conversational AI framework that allows users to create AI-powered advisors using prompt templates and tools. Each advisor is configured with specific LLM parameters (like model and temperature) and system instructions, offering granular control over the advisor's behavior and expertise. 
 
-A key feature is the ability to include external files directly in the system prompts using a special tag notation. This enables developers to inject rich context into the advisor’s instructions by specifying custom files, such as personal biographies or detailed guidelines. This functionality not only personalises the output but also allows the AI to be grounded in extensive data sources, like long-form biographies or research documents. This is particularly powerful when leveraging large context window models that can accept prompts containing hundreds of thousands of tokens, enabling the advisor to operate with far deeper and more nuanced knowledge. 
+## Backend
 
-Built on Streamlit for an intuitive user interface, the app makes it easy to interact with advisors, load chat histories, and integrate new tools and context-rich instructions for highly customized AI experiences.
+The code is written in python and rather than using a database, it mostly uses flat files to keep things simple for beginners. It avoids front end development as much as possible by using the python front end framework, Streamlit, for the UI. The system works well locally but not yet optimised for efficient cloud hosting.
+
+## Prompt Engineering
+
+A key feature is the ability to include external text files eg .json, .md, .txt, etc - but not .pdf or .doc, directly in the 'advisor' system prompts using a special tag notation. This enables developers to inject rich context into the advisor’s instructions by specifying custom files, such as personal biographies or detailed guidelines or work docs. This functionality not only personalises the output but also allows the AI to be grounded in extensive data sources, like long-form biographies or research documents. This is particularly powerful when leveraging large context window models that can accept prompts containing hundreds of thousands of tokens, enabling the advisor to operate with far deeper and more nuanced knowledge.
+
+## LLM Models
+
+The system uses OpenRouter as an LLM gateway. This allows users to have a single LLM account (with openrouter) and obviates the need for maintaining developer accounts with each Llm provider. This enables the developer to tap into hundreds of models with varying capabilities, costs, etc.
+
+## Front end
+
+Built on Streamlit for an intuitive user interface, the app makes it easy to interact with advisors, load chat histories, and integrate new tools and context-rich instructions for highly customised AI experiences. This allows beginners to focus on writing simple python functions and editing json/markdown files.
+
+# Get Started
 
 ## Clone the Repository
 
@@ -38,8 +52,9 @@ streamlit run main.py
 
 This app uses [Streamlit](https://streamlit.io/), a Python framework for rapid prototyping.
 
-- Advisors populate a dropdown list in the sidebar.
-- Upon selecting an advisor, the current chat history is loaded into the UI, allowing for long-running conversations. The conversation history is saved in the `/chats` directory
+- Advisors populate a dropdown list in the sidebar. Advisors can be added and edited through json or md files in the `/advisors` directory - some examples are included
+- Upon selecting an advisor, the current chat history is loaded into the UI, allowing for long-running conversations.
+- The conversation history is saved in the `/chats` directory
 - The "Clear Conversation" button archives the current chat history to a JSON file in the `/archive` directory.
 - Each assistant (aka advisor) message includes:
     - A **Save** button to append the message to a `snippets.json` file in the `/ideas` directory.
@@ -55,7 +70,6 @@ This app uses [Streamlit](https://streamlit.io/), a Python framework for rapid p
 ├── .gitignore
 ├── .streamlit
 │   └── config.toml
-├── Peregian_Digital_Hub_Book.md
 ├── README.md
 ├── advisors
 │   ├── .DS_Store
@@ -71,6 +85,7 @@ This app uses [Streamlit](https://streamlit.io/), a Python framework for rapid p
 ├── content
 ├── cursor_prompts
 │   ├── howto_add_comments.md
+│   ├── howto_add_logging.md
 │   ├── howto_add_spinner_status.md
 │   ├── howto_computer-use.md
 │   ├── howto_researcher.md
@@ -132,7 +147,7 @@ This app uses [Streamlit](https://streamlit.io/), a Python framework for rapid p
 │   ├── get_advice.py
 │   ├── get_company_updates.py
 │   ├── get_current_weather.py
-│   ├── get_hacker_news_headlines.py
+│   ├── get_hacker_news.py
 │   ├── get_news.py
 │   ├── get_research.py
 │   ├── get_transcription.py
@@ -141,15 +156,17 @@ This app uses [Streamlit](https://streamlit.io/), a Python framework for rapid p
 │   ├── get_wikipedia.py
 │   ├── handoff_to_agent.py
 │   ├── handoff_to_coordinator.py
+│   ├── linkedin_bio_writer.py
 │   ├── linkedin_research.py
 │   ├── make_artifact.py
 │   ├── make_book.py
-│   ├── make_podcast.py
 │   ├── use_ai.py
 │   ├── use_brainstorm.py
 │   ├── use_notion.py
 │   ├── use_reasoning.py
+│   ├── use_todo_list.py
 │   ├── web_image_search.py
+│   ├── web_read_page.py
 │   ├── web_scrape.py
 │   └── web_search.py
 └── utils
@@ -158,6 +175,7 @@ This app uses [Streamlit](https://streamlit.io/), a Python framework for rapid p
     ├── db_utils.py
     ├── file_utils.py
     ├── llm_utils.py
+    ├── log_utils.py
     ├── message_utils.py
     ├── notion_utils.py
     ├── prompt_utils.py
@@ -217,11 +235,23 @@ Tools in this framework provide powerful, modular functionality that can be leve
 1. `code_run`: Executes a Python script file and returns its output. The script will have access to all agent tools.
 2. `code_write`: Creates or overwrites a Python script with the provided code. The script will automatically have access to all agent tools through pre-configured imports. Example usage patterns: 1. Using the AI tool: from tools import use_ai result = use_ai.execute( messages=[{'role': 'user', 'content': 'Your prompt here'}] ) 2. Using web search: from tools import web_search results = web_search.execute(query='Your search query') 3. File...
 3. `email_create`: Send an HTML email using a Zapier webhook. Creates rich HTML emails with optional plain text fallback.
-4. `file_operations`: A secure tool for performing various file system operations with timeout protection and size limits. 
+4. `file_operations`: A secure tool for performing various file system operations including reading, writing, editing files, managing directories, and downloading files from the web.
+
+ Important: Supports multiple operations in a single call for related tasks like create directory and move files. Eg "operations": [
+        {
+            "operation": "create_directory",
+            "path": "/data/files/new_folder"
+        },
+        {
+            "operation": "move_file",
+            "source": "/data/files/document.md",
+            "destination": "/data/files/new_folder/renamed.md"
+        }
+    ]
 5. `get_advice`: Get advice from a specified advisor based on the given query posed by a user
 6. `get_company_updates`: Fetch the recent LinkedIn updates posted by a given list of companies
 7. `get_current_weather`: Provide the current weather for a given location when asked by a user
-8. `get_hacker_news_headlines`: Retrieve the top headlines from Hacker News with optional additional context
+8. `get_hacker_news`: Retrieve and summarize the top headlines from Hacker News
 9. `get_news`: Use this tool if you need to get up to date news from the web about a specific subject or topic. This tool provides the latest news and works best with a detailed search query. Make sure to rephrase the user's question as a detailed search_query
 10. `get_research`: This tool is a very intelligent web research agent that can search, find, gather and synthesise highly relevant information for a given topic. Use this tool whenever you are asked to perform research on topic. You simply give the agent a research_brief in natural language, eg 'please research the spacex starship launch schedule'. It will return a comprehensive research dossier...
 11. `get_transcription`: Download captions and transcript from a YouTube video, with optional AI-powered summarization
@@ -230,17 +260,19 @@ Tools in this framework provide powerful, modular functionality that can be leve
 14. `get_wikipedia`: Retrieve comprehensive Wikipedia content for a given search term and use that content to provide an information dense response to the user. Response MUST be >500 words
 15. `handoff_to_agent`: Use this to hand off work to another agent when their expertise is needed
 16. `handoff_to_coordinator`: Use this to hand work back to the coordinator agent when you have completed your part
-17. `linkedin_research`: This tool performs comprehensive LinkedIn research on a person or company, collecting profile data and posts, analyzing them, and providing detailed insights.
-18. `make_artifact`: Generate self-contained HTML artifacts (widgets) with embedded JavaScript and CSS
-19. `make_book`: Generate a complete book with multiple chapters on any topic using AI. The tool handles research, writing, and formatting.
-20. `make_podcast`: Generate a podcast from raw content using LLM and text-to-speech capabilities.
+17. `linkedin_bio_writer`: Generate a professional biography from a LinkedIn profile
+18. `linkedin_research`: This tool performs comprehensive LinkedIn research on a person or company, collecting profile data and posts, analyzing them, and providing detailed insights.
+19. `make_artifact`: Generate self-contained HTML artifacts (widgets) with embedded JavaScript and CSS
+20. `make_book`: Generate a complete book with multiple chapters on any topic using AI. The tool handles research, writing, and formatting.
 21. `use_ai`: Makes a call to an AI language model API with specified messages and model selection. Importantly, this tool supports file inclusion in message content using special syntax. Key Features: 1. File Inclusion: Use <$filename$> syntax to include file contents 2. Directory Inclusion: Use <$dir:pattern$> for multiple files 3. Context Preservation: Include previous results or conversation history Common Usage Patterns: 1....
 22. `use_brainstorm`: Generate creative ideas using various brainstorming techniques. Respond with a clean markdown format that presents the ideas in the most useful format for the user. Methods: Reverse brainstorming involves identifying ways to cause a problem or achieve the opposite effect. Perfect for spotting potential issues and coming up with innovative solutions. Role storming adopting the perspective of someone else to...
 23. `use_notion`: This tool allows you to interact with Notion by either creating new pages or fetching existing page content. Use 'create_page' to add new content and 'fetch_content' to retrieve existing content.
 24. `use_sequential_thinking`: A tool for dynamic, reflective, and self-directed sequential reasoning. It stores a chain of thoughts, supports revisions and branching, and can optionally suggest next steps using an LLM if needed.
-25. `web_image_search`: Perform an image search to find the best matching image for a given user request
-26. `web_scrape`: Fetches and extracts textual content from a specified URL and saves it to a file. The content is saved in markdown format with proper formatting and structure. Use this tool to gather information from web pages for learning, data analysis, or incorporating external knowledge into your responses. This is helpful when you need to access the latest information or data...
-27. `web_search`: Performs a comprehensive web search using multiple search providers (Brave, Tavily, DuckDuckGo, etc.). The tool optimizes the search query using AI and returns ranked results. Use this tool when you need to find current information about any topic, verify facts, or gather data from multiple sources. Results include titles, URLs, and descriptions from various web pages.
+25. `use_todo_list`: Use a todo list to keep track of activities. You can use `create` to create a new todo list, optionally with initial items. Use `read` to read a given todo list by passing in the id. Use `update` to update the state of the todo list, eg by marking an item as 'done'. Each item follows a structured schema with...
+26. `web_image_search`: Perform an image search to find the best matching image for a given user request
+27. `web_read_page`: Fetches and returns a clean markdown version of a webpage.
+28. `web_scrape`: Fetches and extracts textual content from a specified URL and saves it to a file. The content is saved in markdown format with proper formatting and structure. Use this tool to gather information from web pages for learning, data analysis, or incorporating external knowledge into your responses. This is helpful when you need to access the latest information or data...
+29. `web_search`: Performs a comprehensive web search using multiple search providers (Brave, Tavily, DuckDuckGo, etc.). The tool optimizes the search query using AI and returns ranked results. Use this tool when you need to find current information about any topic, verify facts, or gather data from multiple sources. Results include titles, URLs, and descriptions from various web pages.
 
 
 ## Notepads

@@ -1,4 +1,4 @@
-# repo_tools/generate_tools_readme.py
+# repo_tools/generate_readme_tools_list.py
 
 import os
 import importlib.util
@@ -23,7 +23,6 @@ def import_module_from_path(file_path):
         return module
     except ImportError as e:
         print(colored(f"Import error in {file_path}: {str(e)}", "yellow"))
-        # Print the current Python path to help diagnose
         print(colored(f"Current sys.path: {sys.path}", "cyan"))
         return None
     except Exception as e:
@@ -44,10 +43,19 @@ def truncate_description(description, max_words=60):
 
 def generate_tools_list():
     """Generate a detailed markdown list of tools with their descriptions."""
-    tools_dir = "../tools"
+    # Get the absolute path to the repo_tools directory
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    # Get the project root directory (parent of repo_tools)
+    project_root = os.path.dirname(current_dir)
+    # Get the tools directory path
+    tools_dir = os.path.join(project_root, "tools")
+    
     if not os.path.exists(tools_dir):
-        print(colored("Tools directory not found!", "red"))
+        print(colored(f"Tools directory not found at: {tools_dir}", "red"))
         return
+    
+    # Output file path
+    output_file = os.path.join(current_dir, 'repo_readme_tool_list.md')
     
     # Collect successful and failed imports
     successful_tools = []
@@ -74,7 +82,7 @@ def generate_tools_list():
                 failed_imports.append((filename, "No TOOL_METADATA found"))
     
     # Write successful tools with their descriptions to repo_readme_tool_list.md
-    with open('repo_readme_tool_list.md', 'w') as f:
+    with open(output_file, 'w') as f:
         for index, (tool_name, tool_description) in enumerate(sorted(successful_tools), start=1):
             truncated_description = truncate_description(tool_description)
             f.write(f"{index}. `{tool_name}`: {truncated_description}\n")

@@ -12,7 +12,6 @@ openai
 pandas
 pathspec
 protobuf
-pyht
 python-dateutil
 python-dotenv
 python-frontmatter

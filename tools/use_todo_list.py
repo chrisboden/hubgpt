@@ -1,26 +1,47 @@
 # tools/use_todo_list.py
+# tools/use_todo_list.py
 import os
 import json
 import uuid
 from pathlib import Path
 from termcolor import colored
+from utils.ui_utils import update_spinner_status  # Added spinner status import
 
 # Ensure data directory exists
 DATA_DIR = Path("data/todo")
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 def create_todo_list(items=None):
-    """Create a new todo list with optional initial items"""
-    todo_id = str(uuid.uuid4())[:8]  # Short UUID
+    """
+    Create a new todo list with optional initial items.
+    
+    This function generates a unique todo list ID, validates and processes 
+    input items, and saves them to a JSON file in the data directory.
+    
+    Args:
+        items (list, optional): Initial todo items to populate the list.
+    
+    Returns:
+        dict: A dictionary containing todo list metadata and creation result.
+    """
+    # Generate a short unique identifier for the todo list
+    todo_id = str(uuid.uuid4())[:8]  
     file_path = DATA_DIR / f"{todo_id}.json"
     
-    # Initialize with items if provided
+    # Update spinner to show initialization
+    update_spinner_status(f"Creating new todo list: {todo_id}")
+    
+    # Validate and process input items
     initial_items = [validate_todo_item(item) for item in items] if items else []
     
+    # Write items to JSON file
     with open(file_path, 'w') as f:
         json.dump(initial_items, f)
     
+    # Provide success feedback
     print(colored(f"SUCCESS: Created new todo list '{todo_id}' with {len(initial_items)} items at {file_path}", "green"))
+    update_spinner_status(f"Todo list {todo_id} created successfully")
+    
     return {
         "result": f"New todo list `{todo_id}` has been created at {file_path}. Initial items: {initial_items}",
         "todo_id": todo_id,
@@ -29,7 +50,19 @@ def create_todo_list(items=None):
     }
 
 def validate_todo_item(item):
-    """Validate and normalize a todo item according to the schema"""
+    """
+    Validate and normalize a todo item to ensure consistent schema.
+    
+    This function handles different input formats and ensures each todo item 
+    has a unique ID, description, completion status, and optional note.
+    
+    Args:
+        item (dict or str): The todo item to validate and normalize.
+    
+    Returns:
+        dict: A standardized todo item with required fields.
+    """
+    # Handle dictionary input with flexible keys
     if isinstance(item, dict):
         return {
             "id": str(uuid.uuid4())[:6],  # Generate tiny UUID
@@ -37,6 +70,8 @@ def validate_todo_item(item):
             "done": item.get("done", False),
             "note": item.get("note", "")
         }
+    
+    # Handle simple string input
     return {
         "id": str(uuid.uuid4())[:6],
         "todo": str(item),  # Convert to string if it's not a dict
@@ -45,17 +80,34 @@ def validate_todo_item(item):
     }
 
 def read_todo_list(todo_id):
-    """Read the contents of a todo list"""
+    """
+    Read the contents of a specific todo list.
+    
+    Retrieves and returns the items from a todo list JSON file.
+    
+    Args:
+        todo_id (str): The unique identifier of the todo list.
+    
+    Returns:
+        dict: A dictionary containing the todo list items or an error message.
+    """
     file_path = DATA_DIR / f"{todo_id}.json"
     
+    # Check if todo list exists
     if not file_path.exists():
+        update_spinner_status(f"ERROR: Todo list '{todo_id}' not found")
         print(colored(f"ERROR: Todo list '{todo_id}' does not exist at {file_path}", "red"))
         return {"error": f"Todo list {todo_id} does not exist"}
     
+    # Read todo list items
+    update_spinner_status(f"Reading todo list: {todo_id}")
     with open(file_path, 'r') as f:
         items = json.load(f)
     
+    # Provide success feedback
     print(colored(f"SUCCESS: Read todo list '{todo_id}' with {len(items)} items", "blue"))
+    update_spinner_status(f"Successfully read {len(items)} items from todo list")
+    
     return {
         "result": f"Current state of todo list `{todo_id}`: {items}",
         "todo_id": todo_id,
@@ -63,12 +115,29 @@ def read_todo_list(todo_id):
     }
 
 def update_todo_list(todo_id, items):
-    """Update the contents of a todo list while preserving existing items"""
+    """
+    Update the contents of an existing todo list.
+    
+    Preserves existing items while allowing selective updates 
+    based on item IDs.
+    
+    Args:
+        todo_id (str): The unique identifier of the todo list.
+        items (list): List of items to update.
+    
+    Returns:
+        dict: A dictionary containing the updated todo list or an error message.
+    """
     file_path = DATA_DIR / f"{todo_id}.json"
     
+    # Verify todo list exists
     if not file_path.exists():
+        update_spinner_status(f"ERROR: Todo list '{todo_id}' not found")
         print(colored(f"ERROR: Todo list '{todo_id}' does not exist at {file_path}", "red"))
         return {"error": f"Todo list {todo_id} does not exist"}
+    
+    # Update spinner to show processing
+    update_spinner_status(f"Updating todo list: {todo_id}")
     
     # Read existing items
     with open(file_path, 'r') as f:
@@ -87,10 +156,14 @@ def update_todo_list(todo_id, items):
     # Keep all items in their original order
     updated_items = existing_items
     
+    # Write updated items back to file
     with open(file_path, 'w') as f:
         json.dump(updated_items, f, indent=2)
     
+    # Provide success feedback
     print(colored(f"SUCCESS: Updated todo list '{todo_id}' with {len(updated_items)} items", "yellow"))
+    update_spinner_status(f"Todo list {todo_id} updated successfully")
+    
     return {
         "result": f"Todo list `{todo_id}` has been updated. New state is {updated_items}",
         "todo_id": todo_id,
@@ -99,37 +172,54 @@ def update_todo_list(todo_id, items):
 
 def execute(llm_client=None, operation=None, todo_id=None, items=None, **kwargs):
     """
-    Execute todo list operations
+    Execute todo list operations with comprehensive error handling.
     
-    Parameters:
-    - operation: 'create', 'read', or 'update'
-    - todo_id: Required for read/update operations
-    - items: Required for update operation (list of items/tasks)
+    Supports creating, reading, and updating todo lists with flexible input.
+    
+    Args:
+        operation (str): The type of operation to perform ('create', 'read', 'update').
+        todo_id (str, optional): Unique identifier for existing todo lists.
+        items (list, optional): Todo items for create or update operations.
+    
+    Returns:
+        dict: Operation result or error information.
     """
     try:
+        # Initial spinner status
+        update_spinner_status(f"Executing todo list operation: {operation}")
         print(colored(f"Executing todo list operation: {operation}", "cyan"))
         
+        # Route to appropriate operation
         if operation == "create":
             result = create_todo_list(items)
         elif operation == "read":
             result = read_todo_list(todo_id)
         elif operation == "update":
+            # Validate todo_id for update operation
             if not todo_id:
+                update_spinner_status("ERROR: Missing todo_id for update")
                 print(colored("ERROR: todo_id is required for update operation", "red"))
                 return {"error": "todo_id is required for update operation"}
             result = update_todo_list(todo_id, items)
         else:
+            # Handle invalid operations
+            update_spinner_status(f"ERROR: Invalid operation '{operation}'")
             print(colored(f"ERROR: Invalid operation '{operation}'", "red"))
             return {"error": f"Invalid operation: {operation}"}
         
+        # Final success status
+        update_spinner_status(f"Operation '{operation}' completed successfully")
         print(colored(f"Operation '{operation}' completed successfully", "green"))
         return result
         
     except Exception as e:
+        # Comprehensive error handling
         error_msg = f"ERROR in todo list operation '{operation}': {str(e)}"
+        update_spinner_status(error_msg)
         print(colored(error_msg, "red"))
         return {"error": error_msg}
 
+# Tool metadata for integration with AI systems
 TOOL_METADATA = {
     "type": "function",
     "function": {

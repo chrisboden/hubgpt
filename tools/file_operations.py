@@ -1,4 +1,4 @@
-# file_tool.py
+# tools/file_operations.py
 
 import os
 import json
@@ -12,6 +12,7 @@ from typing import List, Dict, Union, Optional
 from difflib import unified_diff
 from termcolor import colored
 from contextlib import contextmanager
+from utils.ui_utils import update_spinner_status
 
 
 def expand_home(filepath: str) -> str:
@@ -26,7 +27,8 @@ FILESYSTEM_PERMISSIONS = 0o644  # -rw-r--r--
 DIRECTORY_PERMISSIONS = 0o755   # drwxr-xr-x
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 
-# Initialize base and data directories - FIXED THE ISSUE HERE
+# Initialize base and data directories
+update_spinner_status("Initializing file operation directories...")
 BASE_DIRECTORY = os.path.abspath(
     os.path.expanduser(os.environ.get('BASE_DIRECTORY', '.')))
 DATA_DIRECTORY = os.path.join(BASE_DIRECTORY, 'data')
@@ -36,7 +38,7 @@ FILES_DIRECTORY = os.path.join(DATA_DIRECTORY, 'files')
 os.makedirs(DATA_DIRECTORY, mode=DIRECTORY_PERMISSIONS, exist_ok=True)
 os.makedirs(FILES_DIRECTORY, mode=DIRECTORY_PERMISSIONS, exist_ok=True)
 
-# The issue was here - we need to include the root directory for absolute paths
+# Define allowed directories for file operations
 allowed_directories = [
     '/',  # Add root directory to allow absolute paths
     BASE_DIRECTORY,
@@ -55,22 +57,21 @@ allowed_directories.extend([
 # Remove duplicates while preserving order
 allowed_directories = list(dict.fromkeys(allowed_directories))
 
+# Debug prints for directory paths
 print(colored("BASE_DIRECTORY: " + BASE_DIRECTORY, "yellow"))
 print(colored("DATA_DIRECTORY: " + DATA_DIRECTORY, "yellow"))
 print(colored("FILES_DIRECTORY: " + FILES_DIRECTORY, "yellow"))
 print(colored(f"Allowed directories: {allowed_directories}", "cyan"))
+update_spinner_status("File operation directories initialized successfully")
 
 # Custom exceptions
-
-
 class TimeoutError(Exception):
     pass
 
 # Utility functions
-
-
 @contextmanager
 def timeout(seconds: int = 30):
+    """Context manager to enforce a timeout on operations."""
     timer = threading.Timer(seconds, lambda: (_ for _ in ()).throw(
         TimeoutError(f"Operation timed out after {seconds} seconds")))
     timer.start()
@@ -81,10 +82,14 @@ def timeout(seconds: int = 30):
 
 
 def check_file_size(path: str) -> None:
+    """Check if the file size exceeds the maximum allowed size."""
+    update_spinner_status(f"Checking file size for {path}...")
     size = os.path.getsize(path)
     if size > MAX_FILE_SIZE:
+        update_spinner_status(f"File size check failed - exceeds limit")
         raise ValueError(
             f"File size ({size} bytes) exceeds maximum allowed size ({MAX_FILE_SIZE} bytes)")
+    update_spinner_status("File size check passed")
 
 
 def normalize_path(p: str) -> str:
@@ -97,6 +102,7 @@ def normalize_path(p: str) -> str:
     Returns:
         str: Fully resolved, absolute path
     """
+    update_spinner_status(f"Normalizing path: {p}")
     # Expand user home directory
     expanded_path = os.path.expanduser(p)
 
@@ -106,6 +112,7 @@ def normalize_path(p: str) -> str:
     # Normalize path (remove redundant separators, resolve .., etc.)
     normalized_path = os.path.normpath(absolute_path)
 
+    update_spinner_status(f"Path normalized to: {normalized_path}")
     return normalized_path
 
 
@@ -115,6 +122,7 @@ def resolve_path(path: str, allowed_directories: List[str]) -> str:
     Handles path normalization and validation in one place.
     """
     try:
+        update_spinner_status(f"Resolving path: {path}")
         # Strip BASE_DIRECTORY if it's included in the path
         if path.startswith(BASE_DIRECTORY):
             path = path[len(BASE_DIRECTORY):].lstrip('/')
@@ -139,19 +147,25 @@ def resolve_path(path: str, allowed_directories: List[str]) -> str:
             os.path.commonpath([normalized_path, os.path.abspath(allowed_dir)]) == os.path.abspath(allowed_dir)
             for allowed_dir in allowed_directories
         ):
+            update_spinner_status("Path resolution failed - access denied")
             raise ValueError(f"Access denied - path outside allowed directories: {normalized_path}")
 
+        update_spinner_status(f"Path resolved successfully to: {normalized_path}")
         return normalized_path
 
     except Exception as e:
+        update_spinner_status(f"Path resolution failed: {str(e)}")
         raise ValueError(f"Error resolving path {path}: {str(e)}")
 
 
 def normalize_line_endings(text: str) -> str:
+    """Normalize line endings to Unix style."""
     return text.replace('\r\n', '\n')
 
 
 def create_unified_diff(original_content: str, new_content: str, filepath: str = 'file') -> str:
+    """Create a unified diff between original and new content."""
+    update_spinner_status("Generating unified diff...")
     # Ensure consistent line endings for diff
     normalized_original = normalize_line_endings(original_content)
     normalized_new = normalize_line_endings(new_content)
@@ -162,11 +176,14 @@ def create_unified_diff(original_content: str, new_content: str, filepath: str =
         fromfile=f'{filepath} (original)',
         tofile=f'{filepath} (modified)'
     ))
+    update_spinner_status("Diff generated successfully")
     return diff
 
 
 def apply_file_edits(filePath: str, edits: List[Dict[str, str]], dry_run: bool = False) -> str:
+    """Apply a series of text edits to a file."""
     try:
+        update_spinner_status(f"Applying edits to {filePath}...")
         # Check file size before processing
         check_file_size(filePath)
 
@@ -177,7 +194,8 @@ def apply_file_edits(filePath: str, edits: List[Dict[str, str]], dry_run: bool =
 
         # Apply edits sequentially
         modified_content = content
-        for edit in edits:
+        for i, edit in enumerate(edits, 1):
+            update_spinner_status(f"Applying edit {i} of {len(edits)}...")
             old_text = normalize_line_endings(edit['oldText'])
             new_text = normalize_line_endings(edit['newText'])
 
@@ -200,6 +218,7 @@ def apply_file_edits(filePath: str, edits: List[Dict[str, str]], dry_run: bool =
                     break
             else:
                 # If no match found, raise a more informative error
+                update_spinner_status("Edit failed - text not found")
                 raise ValueError(
                     f"Could not find match for edit:\nOld Text: '{old_text}'\n"
                     f"Current File Content (first 500 chars): '{content[:500]}'"
@@ -209,39 +228,53 @@ def apply_file_edits(filePath: str, edits: List[Dict[str, str]], dry_run: bool =
         diff = create_unified_diff(content, modified_content, filePath)
 
         if not dry_run:
+            update_spinner_status("Writing modified content...")
             with timeout(30):
                 with open(filePath, 'w', encoding='utf-8') as file:
                     file.write(modified_content)
 
+        update_spinner_status("File edits applied successfully")
         return diff
 
     except Exception as e:
+        update_spinner_status(f"Error applying edits: {str(e)}")
         raise ValueError(f"Error applying edits to {filePath}: {str(e)}")
 
 
 def read_file(llm_client, path: str) -> str:
+    """Read the content of a file."""
     try:
+        update_spinner_status(f"Reading file: {path}")
         valid_path = resolve_path(path, allowed_directories)
         check_file_size(valid_path)
 
         with timeout(30):
             try:
                 with open(valid_path, 'r', encoding='utf-8') as file:
-                    return file.read()
+                    content = file.read()
+                    update_spinner_status("File read successfully")
+                    return content
             except UnicodeDecodeError:
+                update_spinner_status("Attempting binary read for non-UTF-8 file...")
                 # Fallback to binary mode for non-UTF-8 files
                 with open(valid_path, 'rb') as file:
-                    return file.read().decode('utf-8', errors='replace')
+                    content = file.read().decode('utf-8', errors='replace')
+                    update_spinner_status("File read successfully in binary mode")
+                    return content
     except TimeoutError:
+        update_spinner_status("File read timed out")
         raise ValueError(f"Timeout reading file {path}")
     except Exception as e:
+        update_spinner_status(f"Error reading file: {str(e)}")
         raise ValueError(f"Error reading file {path}: {str(e)}")
 
 
 def read_multiple_files(llm_client, paths: List[str]) -> List[str]:
+    """Read the content of multiple files."""
     results = []
-    for file_path in paths:
+    for i, file_path in enumerate(paths, 1):
         try:
+            update_spinner_status(f"Reading file {i} of {len(paths)}: {file_path}")
             valid_path = resolve_path(file_path, allowed_directories)
             check_file_size(valid_path)
 
@@ -253,7 +286,9 @@ def read_multiple_files(llm_client, paths: List[str]) -> List[str]:
                     with open(valid_path, 'rb') as file:
                         content = file.read().decode('utf-8', errors='replace')
                 results.append(f"{file_path}:\n{content}\n")
+                update_spinner_status(f"Successfully read file {i} of {len(paths)}")
         except Exception as e:
+            update_spinner_status(f"Error reading file {file_path}: {str(e)}")
             results.append(f"{file_path}: Error - {str(e)}")
     return results
 
@@ -261,6 +296,7 @@ def read_multiple_files(llm_client, paths: List[str]) -> List[str]:
 def write_file(llm_client, path: str, content: str) -> str:
     """Write content to a file, handling both absolute and relative paths."""
     try:
+        update_spinner_status(f"Writing file: {path}")
         print(colored(f"Writing file - Original path: {path}", "yellow"))
 
         # If path starts with /data, make it relative to BASE_DIRECTORY
@@ -275,12 +311,14 @@ def write_file(llm_client, path: str, content: str) -> str:
             f"Directory exists? {os.path.exists(os.path.dirname(full_path))}", "yellow"))
 
         # Ensure the directory exists
+        update_spinner_status("Creating directory structure...")
         os.makedirs(os.path.dirname(full_path), exist_ok=True)
 
         print(colored(f"Directory created/verified", "yellow"))
         print(colored(f"Attempting to write file...", "yellow"))
 
         # Write the file
+        update_spinner_status("Writing file content...")
         with open(full_path, 'w', encoding='utf-8') as file:
             file.write(content)
 
@@ -289,23 +327,29 @@ def write_file(llm_client, path: str, content: str) -> str:
         print(colored(
             f"File size: {os.path.getsize(full_path) if os.path.exists(full_path) else 'N/A'}", "yellow"))
 
+        update_spinner_status("File written successfully")
         return f"Successfully wrote to {full_path}"
     except Exception as e:
+        update_spinner_status(f"Error writing file: {str(e)}")
         print(colored(f"Error in write_file: {str(e)}", "red"))
         raise ValueError(f"Error writing to file {path}: {str(e)}")
 
 
 def edit_file(llm_client, path: str, edits: List[Dict[str, str]], dry_run: bool = False) -> str:
+    """Edit a file by applying a series of text edits."""
     try:
+        update_spinner_status(f"Editing file: {path}")
         valid_path = resolve_path(path, allowed_directories)
         return apply_file_edits(valid_path, edits, dry_run)
     except Exception as e:
+        update_spinner_status(f"Error editing file: {str(e)}")
         raise ValueError(f"Error editing file {path}: {str(e)}")
 
 
 def create_directory(llm_client, path: str) -> str:
     """Create a directory at the specified path."""
     try:
+        update_spinner_status(f"Creating directory: {path}")
         # Resolve and validate the path
         valid_path = resolve_path(path, allowed_directories)
 
@@ -313,15 +357,20 @@ def create_directory(llm_client, path: str) -> str:
 
         with timeout(10):
             os.makedirs(valid_path, mode=DIRECTORY_PERMISSIONS, exist_ok=True)
+        update_spinner_status("Directory created successfully")
         return f"Successfully created directory {valid_path}"
     except TimeoutError:
+        update_spinner_status("Directory creation timed out")
         raise ValueError(f"Timeout creating directory {path}")
     except Exception as e:
+        update_spinner_status(f"Error creating directory: {str(e)}")
         raise ValueError(f"Error creating directory {path}: {str(e)}")
 
 
 def list_directory(llm_client, path: str) -> str:
+    """List the contents of a directory."""
     try:
+        update_spinner_status(f"Listing directory: {path}")
         valid_path = resolve_path(path, allowed_directories)
         with timeout(10):
             entries = os.listdir(valid_path)
@@ -331,15 +380,21 @@ def list_directory(llm_client, path: str) -> str:
                 # Sort entries for consistent output
                 for entry in sorted(entries)
             )
+        update_spinner_status("Directory listing complete")
         return formatted
     except TimeoutError:
+        update_spinner_status("Directory listing timed out")
         raise ValueError(f"Timeout listing directory {path}")
     except Exception as e:
         raise ValueError(f"Error listing directory {path}: {str(e)}")
 
 
 def directory_tree(llm_client, path: str, max_depth: int = 20) -> str:
+    """Generate a JSON representation of the directory tree."""
     try:
+        update_spinner_status(f"Building directory tree for: {path}")
+        print(colored(f"Building directory tree for: {path}", "green"))
+        
         valid_path = resolve_path(path, allowed_directories)
 
         def build_tree(current_path: str, current_depth: int = 0) -> Union[Dict[str, Union[str, List]], str]:
@@ -352,6 +407,9 @@ def directory_tree(llm_client, path: str, max_depth: int = 20) -> str:
 
                 for entry in entries:
                     try:
+                        update_spinner_status(f"Processing {entry}")
+                        print(colored(f"Processing {entry}", "green"))
+                        
                         full_path = os.path.join(current_path, entry)
                         entry_data = {
                             "name": entry,
@@ -364,37 +422,54 @@ def directory_tree(llm_client, path: str, max_depth: int = 20) -> str:
 
                         result.append(entry_data)
                     except Exception as e:
-                        print(
-                            colored(f"Error processing {entry}: {str(e)}", "yellow"))
+                        update_spinner_status(f"Error processing {entry}: {str(e)}")
+                        print(colored(f"Error processing {entry}: {str(e)}", "yellow"))
 
                 return result
 
-        return json.dumps(build_tree(valid_path), indent=2)
+        tree = build_tree(valid_path)
+        update_spinner_status("Directory tree built successfully")
+        print(colored("Directory tree built successfully", "green"))
+        return json.dumps(tree, indent=2)
+        
     except TimeoutError:
+        update_spinner_status(f"Timeout building directory tree for {path}")
         raise ValueError(f"Timeout building directory tree for {path}")
     except Exception as e:
+        update_spinner_status(f"Error building directory tree: {str(e)}")
         raise ValueError(f"Error building directory tree for {path}: {str(e)}")
 
 
 def move_file(llm_client, source: str, destination: str) -> str:
+    """Move a file from source to destination."""
     try:
+        update_spinner_status(f"Moving file from {source} to {destination}")
+        print(colored(f"Moving file from {source} to {destination}", "green"))
+        
         # Resolve and validate both source and destination paths
         full_source = resolve_path(source, allowed_directories)
         full_destination = resolve_path(destination, allowed_directories)
 
         # Ensure destination directory exists
+        update_spinner_status("Creating destination directory if needed")
         os.makedirs(os.path.dirname(full_destination), exist_ok=True)
 
         # Move the file
+        update_spinner_status("Moving file...")
         shutil.move(full_source, full_destination)
 
+        update_spinner_status("File moved successfully")
+        print(colored("File moved successfully", "green"))
         return f"Successfully moved {full_source} to {full_destination}"
+        
     except Exception as e:
+        update_spinner_status(f"Error moving file: {str(e)}")
         raise ValueError(
             f"Error moving file from {source} to {destination}: {str(e)}")
 
 
 def search_files(root_path: str, pattern: str, exclude_patterns: Optional[List[str]] = None) -> List[str]:
+    """Search for files matching a pattern, excluding specified patterns."""
     # Resolve the root path
     valid_root_path = resolve_path(root_path, allowed_directories)
 
@@ -403,11 +478,14 @@ def search_files(root_path: str, pattern: str, exclude_patterns: Optional[List[s
 
     def search(current_path: str):
         try:
+            update_spinner_status(f"Searching in: {current_path}")
+            print(colored(f"Searching in: {current_path}", "green"))
+            
             with timeout(5):  # Short timeout for directory listing
                 entries = os.listdir(current_path)
         except (PermissionError, OSError, TimeoutError) as e:
-            print(
-                colored(f"Access error for {current_path}: {str(e)}", "yellow"))
+            update_spinner_status(f"Access error for {current_path}: {str(e)}")
+            print(colored(f"Access error for {current_path}: {str(e)}", "yellow"))
             return
 
         for entry in entries:
@@ -439,15 +517,18 @@ def search_files(root_path: str, pattern: str, exclude_patterns: Optional[List[s
                     continue
 
                 if pattern.lower() in entry.lower():
+                    update_spinner_status(f"Found match: {entry}")
                     results.append(full_path)
 
                 if os.path.isdir(full_path):
                     search(full_path)
             except Exception as e:
+                update_spinner_status(f"Error processing {entry}: {str(e)}")
                 print(colored(f"Error processing {entry}: {str(e)}", "red"))
                 continue
 
     search(valid_root_path)
+    update_spinner_status(f"Search complete. Found {len(results)} matches")
     return results
 
 
@@ -457,6 +538,9 @@ def get_file_stats(filePath: str, format: str = 'dict') -> Union[Dict, str]:
     Combines previous get_file_stats and get_file_info functions.
     """
     try:
+        update_spinner_status(f"Getting stats for: {filePath}")
+        print(colored(f"Getting stats for: {filePath}", "green"))
+        
         valid_path = resolve_path(filePath, allowed_directories)
         with timeout(5):
             stats = os.stat(valid_path)
@@ -470,17 +554,26 @@ def get_file_stats(filePath: str, format: str = 'dict') -> Union[Dict, str]:
                 "permissions": oct(stats.st_mode)[-3:]
             }
 
+            update_spinner_status("File stats retrieved successfully")
             return info if format == 'dict' else '\n'.join(f"{k}: {v}" for k, v in info.items())
     except Exception as e:
+        update_spinner_status(f"Error getting file stats: {str(e)}")
         raise ValueError(f"Error getting file stats: {str(e)}")
 
 
 def search_files_tool(llm_client, path: str, pattern: str, exclude_patterns: Optional[List[str]] = None) -> str:
+    """Tool to search files with a given pattern and exclusion list."""
     try:
+        update_spinner_status(f"Searching files in {path} for pattern: {pattern}")
+        print(colored(f"Searching files in {path} for pattern: {pattern}", "green"))
+        
         valid_path = resolve_path(path, allowed_directories)
         results = search_files(valid_path, pattern, exclude_patterns)
+        
+        update_spinner_status(f"Search complete. Found {len(results)} matches")
         return '\n'.join(results) if results else "No matches found"
     except Exception as e:
+        update_spinner_status(f"Error searching files: {str(e)}")
         raise ValueError(f"Error searching files in {path}: {str(e)}")
 
 
@@ -492,7 +585,11 @@ def get_default_download_directory() -> str:
 
 
 def download_file(llm_client, url: str, filename: Optional[str] = None) -> str:
+    """Download a file from a URL to the default download directory."""
     try:
+        update_spinner_status(f"Preparing to download from: {url}")
+        print(colored(f"Preparing to download from: {url}", "green"))
+        
         # Validate and create download directory
         download_dir = os.path.join(allowed_directories[0], 'data', 'files')
         os.makedirs(download_dir, exist_ok=True)
@@ -510,6 +607,7 @@ def download_file(llm_client, url: str, filename: Optional[str] = None) -> str:
             if not filename or filename == '/':
                 filename = 'downloaded_file'
 
+        update_spinner_status("Downloading file...")
         # Download the file with timeout to get Content-Type
         with timeout(60):
             response = requests.get(url, stream=True)
@@ -519,6 +617,7 @@ def download_file(llm_client, url: str, filename: Optional[str] = None) -> str:
             content_type = response.headers.get('Content-Type', '')
             extension = ''
             if content_type:
+                update_spinner_status("Determining file type...")
                 # Use mimetypes to guess extension
                 extension = mimetypes.guess_extension(
                     content_type.partition(';')[0].strip())
@@ -557,6 +656,7 @@ def download_file(llm_client, url: str, filename: Optional[str] = None) -> str:
             # Full path to save file
             save_path = os.path.join(download_dir, filename)
 
+            update_spinner_status(f"Saving file as: {filename}")
             # Write file in chunks to handle large files
             with open(save_path, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=8192):
@@ -565,13 +665,18 @@ def download_file(llm_client, url: str, filename: Optional[str] = None) -> str:
         # Set file permissions
         os.chmod(save_path, FILESYSTEM_PERMISSIONS)
 
+        update_spinner_status("File downloaded successfully")
+        print(colored("File downloaded successfully", "green"))
         return f"The file `{filename}` has been successfully downloaded to {save_path}"
 
     except TimeoutError:
+        update_spinner_status("Download timed out")
         raise ValueError("Download timed out after 60 seconds")
     except requests.RequestException as e:
+        update_spinner_status(f"Download error: {str(e)}")
         raise ValueError(f"Error downloading file: {str(e)}")
     except Exception as e:
+        update_spinner_status(f"Error saving file: {str(e)}")
         raise ValueError(f"Error saving downloaded file: {str(e)}")
 
 
@@ -594,6 +699,9 @@ def execute(llm_client=None, **kwargs):
         dict: Operation result with success/failure status
     """
     try:
+        update_spinner_status("Starting file operations...")
+        print(colored("Starting file operations...", "green"))
+        
         # Convert single operation to list format for unified handling
         operations = kwargs.get('operations', [])
         if not operations and 'operation' in kwargs:
@@ -607,15 +715,15 @@ def execute(llm_client=None, **kwargs):
         overall_success = True
 
         # Process each operation
-        for op in operations:
+        for i, op in enumerate(operations, 1):
             try:
                 operation = op.get('operation')
                 if not operation:
                     raise ValueError("Operation parameter is required")
 
                 rationale = op.get('rationale', 'No rationale provided')
-                print(
-                    colored(f"Executing {operation} with rationale: {rationale}", "cyan"))
+                update_spinner_status(f"Operation {i}/{len(operations)}: {operation}")
+                print(colored(f"Executing {operation} with rationale: {rationale}", "cyan"))
 
                 # Define operation handlers
                 operation_handlers = {
@@ -636,6 +744,7 @@ def execute(llm_client=None, **kwargs):
                     raise ValueError(f"Unknown operation: {operation}")
 
                 result = operation_handlers[operation]()
+                update_spinner_status(f"Operation {operation} completed successfully")
                 results.append({
                     "operation": operation,
                     "result": result,
@@ -645,6 +754,7 @@ def execute(llm_client=None, **kwargs):
 
             except Exception as e:
                 error_message = f"Error in {op.get('operation', 'unknown')}: {str(e)}"
+                update_spinner_status(error_message)
                 print(colored(error_message, "red"))
                 results.append({
                     "operation": op.get('operation', 'unknown'),
