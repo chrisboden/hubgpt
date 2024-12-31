@@ -248,6 +248,7 @@ Tools in this framework provide powerful, modular functionality that can be leve
             "destination": "/data/files/new_folder/renamed.md"
         }
     ]
+    
 5. `get_advice`: Get advice from a specified advisor based on the given query posed by a user
 6. `get_company_updates`: Fetch the recent LinkedIn updates posted by a given list of companies
 7. `get_current_weather`: Provide the current weather for a given location when asked by a user
