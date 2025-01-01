@@ -6,8 +6,8 @@ import streamlit as st
 from dotenv import load_dotenv
 import advisors
 import notepads
+from workflows import main as workflows_main  # Import the main function from workflows
 from utils.log_utils import setup_logging
-#import teams
 
 # Add the project root to PYTHONPATH
 project_root = os.path.dirname(os.path.abspath(__file__))
@@ -61,8 +61,18 @@ col2.button(
     use_container_width=True
 )
 
+col3.button(
+    "🤖",
+    key="workflows_btn",
+    type="primary" if st.session_state.current_tab == "Workflows" else "secondary", 
+    on_click=lambda: setattr(st.session_state, 'current_tab', 'Workflows'),
+    use_container_width=True
+)
+
 # Load content in main area based on selected tab
 if st.session_state.current_tab == "Advisors":
     advisors.main()
 elif st.session_state.current_tab == "Notepads":
     notepads.main()
+elif st.session_state.current_tab == "Workflows":
+    workflows_main()  # Use the imported main function
