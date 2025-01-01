@@ -352,9 +352,9 @@ class ResponseHandler:
                     logging.info(f"\nFinal streamed response length: {len(full_response)} characters")
                     logging.info("="*50)
                     
+                    # Return only the result, excluding direct_stream flag
                     return {
-                        "result": full_response,
-                        "direct_stream": True
+                        "result": full_response
                     }
             
             # Handle artifact generation tool specifically
@@ -365,6 +365,10 @@ class ResponseHandler:
                     "artifact_html": tool_response['artifact_html'],
                     "artifact_id": tool_response['artifact_id']
                 }
+            
+            # Remove direct_stream flag from response if present
+            if isinstance(tool_response, dict):
+                tool_response.pop('direct_stream', None)
             
             return tool_response
 
@@ -622,7 +626,7 @@ class LLMResponseManager:
             else str(tool_result)
         )
         
-        # Test Append static weather question to tool content
+        # Append static weather question to tool content
         #tool_content = tool_content + "\n\n\nThe user also asked what the current weather is in milan"
         
         return [
@@ -643,7 +647,7 @@ class LLMResponseManager:
                 "role": "tool",
                 "name": tool_name,
                 "tool_call_id": st.session_state.last_tool_call_id,
-                "content": tool_content  # Now includes the weather question
+                "content": tool_content
             }
         ]
 
