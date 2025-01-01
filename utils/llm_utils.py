@@ -17,6 +17,12 @@ class LLMParams:
     """Manages LLM API parameters and configuration"""
     @staticmethod
     def get_default():
+        """
+        Returns a dictionary of default parameters for the LLM API.
+
+        Returns:
+            Dict: Default parameters including model, temperature, max_tokens, etc.
+        """
         return {
             'model': 'gpt-4o-mini',
             'temperature': 1.0,
@@ -29,6 +35,18 @@ class LLMParams:
 
     @staticmethod
     def build_api_params(default_params: Dict, overrides: Dict, messages: List, tools: List) -> Dict:
+        """
+        Builds the final API parameters by merging default parameters with overrides.
+
+        Args:
+            default_params (Dict): Default parameters.
+            overrides (Dict): Parameters to override the defaults.
+            messages (List): List of messages to be sent to the LLM.
+            tools (List): List of tools to be used.
+
+        Returns:
+            Dict: Final API parameters.
+        """
         api_params = {**default_params}
         for key, value in overrides.items():
             if key not in ['spinner_placeholder', 'status_placeholder']:
@@ -45,6 +63,15 @@ class ToolManager:
     """Handles tool resolution and execution"""
     @staticmethod
     def resolve_tools(tool_names: List[str]) -> List[Dict]:
+        """
+        Resolves tool metadata based on the provided tool names.
+
+        Args:
+            tool_names (List[str]): List of tool names.
+
+        Returns:
+            List[Dict]: List of resolved tool metadata.
+        """
         resolved_tools = []
         for tool_name in tool_names:
             metadata = TOOL_METADATA_REGISTRY.get(tool_name)
@@ -56,11 +83,30 @@ class ToolManager:
 
     @staticmethod
     def execute_tool_call(tool_name: str, function_call_data: Dict, llm_client) -> Dict:
+        """
+        Executes a tool call with the provided function call data.
+
+        Args:
+            tool_name (str): Name of the tool to execute.
+            function_call_data (Dict): Data containing the function call details.
+            llm_client: Client to interact with the LLM.
+
+        Returns:
+            Dict: Result of the tool execution.
+        """
         return execute_tool(tool_name, function_call_data, llm_client=llm_client)
 
 class ResponseHandler:
     """Manages LLM response processing and UI updates"""
     def __init__(self, client, status_placeholder, response_placeholder):
+        """
+        Initializes the ResponseHandler.
+
+        Args:
+            client: Client to interact with the LLM.
+            status_placeholder: Placeholder for status messages.
+            response_placeholder: Placeholder for response messages.
+        """
         print(colored("Initializing ResponseHandler", "cyan"))
         self.client = client
         self.status_placeholder = status_placeholder
@@ -68,24 +114,36 @@ class ResponseHandler:
         self.full_response = ""
 
     def handle_non_streamed_response(self, completion: ChatCompletion) -> tuple[str, Optional[Dict]]:
-        """Handle non-streamed responses with tool call support"""
+        """
+        Handles non-streamed responses with support for tool calls.
+
+        Args:
+            completion (ChatCompletion): Completion object from the LLM.
+
+        Returns:
+            tuple[str, Optional[Dict]]: Full response and function call data.
+        """
         print(colored("Starting handle_non_streamed_response", "yellow"))
         
         function_call_data = None
         full_response = ""
         
+        # Return early if no choices in completion
         if not completion.choices:
             return full_response, function_call_data
             
         message = completion.choices[0].message
         
-        # Handle tool calls
+        # Handle tool calls if present in the message
         if hasattr(message, 'tool_calls') and message.tool_calls:
             tool_call = message.tool_calls[0]
             print(colored(f"Tool call detected: {tool_call.function.name}", "cyan"))
+            
+            # Store tool info in session state for tracking
             st.session_state.last_tool_name = tool_call.function.name
             st.session_state.last_tool_call_id = tool_call.id
             
+            # Parse tool arguments from JSON
             try:
                 args = json.loads(tool_call.function.arguments)
                 function_call_data = args
@@ -93,7 +151,7 @@ class ResponseHandler:
             except json.JSONDecodeError as e:
                 print(colored(f"Error decoding tool arguments: {e}", "red"))
         
-        # Handle content
+        # Handle and display message content if present
         if message.content:
             full_response = message.content
             self.response_placeholder.markdown(full_response)
@@ -103,84 +161,102 @@ class ResponseHandler:
 
 
     def handle_streamed_response(self, stream) -> tuple[str, Optional[Dict]]:
-        """Handle streamed responses with improved tool call handling"""
+        """
+        Processes streamed responses chunk by chunk, handling both content and tool calls.
+        
+        Args:
+            stream: Iterator of response chunks from the LLM
+            
+        Returns:
+            tuple[str, Optional[Dict]]: Accumulated response text and tool call data if present
+        """
         print(colored("Starting handle_streamed_response", "yellow"))
         
+        # Initialize tracking variables
         function_call_data = None
-        current_tool_args = ""
+        current_tool_args = ""  # Buffer for accumulating tool arguments
         tool_name = None
-        tool_call_id = None  # Add this to track the tool call ID
+        tool_call_id = None
         
+        # Process each chunk in the stream
         for chunk in stream:
             if not chunk.choices:
                 continue
             
             delta = chunk.choices[0].delta
             
-            # Handle tool calls
+            # Handle tool calls in the chunk
             if hasattr(delta, 'tool_calls') and delta.tool_calls:
                 tool_call = delta.tool_calls[0]
                 
-                # Capture tool call ID
+                # Track tool call ID when present
                 if hasattr(tool_call, 'id') and tool_call.id:
                     tool_call_id = tool_call.id
                     st.session_state.last_tool_call_id = tool_call_id
                     print(colored(f"Tool call ID captured: {tool_call_id}", "cyan"))
                 
-                # Handle function name
+                # Process function information if present
                 if hasattr(tool_call, 'function'):
+                    # Handle function name
                     if hasattr(tool_call.function, 'name') and tool_call.function.name:
                         tool_name = tool_call.function.name
                         print(colored(f"Tool call detected: {tool_name}", "cyan"))
                         st.session_state.last_tool_name = tool_name
-                        # Update status for tool usage
                         self.status_placeholder.markdown(f"*🔧 Using tool: {tool_name}*")
                     
-                    # Accumulate arguments
+                    # Accumulate function arguments
                     if hasattr(tool_call.function, 'arguments'):
                         current_tool_args += tool_call.function.arguments
                 
-                # When we have complete arguments, process them
+                # Try to parse complete arguments when available
                 if current_tool_args and not function_call_data:
                     try:
                         args = json.loads(current_tool_args)
                         function_call_data = {
                             'name': tool_name,
                             'arguments': args,
-                            'id': tool_call_id  # Include the tool call ID
+                            'id': tool_call_id
                         }
                         print(colored(f"Complete tool arguments for {tool_name} (ID: {tool_call_id}): {args}", "green"))
                     except json.JSONDecodeError:
-                        # Still accumulating arguments
+                        # Continue accumulating if arguments are incomplete
                         pass
             
-            # Handle content
+            # Handle content updates
             chunk_text = delta.content or ""
             if chunk_text:
                 self.full_response += chunk_text
-                # Update response with thinking indicator when processing
+                # Show typing indicator (▌) while processing
                 self.response_placeholder.markdown(f"{self.full_response}{'▌' if not function_call_data else ''}")
         
         return self.full_response, function_call_data
 
 
     def _process_tool_call(self, tool_call) -> Optional[Dict]:
-        """Process tool calls with better argument handling"""
+        """
+        Helper method to process and validate tool calls.
+        
+        Args:
+            tool_call: Tool call object from LLM response
+            
+        Returns:
+            Optional[Dict]: Parsed tool arguments if valid, None if invalid
+        """
         print(colored(f"Processing tool call: {tool_call.function.name}", "yellow"))
         
-        # Store tool info in session state
+        # Update session state with tool tracking info
         st.session_state.last_tool_call_id = tool_call.id
         st.session_state.last_tool_name = tool_call.function.name
         self.status_placeholder.markdown(f"*🔧 Using tool: {tool_call.function.name}*")
         
-        # Handle arguments
+        # Validate and parse tool arguments
         try:
-            # Ensure we have complete arguments
+            # Verify arguments exist
             if not hasattr(tool_call.function, 'arguments') or not tool_call.function.arguments:
                 print(colored("No arguments provided", "red"))
                 return None
                 
-            # Clean the arguments string
+            # Clean and validate arguments string
             args_str = tool_call.function.arguments.strip()
             if not args_str:
                 print(colored("Empty arguments string", "red"))
@@ -188,7 +264,7 @@ class ResponseHandler:
                 
             print(colored(f"Raw arguments: {args_str}", "cyan"))
             
-            # Parse JSON
+            # Parse and return JSON arguments
             args = json.loads(args_str)
             print(colored(f"Parsed arguments: {args}", "green"))
             return args
@@ -208,7 +284,18 @@ class ResponseHandler:
         chat_history: List[Dict[str, Any]],
         chat_history_path: str
     ) -> Optional[Dict[str, Any]]:
-        """Handle tool execution with support for artifacts and structured responses."""
+        """
+        Handles tool execution with support for artifacts and structured responses.
+
+        Args:
+            tool_name (str): Name of the tool to execute.
+            function_data (Dict[str, Any]): Data containing the function call details.
+            chat_history (List[Dict[str, Any]]): Current chat history.
+            chat_history_path (str): Path to save the chat history.
+
+        Returns:
+            Optional[Dict[str, Any]]: Result of the tool execution.
+        """
         print(colored(f"\nStarting tool execution for: {tool_name}", "cyan"))
         print(colored(f"Function data: {function_data}", "cyan"))
         
@@ -293,14 +380,36 @@ class ResponseHandler:
 class ChatHistoryManager:
     """Manages chat history updates and persistence"""
     def __init__(self, chat_history: List, chat_history_path: str):
+        """
+        Initializes the ChatHistoryManager.
+
+        Args:
+            chat_history (List): Current chat history.
+            chat_history_path (str): Path to save the chat history.
+        """
         self.chat_history = chat_history
         self.chat_history_path = chat_history_path
 
     def add_assistant_response(self, content: str):
+        """
+        Adds an assistant's response to the chat history.
+
+        Args:
+            content (str): Content of the assistant's response.
+        """
         if content.strip():
             self.chat_history.append({"role": "assistant", "content": content})
 
     def add_tool_interaction(self, tool_name: str, tool_call_id: str, function_call_data: Dict, tool_response: Dict):
+        """
+        Adds a tool interaction to the chat history.
+
+        Args:
+            tool_name (str): Name of the tool used.
+            tool_call_id (str): ID of the tool call.
+            function_call_data (Dict): Data containing the function call details.
+            tool_response (Dict): Response from the tool execution.
+        """
         assistant_tool_message = {
             "role": "assistant",
             "content": "null",
@@ -324,13 +433,43 @@ class ChatHistoryManager:
         self.chat_history.append(tool_message)
 
     def save(self):
+        """Saves the chat history to a file."""
         save_chat_history(self.chat_history, self.chat_history_path)
 
-
 class LLMResponseManager:
-    """Manages the entire LLM response flow including tool execution and chat history"""
+    """
+    Manages the entire LLM response workflow, handling complex interactions 
+    between the language model, tools, and chat history.
+    
+    This class orchestrates the process of:
+    - Initializing LLM parameters
+    - Setting up UI components
+    - Making LLM API calls
+    - Executing tools
+    - Managing chat history
+    """
     
     def __init__(self, client, messages, chat_history, chat_history_path, advisor_data, selected_advisor, tools=[], **overrides):
+        """
+        Initialize the LLM response management system with comprehensive configuration.
+        
+        Key responsibilities in initialization:
+        - Set up client and communication parameters
+        - Prepare chat history tracking
+        - Resolve and configure available tools
+        - Build API parameters with flexible overrides
+        
+        Args:
+            client: The LLM API client for making requests
+            messages: Initial conversation context
+            chat_history: Running record of conversation interactions
+            chat_history_path: File path for persistent chat history storage
+            advisor_data: Metadata about the current AI advisor
+            selected_advisor: Name of the active advisor
+            tools: List of tools available for the advisor
+            **overrides: Flexible parameter overrides for fine-tuned control
+        """
+        # Core communication and context attributes
         self.client = client
         self.messages = messages
         self.chat_history = chat_history
@@ -340,19 +479,28 @@ class LLMResponseManager:
         self.tools = tools
         self.overrides = overrides
         
-        # Initialize components
+        # UI and interaction tracking components (initially None)
         self.status_placeholder = None
         self.response_placeholder = None
         self.response_handler = None
         self.history_manager = None
         
-        # Set up params
+        # Configure LLM parameters with flexible defaults and overrides
         self.params = LLMParams.get_default()
         self.resolved_tools = ToolManager.resolve_tools(tools)
         self.api_params = LLMParams.build_api_params(self.params, overrides, messages, self.resolved_tools)
 
     def setup_ui_components(self):
-        """Initialize Streamlit UI components"""
+        """
+        Dynamically set up Streamlit UI components for real-time interaction.
+        
+        This method:
+        - Creates placeholders for status and response messages
+        - Initializes response and history management handlers
+        
+        Returns:
+            bool: Indicates successful UI component initialization
+        """
         with st.chat_message("assistant"):
             self.status_placeholder = st.empty()
             self.response_placeholder = st.empty()
@@ -361,13 +509,28 @@ class LLMResponseManager:
             return True
 
     def make_llm_call(self, messages=None):
-        """Make LLM API call and handle response"""
+        """
+        Execute an LLM API call with robust error handling and logging.
+        
+        Handles both streamed and non-streamed response modes, allowing 
+        flexible communication with the language model.
+        
+        Args:
+            messages: Optional custom message set to override default messages
+        
+        Returns:
+            tuple: Full text response and any associated function call data
+        
+        Raises:
+            Exception: Captures and logs any API call failures
+        """
         if messages:
             self.api_params['messages'] = messages
             
         log_llm_request(self.api_params)
         
         try:
+            # Dynamically choose between streaming and non-streaming modes
             if self.api_params.get('stream', True):
                 stream = self.client.chat.completions.create(**self.api_params)
                 response, function_call_data = self.response_handler.handle_streamed_response(stream)
@@ -375,14 +538,36 @@ class LLMResponseManager:
                 completion = self.client.chat.completions.create(**self.api_params)
                 response, function_call_data = self.response_handler.handle_non_streamed_response(completion)
                 
+            # Add response logging here
+            log_llm_response({
+                "content": response,
+                "function_call": function_call_data
+            })
+                
             return response, function_call_data
             
         except Exception as e:
             print(colored(f"LLM call failed: {e}", "red"))
             raise
 
+
     def handle_tool_response(self, tool_name, function_call_data):
-        """Process tool execution and prepare follow-up messages"""
+        """
+        Process tool execution and prepare follow-up conversation context.
+        
+        Workflow:
+        1. Execute the specified tool
+        2. Record the tool interaction in chat history
+        3. Prepare follow-up messages for potential additional processing
+        
+        Args:
+            tool_name: Name of the tool to execute
+            function_call_data: Detailed parameters for tool execution
+        
+        Returns:
+            tuple: Tool execution result and prepared follow-up messages
+        """
+        # Execute tool and capture its result
         tool_result = self.response_handler.handle_tool_execution(
             tool_name,
             function_call_data,
@@ -393,6 +578,13 @@ class LLMResponseManager:
         if tool_result is None:
             return None, None
             
+        # Log tool result
+        log_llm_response({
+            "tool_name": tool_name,
+            "tool_result": tool_result
+        })
+            
+        # Record tool interaction in chat history
         self.history_manager.add_tool_interaction(
             tool_name,
             st.session_state.last_tool_call_id,
@@ -400,6 +592,7 @@ class LLMResponseManager:
             tool_result
         )
         
+        # Prepare context for potential follow-up LLM interaction
         follow_up_messages = self._construct_follow_up_messages(
             tool_name, 
             function_call_data, 
@@ -409,12 +602,28 @@ class LLMResponseManager:
         return tool_result, follow_up_messages
 
     def _construct_follow_up_messages(self, tool_name, function_call_data, tool_result):
-        """Construct messages for follow-up LLM call after tool execution"""
-        # Convert tool result to string representation
+        """
+        Construct a conversation context that includes the tool execution details.
+        
+        Transforms tool results into a format suitable for continued LLM interaction,
+        maintaining the conversation's context and flow.
+        
+        Args:
+            tool_name: Name of the executed tool
+            function_call_data: Original tool call parameters
+            tool_result: Result returned by the tool
+        
+        Returns:
+            list: Augmented message list with tool execution context
+        """
+        # Flexible serialization of tool result
         tool_content = (
             json.dumps(tool_result) if isinstance(tool_result, dict) 
             else str(tool_result)
         )
+        
+        # Test Append static weather question to tool content
+        #tool_content = tool_content + "\n\n\nThe user also asked what the current weather is in milan"
         
         return [
             *self.messages,
@@ -434,60 +643,77 @@ class LLMResponseManager:
                 "role": "tool",
                 "name": tool_name,
                 "tool_call_id": st.session_state.last_tool_call_id,
-                "content": tool_content  # Use the properly formatted tool content
+                "content": tool_content  # Now includes the weather question
             }
         ]
 
     def process_response(self):
-        """Main method to process LLM response flow"""
+        """
+        Central method orchestrating the entire LLM interaction workflow.
+        
+        Comprehensive process handling:
+        - UI setup
+        - Initial LLM call
+        - Tool execution (if applicable)
+        - Response generation
+        - Chat history management
+        - Error handling
+        
+        Returns:
+            list: Updated chat history after processing
+        """
         try:
             with st.spinner(f"{self.selected_advisor} is thinking..."):
                 if not self.setup_ui_components():
                     return self.chat_history
                     
-                # Initial LLM call
+                # Initial language model interaction
                 full_response, function_call_data = self.make_llm_call()
                 
-                # Handle tool execution if present
+                # Handle potential tool invocation
                 if function_call_data and 'name' in function_call_data:
                     tool_name = function_call_data['name']
                     tool_result, follow_up_messages = self.handle_tool_response(tool_name, function_call_data)
                     
                     if tool_result is not None:
+                        # Special handling for artifact creation
                         if tool_name == 'make_artifact':
                             self.history_manager.save()
                             st.rerun()
                         
-                        # Handle direct stream responses differently
+                        # Direct streaming for certain tools
                         if tool_result.get('direct_stream'):
                             self.history_manager.add_assistant_response(tool_result['result'])
                             self.history_manager.save()
                             st.rerun()
                             return self.chat_history
                             
-                        # Make follow-up LLM call for non-direct stream responses
+                        # Follow-up LLM call for complex tool interactions
                         final_response, _ = self.make_llm_call(follow_up_messages)
                         self.history_manager.add_assistant_response(final_response)
                 else:
-                    # Handle non-tool responses
+                    # Standard response handling without tools
                     if full_response.strip():
                         self.history_manager.add_assistant_response(full_response)
                         
         except Exception as e:
+            # Comprehensive error management
             st.error(f"An error occurred: {e}")
             logging.error(f"LLM Response Error: {e}")
             logging.exception(e)
             
         finally:
+            # Cleanup and state management
             self.status_placeholder.empty()
             self.history_manager.save()
             
+            # Conditional UI refresh
             if not (function_call_data and function_call_data.get('name') == 'make_artifact'):
                 if not function_call_data or (function_call_data and tool_result is not None):
                     st.rerun()
                     
         return self.chat_history
-
+    
 def get_llm_response(
     client: Any,
     messages: List[Dict[str, Any]],
@@ -500,11 +726,23 @@ def get_llm_response(
     tool_choice: str = 'auto',
     **overrides
 ) -> List[Dict[str, Any]]:
-    """Main entry point for LLM interactions"""
+    """
+    Main entry point for LLM interactions.
+    
+    Initializes an LLMResponseManager to handle the complete lifecycle of:
+    - Making API calls to the language model
+    - Processing responses and tool calls
+    - Managing chat history
+    - Handling errors and exceptions
+    
+    Returns:
+        List[Dict[str, Any]]: Updated chat history after processing
+    """
     try:
+        # Initialize response manager with all required components
         manager = LLMResponseManager(
             client=client,
-            messages=messages,
+            messages=messages, 
             chat_history=chat_history,
             chat_history_path=chat_history_path,
             advisor_data=advisor_data,
@@ -512,9 +750,11 @@ def get_llm_response(
             tools=tools,
             **overrides
         )
+        # Process the response and return updated chat history
         return manager.process_response()
         
     except Exception as e:
+        # Handle any unexpected errors
         st.error(f"An unexpected error occurred: {e}")
         logging.error(f"Unexpected error in get_llm_response: {e}")
         logging.exception(e)
