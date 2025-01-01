@@ -52,7 +52,54 @@ class LineCountRotatingFileHandler(RotatingFileHandler):
         
         if not self.delay:
             self.stream = self._open()
+    
+    def emit(self, record):
+        """Emit a record and check line count"""
+        if self.max_lines and self.line_count >= self.max_lines:
+            self.doRollover()
+            
+        super().emit(record)
+        self.line_count += 1
 
+def setup_logging(project_root: str) -> logging.Logger:
+    """Configure and setup logging for the application"""
+    # Ensure the logs directory exists
+    logs_dir = os.path.join(project_root, "logs")
+    if not os.path.exists(logs_dir):
+        os.makedirs(logs_dir)
+
+    # Remove existing handlers
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
+
+    # Configure logging
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.INFO)
+    
+    # Console handler
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    console_formatter = logging.Formatter('%(asctime)s %(levelname)s:%(message)s')
+    console_handler.setFormatter(console_formatter)
+    logger.addHandler(console_handler)
+
+    # File handler with line count rotation
+    file_handler = LineCountRotatingFileHandler(
+        filename=os.path.join(logs_dir, "app.log"),
+        maxBytes=1024 * 1024,  # 1MB
+        backupCount=5,
+        encoding='utf-8',
+        max_lines=1000  # Keep last 1000 lines
+    )
+    file_handler.setLevel(logging.INFO)
+    file_formatter = logging.Formatter('%(asctime)s %(levelname)s:%(message)s')
+    file_handler.setFormatter(file_formatter)
+    logger.addHandler(file_handler)
+
+    print(colored("Logging configured with line count rotation", "green"))
+    return logger
+
+# Rest of the functions remain unchanged
 def toggle_detailed_llm_logging(enable: bool = True):
     """Toggle detailed LLM logging on/off"""
     global DETAILED_LLM_LOGGING
@@ -64,62 +111,6 @@ def toggle_raw_response_logging(enable: bool = False):
     global INCLUDE_RAW_RESPONSE
     INCLUDE_RAW_RESPONSE = enable
     print(colored(f"Raw response logging {'enabled' if enable else 'disabled'}", "yellow"))
-
-def setup_logging(project_root: str) -> None:
-    """Configure and setup logging for the application"""
-    
-    # Check if logging is already configured
-    if hasattr(setup_logging, '_initialized'):
-        return
-    
-    # Ensure the logs directory exists
-    logs_dir = os.path.join(project_root, "logs")
-    if not os.path.exists(logs_dir):
-        print(colored(f"Creating logs directory at {logs_dir}", "yellow"))
-        os.makedirs(logs_dir)
-
-    log_file = os.path.join(logs_dir, "app.log")
-    print(colored(f"Setting up logging to {log_file}", "cyan"))
-
-    # Remove any existing handlers from the root logger
-    logging.root.handlers = []
-
-    # Configure the root logger
-    root_logger = logging.getLogger()
-    root_logger.setLevel(logging.INFO)
-    
-    try:
-        # File handler with line count rotation
-        file_handler = LineCountRotatingFileHandler(
-            filename=log_file,
-            maxBytes=1024 * 1024,  # 1MB
-            backupCount=5,
-            encoding='utf-8',
-            max_lines=1000  # Keep last 1000 lines
-        )
-        file_handler.setLevel(logging.INFO)
-        file_formatter = logging.Formatter('%(asctime)s %(levelname)s:%(message)s')
-        file_handler.setFormatter(file_formatter)
-        root_logger.addHandler(file_handler)
-
-        # Add console handler for development
-        console_handler = logging.StreamHandler()
-        console_handler.setLevel(logging.INFO)
-        console_formatter = logging.Formatter('%(levelname)s:%(message)s')
-        console_handler.setFormatter(console_formatter)
-        root_logger.addHandler(console_handler)
-        
-        print(colored(f"Successfully set up file logging to {log_file}", "green"))
-        
-        # Mark logging as initialized
-        setup_logging._initialized = True
-        
-        # Test log write
-        logging.info("Logging system initialized")
-        
-    except Exception as e:
-        print(colored(f"Error setting up file logging: {e}", "red"))
-        raise
 
 def log_llm_request(params: Dict[str, Any]):
     """Log LLM request parameters if detailed logging is enabled"""
