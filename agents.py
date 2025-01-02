@@ -19,6 +19,7 @@ import sys
 from pathlib import Path
 import logging
 from utils.log_utils import log_llm_request, log_llm_response
+from utils.prompt_utils import process_inclusions
 
 @dataclass
 class Tool:
@@ -70,7 +71,9 @@ class SmlAgent:
     def _handle_tool_call(self, tool_call) -> str:
         """Execute a tool call and return the result"""
         try:
-            tool_name = tool_call.function.name
+            # Strip any method names from tool call (e.g. use_notion.create_page -> use_notion)
+            tool_name = tool_call.function.name.split('.')[0]
+            
             if tool_name not in self.tool_map:
                 error_msg = f"Error: Unknown tool '{tool_name}'"
                 logging.error(error_msg)
@@ -140,10 +143,33 @@ class SmlAgent:
                 
                 completion = self.client.chat.completions.create(**params)
                 response = completion.choices[0].message
-                log_llm_response({"content": response.content, "function_call": response.tool_calls[0] if response.tool_calls else None})
+                
+                # Debug logging
+                logging.debug(f"Raw completion: {completion}")
+                logging.debug(f"Response object: {response}")
+                logging.debug(f"Response content: {response.content if hasattr(response, 'content') else 'No content'}")
+                logging.debug(f"Response tool_calls: {response.tool_calls if hasattr(response, 'tool_calls') else 'No tool_calls'}")
+                
+                # Log response safely with error handling
+                try:
+                    log_data = {
+                        "content": response.content if hasattr(response, 'content') else None
+                    }
+                    if hasattr(response, 'tool_calls') and response.tool_calls:
+                        log_data["tool_calls"] = [
+                            {
+                                "name": tc.function.name,
+                                "arguments": tc.function.arguments
+                            } for tc in response.tool_calls
+                        ]
+                    log_llm_response(log_data)
+                except Exception as e:
+                    logging.error(f"Error in response logging: {str(e)}")
+                    logging.error(f"Response state: content={hasattr(response, 'content')}, tool_calls={hasattr(response, 'tool_calls')}")
                 
                 # Handle tool calls if present
-                if response.tool_calls:
+                if hasattr(response, 'tool_calls') and response.tool_calls:
+                    tool_results = []
                     for tool_call in response.tool_calls:
                         logging.info(f"Tool call requested: {tool_call.function.name}")
                         
@@ -156,13 +182,21 @@ class SmlAgent:
                         
                         # Execute tool and add result
                         result = self._handle_tool_call(tool_call)
+                        tool_results.append(result)
                         self.messages.append({
                             "role": "tool",
                             "tool_call_id": tool_call.id,
                             "name": tool_call.function.name,
                             "content": result
                         })
-                        
+                    
+                    # Check for errors and continue if successful
+                    if not all(not str(r).startswith("Error") for r in tool_results):
+                        error_msg = "One or more tools reported errors"
+                        logging.error(error_msg)
+                        return error_msg
+                    continue  # Continue to next step with tool results
+                    
                 else:
                     # Regular response - no tool call
                     update_spinner_status("✍️ Generating response...")
@@ -229,6 +263,88 @@ def load_available_tools(tools_dir: str) -> List[Tool]:
     logging.info(f"Loaded {len(tools)} tools")
     return tools
 
+def auto_select_tools(user_input: str, available_tools: List[Tool], llm_client: OpenAI) -> List[Tool]:
+    """Use LLM to automatically select appropriate tools based on user input"""
+    logging.info("Auto-selecting tools for input: %s", user_input)
+    
+    try:
+        # Prepare the prompt with tools README content
+        prompt_template = """You are a tool selection agent. Given a user brief and a list of potential tools, you select all of the tools that might be required to complete the job.
+
+Here are the available tools:
+
+<$tools/README.md$>
+
+IMPORTANT: You must respond with a valid JSON object using this exact structure:
+{
+    "selected_tools": ["tool_name1", "tool_name2"],
+    "rationale": "Brief explanation of why these tools were selected"
+}
+
+Do not include any other text in your response, only the JSON object.
+
+For the user request below, analyze what tools would be needed and return them in a JSON response:
+
+User request: """ + user_input
+
+        # Process the prompt to include README content
+        prompt = process_inclusions(prompt_template, depth=5)
+        logging.debug("Processed prompt with README content")
+
+        # Use deepseek model for tool selection
+        update_spinner_status("Analyzing request with Deepseek...")
+        response = llm_client.chat.completions.create(
+            model="deepseek/deepseek-chat",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a tool selection specialist. Always respond with valid JSON only."
+                },
+                {
+                    "role": "user", 
+                    "content": prompt
+                }
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.3
+        )
+        
+        # Parse response
+        try:
+            content = response.choices[0].message.content
+            # Remove markdown code blocks if present
+            content = content.replace('```json\n', '').replace('\n```', '').strip()
+            
+            selection = json.loads(content)
+            if not isinstance(selection, dict) or 'selected_tools' not in selection:
+                raise ValueError("Invalid response format")
+                
+            selected_tool_names = selection["selected_tools"]
+            logging.info("Auto-selected tools: %s", selected_tool_names)
+            logging.info("Selection rationale: %s", selection.get("rationale", "No rationale provided"))
+            
+            # Map selected names to actual tool objects
+            selected_tools = [
+                tool for tool in available_tools 
+                if tool.name in selected_tool_names
+            ]
+            
+            if not selected_tools:
+                logging.warning("No matching tools were found")
+                return []
+                
+            update_spinner_status(f"Selected tools: {', '.join(selected_tool_names)}")
+            return selected_tools
+            
+        except json.JSONDecodeError as e:
+            logging.error("Failed to parse JSON response: %s", str(e))
+            logging.error("Raw response: %s", response.choices[0].message.content)
+            return []
+            
+    except Exception as e:
+        logging.error("Error in auto tool selection: %s", str(e))
+        return []
+
 def main():
     st.title("Agent Playground")
     
@@ -248,7 +364,7 @@ def main():
     
     # Create agent with configurable settings
     with st.sidebar:
-        st.subheader("Agent Settings")
+        #st.subheader("Agent Settings")
         model = st.selectbox(
             "Model",
             ["openai/gpt-4o-mini", "deepseek/deepseek-chat", "google/gemini-2.0-flash-exp:free"]
@@ -257,40 +373,37 @@ def main():
         max_steps = st.slider("Max Steps", 1, 20, 10)
         
         # Tool selection
-        st.subheader("Available Tools")
-        selected_tools = []
-        for tool in tools:
-            if st.checkbox(tool.name, False):  # Default to False - tools start unchecked
-                selected_tools.append(tool)
-                
-        logging.debug(f"Selected tools: {[tool.name for tool in selected_tools]}")
-                
+        #st.subheader("Available Tools")
+        tool_options = ["Auto"] + [tool.name for tool in tools]
+        selected_tool_names = []
+        auto_selected = False
+        
+        for tool_name in tool_options:
+            if st.checkbox(tool_name, False):
+                if tool_name == "Auto":
+                    auto_selected = True
+                else:
+                    selected_tool_names.append(tool_name)
+        
+        # Initialize OpenAI client for auto tool selection
+        client = OpenAI(
+            base_url=os.getenv('API_BASE_URL', 'https://openrouter.ai/api/v1'),
+            api_key=os.getenv('OPENROUTER_API_KEY')
+        )
+        
         # Clear chat button
         if st.button("Clear Chat"):
             st.session_state.messages = []
             logging.info("Chat history cleared")
             st.rerun()
     
-    # System prompt configuration
-    system_prompt = st.text_area(
-        "System Prompt",
-        """You are a helpful assistant that can use tools to accomplish tasks.
+    # Hidden system prompt - not shown in UI but used by agent
+    system_prompt = """You are a helpful assistant that can use tools to accomplish tasks.
 Follow these guidelines:
 1. Use appropriate tools to find information and perform actions
 2. Provide clear, concise responses
-3. Cite sources when possible""",
-        height=150
-    )
-    
-    # Initialize agent
-    agent = SmlAgent(
-        system_prompt=system_prompt,
-        tools=selected_tools,
-        model=model,
-        temperature=temperature,
-        max_steps=max_steps
-    )
-    
+3. Cite sources when possible"""
+
     # Initialize message history
     if "messages" not in st.session_state:
         st.session_state.messages = []
@@ -304,6 +417,33 @@ Follow these guidelines:
     # Chat input
     if prompt := st.chat_input("Message the agent..."):
         logging.info(f"New user message: {prompt}")
+        
+        # Handle tool selection
+        selected_tools = []
+        if auto_selected:
+            with st.spinner("Auto-selecting tools..."):
+                selected_tools = auto_select_tools(prompt, tools, client)
+                if not selected_tools:
+                    st.error("Failed to auto-select tools. Please select tools manually.")
+                    return
+        else:
+            selected_tools = [t for t in tools if t.name in selected_tool_names]
+            
+        if not selected_tools:
+            st.error("No tools selected. Please select at least one tool.")
+            return
+            
+        logging.info(f"Using tools: {[t.name for t in selected_tools]}")
+        
+        # Initialize agent with selected tools
+        agent = SmlAgent(
+            system_prompt=system_prompt,
+            tools=selected_tools,
+            model=model,
+            temperature=temperature,
+            max_steps=max_steps
+        )
+        
         # Add user message
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):

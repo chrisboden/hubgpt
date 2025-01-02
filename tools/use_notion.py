@@ -75,7 +75,7 @@ TOOL_METADATA = {
     "type": "function",
     "function": {
         "name": "use_notion",
-        "description": "This tool allows you to interact with Notion by either creating new pages or fetching existing page content. Use 'create_page' to add new content and 'fetch_content' to retrieve existing content.",
+        "description": "The use_notion tool allows you to interact with Notion by either creating new pages or fetching existing page content.",
         "parameters": {
             "type": "object",
             "properties": {
