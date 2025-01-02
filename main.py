@@ -6,6 +6,7 @@ import streamlit as st
 from dotenv import load_dotenv
 import advisors
 import notepads
+import agents  # Import the new agents module
 from utils.log_utils import setup_logging
 
 # Add the project root to PYTHONPATH
@@ -52,7 +53,7 @@ def main():
         st.session_state.current_tab = "Advisors"
 
     # Create sidebar with navigation buttons
-    col1, col2, col3 = st.sidebar.columns(3)
+    col1, col2, col3, col4 = st.sidebar.columns(4)
 
     # Place buttons in columns with active states
     col1.button(
@@ -70,12 +71,22 @@ def main():
         on_click=lambda: setattr(st.session_state, 'current_tab', 'Notepads'),
         use_container_width=True
     )
+    
+    col3.button(
+        "🤖",
+        key="agents_btn",
+        type="primary" if st.session_state.current_tab == "Agents" else "secondary",
+        on_click=lambda: setattr(st.session_state, 'current_tab', 'Agents'),
+        use_container_width=True
+    )
 
     # Load content in main area based on selected tab
     if st.session_state.current_tab == "Advisors":
         advisors.main()
     elif st.session_state.current_tab == "Notepads":
         notepads.main()
+    elif st.session_state.current_tab == "Agents":
+        agents.main()
 
 if __name__ == "__main__":
     main()
