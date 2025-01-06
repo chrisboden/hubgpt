@@ -23,6 +23,11 @@ import logging
 from utils.log_utils import log_llm_request, log_llm_response
 from utils.prompt_utils import process_inclusions
 
+# Default LLM parameters - easy to tweak
+DEFAULT_MODEL = "openai/gpt-4o-mini"
+DEFAULT_TEMPERATURE = 0.7
+DEFAULT_MAX_STEPS = 10
+
 @dataclass
 class Tool:
     name: str
@@ -48,9 +53,9 @@ class SmlAgent:
         self,
         system_prompt: str,
         tools: List[Tool],
-        model: str = "openai/gpt-4o-mini",
-        temperature: float = 0.7,
-        max_steps: int = 10
+        model: str = DEFAULT_MODEL,
+        temperature: float = DEFAULT_TEMPERATURE,
+        max_steps: int = DEFAULT_MAX_STEPS
     ):
         logging.info(f"Initializing SmlAgent with {len(tools)} tools")
         logging.info(f"Available tools: {[tool.name for tool in tools]}")
@@ -418,46 +423,17 @@ def main():
     
     # Create agent with configurable settings
     with st.sidebar:
-        model = st.selectbox(
-            "Model",
-            ["openai/gpt-4o-mini", "deepseek/deepseek-chat", "google/gemini-2.0-flash-exp:free"]
-        )
-        temperature = st.slider("Temperature", 0.0, 1.0, 0.7)
-        max_steps = st.slider("Max Steps", 1, 20, 10)
-        
         # Tool selection
-        tool_options = ["Auto"] + [tool.name for tool in tools]
         selected_tool_names = []
-        auto_selected = False
         
-        for tool_name in tool_options:
-            if st.checkbox(tool_name, False):
-                if tool_name == "Auto":
-                    auto_selected = True
-                else:
-                    selected_tool_names.append(tool_name)
+        # Auto tool selection is default
+        auto_selected = st.checkbox("Auto Tool Selection", value=True)
         
-        # Initialize OpenAI client for auto tool selection
-        helicone_key = os.getenv("HELICONE_API_KEY")
-        openrouter_key = os.getenv("OPENROUTER_API_KEY")
-        
-        if not helicone_key:
-            # Fallback to direct OpenRouter if Helicone not configured
-            client = OpenAI(
-                base_url=os.getenv('API_BASE_URL', 'https://openrouter.ai/api/v1'),
-                api_key=openrouter_key
-            )
-        else:
-            # Use Helicone proxy
-            client = OpenAI(
-                base_url="https://openrouter.helicone.ai/api/v1",
-                api_key=openrouter_key,
-                default_headers={
-                    "Helicone-Auth": f"Bearer {helicone_key}",
-                    "Helicone-Cache-Enabled": "true",
-                    "Helicone-Property-App": "hubgpt-agent"
-                }
-            )
+        # Expandable section for manual tool selection
+        with st.expander("Manual Tool Selection", expanded=False):
+            for tool in tools:
+                if st.checkbox(tool.name, False):
+                    selected_tool_names.append(tool.name)
         
         # Clear chat button
         if st.button("Clear Chat"):
@@ -486,39 +462,44 @@ Follow these guidelines:
     if prompt := st.chat_input("Message the agent..."):
         logging.info(f"New user message: {prompt}")
         
-        # Handle tool selection
-        selected_tools = []
-        if auto_selected:
-            with st.spinner("Auto-selecting tools..."):
-                selected_tools = auto_select_tools(prompt, tools, client)
-                if not selected_tools:
-                    st.error("Failed to auto-select tools. Please select tools manually.")
-                    return
-        else:
-            selected_tools = [t for t in tools if t.name in selected_tool_names]
-            
-        if not selected_tools:
-            st.error("No tools selected. Please select at least one tool.")
-            return
-            
-        logging.info(f"Using tools: {[t.name for t in selected_tools]}")
-        
-        # Initialize agent with selected tools
-        agent = SmlAgent(
-            system_prompt=system_prompt,
-            tools=selected_tools,
-            model=model,
-            temperature=temperature,
-            max_steps=max_steps
-        )
-        
-        # Add user message
+        # Immediately show user message
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
-            
-        # Get agent response
+        
+        # Initialize OpenAI client for auto tool selection
+        helicone_config = get_helicone_config()
+        client = OpenAI(
+            base_url=helicone_config['base_url'],
+            api_key=os.getenv("OPENROUTER_API_KEY"),
+            default_headers=helicone_config['headers']
+        )
+        
+        # Handle tool selection
+        selected_tools = []
         with st.chat_message("assistant"):
+            if auto_selected:
+                with st.spinner("Selecting appropriate tools..."):
+                    selected_tools = auto_select_tools(prompt, tools, client)
+                    if not selected_tools:
+                        st.error("Failed to auto-select tools. Please select tools manually.")
+                        return
+            else:
+                selected_tools = [t for t in tools if t.name in selected_tool_names]
+            
+            if not selected_tools:
+                st.error("No tools selected. Please select at least one tool.")
+                return
+                
+            logging.info(f"Using tools: {[t.name for t in selected_tools]}")
+            
+            # Initialize agent with selected tools
+            agent = SmlAgent(
+                system_prompt=system_prompt,
+                tools=selected_tools
+            )
+            
+            # Get agent response
             with st.spinner("Agent is working..."):
                 response = agent.chat(prompt)
                 st.markdown(response)
