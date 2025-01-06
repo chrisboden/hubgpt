@@ -8,7 +8,7 @@ from termcolor import colored
 from openai.types.chat import ChatCompletion
 from utils.tool_utils import execute_tool, TOOL_METADATA_REGISTRY
 from utils.chat_utils import save_chat_history
-from utils.log_utils import log_llm_request, log_llm_response, toggle_detailed_llm_logging
+from utils.log_utils import log_llm_request, log_llm_response, toggle_detailed_llm_logging, get_helicone_config
 
 # Configure logging
 LOGGING_ENABLED = True
@@ -113,6 +113,77 @@ class ResponseHandler:
         self.response_placeholder = response_placeholder
         self.full_response = ""
 
+    def _make_llm_request(self, params: Dict[str, Any]) -> Tuple[Optional[ChatCompletion], str]:
+        """Make LLM API request with error handling"""
+        try:
+            # Ensure stream is False for non-streaming responses
+            params["stream"] = False
+            
+            # Get Helicone configuration
+            helicone_config = get_helicone_config()
+            
+            # Add Helicone headers if enabled
+            headers = {**helicone_config['headers']}
+            if 'selected_advisor' in params:
+                headers["Helicone-Property-Advisor"] = params['selected_advisor']
+            if 'tools' in params:
+                headers["Helicone-Property-Tools"] = ",".join(str(t) for t in params['tools'])
+            
+            # Make the API request
+            log_llm_request(params)
+            response = self.client.chat.completions.create(
+                **params,
+                extra_headers=headers
+            )
+            
+            # Log response for debugging
+            logging.info("LLM Response received")
+            logging.debug(f"Response model: {response.model}")
+            logging.debug(f"Response id: {response.id}")
+            
+            # Verify response is valid before processing
+            if not response or not hasattr(response, 'choices'):
+                error_msg = f"Invalid API response structure: {response}"
+                logging.error(error_msg)
+                return None, error_msg
+            
+            return response, ""
+            
+        except Exception as e:
+            error_msg = f"LLM API request failed: {str(e)}"
+            logging.error(error_msg)
+            logging.exception("Full traceback:")
+            return None, error_msg
+
+    def _make_streaming_request(self, params: Dict[str, Any]):
+        """Make streaming LLM API request with error handling"""
+        try:
+            # Ensure streaming is enabled
+            params["stream"] = True
+            
+            # Get Helicone configuration
+            helicone_config = get_helicone_config()
+            
+            # Add Helicone headers if enabled
+            headers = {**helicone_config['headers']}
+            if 'selected_advisor' in params:
+                headers["Helicone-Property-Advisor"] = params['selected_advisor']
+            if 'tools' in params:
+                headers["Helicone-Property-Tools"] = ",".join(str(t) for t in params['tools'])
+            
+            # Make the streaming request
+            log_llm_request(params)
+            return self.client.chat.completions.create(
+                **params,
+                extra_headers=headers
+            )
+            
+        except Exception as e:
+            error_msg = f"Streaming LLM request failed: {str(e)}"
+            logging.error(error_msg)
+            logging.exception("Full traceback:")
+            raise RuntimeError(error_msg)
+
     def handle_non_streamed_response(self, completion: ChatCompletion) -> tuple[str, Optional[Dict]]:
         """
         Handles non-streamed responses with support for tool calls.
@@ -178,58 +249,70 @@ class ResponseHandler:
         tool_name = None
         tool_call_id = None
         
-        # Process each chunk in the stream
-        for chunk in stream:
-            if not chunk.choices:
-                continue
+        try:
+            # Get stream from API if not provided
+            if isinstance(stream, dict):
+                stream = self._make_streaming_request(stream)
             
-            delta = chunk.choices[0].delta
-            
-            # Handle tool calls in the chunk
-            if hasattr(delta, 'tool_calls') and delta.tool_calls:
-                tool_call = delta.tool_calls[0]
+            # Process each chunk in the stream
+            for chunk in stream:
+                if not chunk.choices:
+                    continue
                 
-                # Track tool call ID when present
-                if hasattr(tool_call, 'id') and tool_call.id:
-                    tool_call_id = tool_call.id
-                    st.session_state.last_tool_call_id = tool_call_id
-                    print(colored(f"Tool call ID captured: {tool_call_id}", "cyan"))
+                delta = chunk.choices[0].delta
                 
-                # Process function information if present
-                if hasattr(tool_call, 'function'):
-                    # Handle function name
-                    if hasattr(tool_call.function, 'name') and tool_call.function.name:
-                        tool_name = tool_call.function.name
-                        print(colored(f"Tool call detected: {tool_name}", "cyan"))
-                        st.session_state.last_tool_name = tool_name
-                        self.status_placeholder.markdown(f"*🔧 Using tool: {tool_name}*")
+                # Handle tool calls in the chunk
+                if hasattr(delta, 'tool_calls') and delta.tool_calls:
+                    tool_call = delta.tool_calls[0]
                     
-                    # Accumulate function arguments
-                    if hasattr(tool_call.function, 'arguments'):
-                        current_tool_args += tool_call.function.arguments
+                    # Track tool call ID when present
+                    if hasattr(tool_call, 'id') and tool_call.id:
+                        tool_call_id = tool_call.id
+                        st.session_state.last_tool_call_id = tool_call_id
+                        print(colored(f"Tool call ID captured: {tool_call_id}", "cyan"))
+                    
+                    # Process function information if present
+                    if hasattr(tool_call, 'function'):
+                        # Handle function name
+                        if hasattr(tool_call.function, 'name') and tool_call.function.name:
+                            tool_name = tool_call.function.name
+                            print(colored(f"Tool call detected: {tool_name}", "cyan"))
+                            st.session_state.last_tool_name = tool_name
+                            self.status_placeholder.markdown(f"*🔧 Using tool: {tool_name}*")
+                        
+                        # Accumulate function arguments
+                        if hasattr(tool_call.function, 'arguments'):
+                            current_tool_args += tool_call.function.arguments
+                        
+                    # Try to parse complete arguments when available
+                    if current_tool_args and not function_call_data:
+                        try:
+                            args = json.loads(current_tool_args)
+                            function_call_data = {
+                                'name': tool_name,
+                                'arguments': args,
+                                'id': tool_call_id
+                            }
+                            print(colored(f"Complete tool arguments for {tool_name} (ID: {tool_call_id}): {args}", "green"))
+                        except json.JSONDecodeError:
+                            # Continue accumulating if arguments are incomplete
+                            pass
                 
-                # Try to parse complete arguments when available
-                if current_tool_args and not function_call_data:
-                    try:
-                        args = json.loads(current_tool_args)
-                        function_call_data = {
-                            'name': tool_name,
-                            'arguments': args,
-                            'id': tool_call_id
-                        }
-                        print(colored(f"Complete tool arguments for {tool_name} (ID: {tool_call_id}): {args}", "green"))
-                    except json.JSONDecodeError:
-                        # Continue accumulating if arguments are incomplete
-                        pass
+                # Handle content updates
+                chunk_text = delta.content or ""
+                if chunk_text:
+                    self.full_response += chunk_text
+                    # Show typing indicator (▌) while processing
+                    self.response_placeholder.markdown(f"{self.full_response}{'▌' if not function_call_data else ''}")
             
-            # Handle content updates
-            chunk_text = delta.content or ""
-            if chunk_text:
-                self.full_response += chunk_text
-                # Show typing indicator (▌) while processing
-                self.response_placeholder.markdown(f"{self.full_response}{'▌' if not function_call_data else ''}")
-        
-        return self.full_response, function_call_data
+            return self.full_response, function_call_data
+            
+        except Exception as e:
+            error_msg = f"Error processing stream: {str(e)}"
+            logging.error(error_msg)
+            logging.exception("Full traceback:")
+            self.response_placeholder.markdown(f"❌ {error_msg}")
+            return self.full_response, function_call_data
 
 
     def _process_tool_call(self, tool_call) -> Optional[Dict]:
@@ -531,15 +614,28 @@ class LLMResponseManager:
         if messages:
             self.api_params['messages'] = messages
             
+        # Add Helicone tracking headers
+        helicone_headers = {
+            "Helicone-Property-Advisor": self.selected_advisor,
+            "Helicone-Property-Tools": ",".join(self.tools) if self.tools else "none",
+            "Helicone-Request-Id": f"hubgpt-{self.selected_advisor}-{id(self)}"
+        }
+            
         log_llm_request(self.api_params)
         
         try:
             # Dynamically choose between streaming and non-streaming modes
             if self.api_params.get('stream', True):
-                stream = self.client.chat.completions.create(**self.api_params)
+                stream = self.client.chat.completions.create(
+                    **self.api_params,
+                    extra_headers=helicone_headers
+                )
                 response, function_call_data = self.response_handler.handle_streamed_response(stream)
             else:
-                completion = self.client.chat.completions.create(**self.api_params)
+                completion = self.client.chat.completions.create(
+                    **self.api_params,
+                    extra_headers=helicone_headers
+                )
                 response, function_call_data = self.response_handler.handle_non_streamed_response(completion)
                 
             # Add response logging here
