@@ -10,8 +10,49 @@ from logging.handlers import RotatingFileHandler
 # Global flags for logging control
 DETAILED_LLM_LOGGING = True
 INCLUDE_RAW_RESPONSE = False
+USE_HELICONE = False  # Default to not using Helicone
 
-__all__ = ['setup_logging', 'toggle_detailed_llm_logging', 'log_llm_request', 'log_llm_response']
+__all__ = [
+    'setup_logging', 
+    'toggle_detailed_llm_logging', 
+    'log_llm_request', 
+    'log_llm_response',
+    'toggle_helicone',
+    'get_helicone_config'
+]
+
+def toggle_helicone(enable: bool = False):
+    """Toggle Helicone logging on/off"""
+    global USE_HELICONE
+    USE_HELICONE = enable
+    print(colored(f"Helicone logging {'enabled' if enable else 'disabled'}", "yellow"))
+
+def get_helicone_config() -> Dict[str, Any]:
+    """Get Helicone configuration if enabled"""
+    if not USE_HELICONE:
+        return {
+            "use_helicone": False,
+            "base_url": os.getenv('API_BASE_URL', 'https://openrouter.ai/api/v1'),
+            "headers": {}
+        }
+        
+    helicone_key = os.getenv("HELICONE_API_KEY")
+    if not helicone_key:
+        return {
+            "use_helicone": False,
+            "base_url": os.getenv('API_BASE_URL', 'https://openrouter.ai/api/v1'),
+            "headers": {}
+        }
+        
+    return {
+        "use_helicone": True,
+        "base_url": "https://openrouter.helicone.ai/api/v1",
+        "headers": {
+            "Helicone-Auth": f"Bearer {helicone_key}",
+            "Helicone-Cache-Enabled": "true",
+            "Helicone-Property-App": "hubgpt"
+        }
+    }
 
 class LineCountRotatingFileHandler(RotatingFileHandler):
     """A handler that rotates based on both size and line count"""
@@ -130,14 +171,26 @@ def log_llm_request(params: Dict[str, Any]):
         if not params or not any(params.values()):
             return
             
-        formatted_params = {
+        def make_serializable(obj):
+            if hasattr(obj, 'model_dump'):
+                return obj.model_dump()
+            elif hasattr(obj, '__dict__'):
+                return {k: make_serializable(v) for k, v in obj.__dict__.items() 
+                       if not k.startswith('_')}
+            elif isinstance(obj, (list, tuple)):
+                return [make_serializable(x) for x in obj]
+            elif isinstance(obj, dict):
+                return {k: make_serializable(v) for k, v in obj.items()}
+            return obj
+            
+        formatted_params = make_serializable({
             "model": params.get("model", "unknown"),
             "messages": params.get("messages", []),
             "temperature": params.get("temperature", None),
             "max_tokens": params.get("max_tokens", None),
             "tools": params.get("tools", []),
             "tool_choice": params.get("tool_choice", None)
-        }
+        })
         
         if formatted_params["messages"] or formatted_params["tools"]:
             logging.info("\n" + "="*50 + "\nLLM REQUEST:\n" + "="*50 + "\n" + 
@@ -155,15 +208,25 @@ def log_llm_response(response: Dict[str, Any]):
         if not response:
             return
             
+        def make_serializable(obj):
+            if hasattr(obj, 'model_dump'):
+                return obj.model_dump()
+            elif hasattr(obj, '__dict__'):
+                return {k: make_serializable(v) for k, v in obj.__dict__.items() 
+                       if not k.startswith('_')}
+            elif isinstance(obj, (list, tuple)):
+                return [make_serializable(x) for x in obj]
+            elif isinstance(obj, dict):
+                return {k: make_serializable(v) for k, v in obj.items()}
+            return obj
+            
         if INCLUDE_RAW_RESPONSE:
             logging.info("\n" + "="*50 + "\nRAW LLM RESPONSE:\n" + "="*50)
-            if isinstance(response, (str, dict)):
-                logging.info(str(response))
-            else:
-                logging.info(str(getattr(response, 'model_dump', lambda: str(response))()))
+            logging.info(str(response))
         
-        if isinstance(response, dict):
+        formatted_response = make_serializable(response)
+        if isinstance(formatted_response, dict):
             logging.info("\n" + "="*50 + "\nFORMATTED LLM RESPONSE:\n" + "="*50 + "\n" + 
-                        json.dumps(response, indent=2) + "\n" + "="*50)
+                        json.dumps(formatted_response, indent=2) + "\n" + "="*50)
     except Exception as e:
         logging.error(f"Error logging LLM response: {str(e)}")
