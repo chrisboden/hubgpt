@@ -15,6 +15,7 @@ from utils.chat_utils import (
     archive_chat_history,
     clear_chat_history
 )
+from utils.log_utils import get_helicone_config
 from utils.message_utils import save_snippet, delete_message, display_messages
 
 class LLMClient:
@@ -24,9 +25,12 @@ class LLMClient:
     
     @staticmethod
     def _initialize_client():
+        """Initialize OpenAI client with Helicone configuration"""
+        helicone_config = get_helicone_config()
         return OpenAI(
-            base_url=os.getenv('API_BASE_URL'),
-            api_key=os.getenv("OPENROUTER_API_KEY")
+            base_url=helicone_config['base_url'],
+            api_key=os.getenv("OPENROUTER_API_KEY"),
+            default_headers=helicone_config['headers']
         )
 
     def extract_params(self, advisor_data):
