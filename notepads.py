@@ -140,8 +140,24 @@ class NotepadFileManager:
             with open(index_file, 'r') as f:
                 index_data = json.load(f)
 
+            # Track if we need to update the index file
+            index_needs_update = False
+
+            # Create a placeholder in sidebar for upload status
+            with st.sidebar:
+                status_container = st.empty()
+                progress_container = st.empty()
+                
+                # Show initial status
+                status_container.info("Checking notepad files...")
+                
+                # Create progress bar
+                total_files = len(index_data.get('files', []))
+                if total_files > 0:
+                    progress_bar = progress_container.progress(0)
+
             # Process files from index
-            for file_info in index_data.get('files', []):
+            for file_idx, file_info in enumerate(index_data.get('files', [])):
                 local_name = file_info.get('local_name')
                 cloud_name = file_info.get('cloud_name')
 
@@ -150,39 +166,92 @@ class NotepadFileManager:
 
                 local_file_path = selected_notepad_dir / local_name
 
+                # Update status
+                status_container.info(f"Processing: {local_file_path.name}")
+                if total_files > 0:
+                    progress_bar.progress((file_idx) / total_files)
+
                 # Verify local file exists
                 if not local_file_path.exists():
-                    st.warning(f"Local file missing: {local_name}")
+                    status_container.warning(f"Local file missing: {local_name}")
                     continue
 
                 try:
                     # Try to get the Gemini file
                     try:
                         gemini_file = genai.get_file(name=cloud_name) if cloud_name else None
+                        if gemini_file and gemini_file.state.name == "ACTIVE":
+                            # File exists and is active, no need to re-upload
+                            status_container.success(f"File available: {local_file_path.name}")
                     except Exception as cloud_err:
-                        st.warning(f"Could not retrieve cloud file {cloud_name}: {cloud_err}")
+                        # Any cloud error (404, 403, etc) should trigger re-upload attempt
+                        print(f"Cloud file error {cloud_name}: {cloud_err}")
                         gemini_file = None
 
-                    # If no cloud file, skip
+                    # If no cloud file or error occurred, attempt to re-upload
                     if not gemini_file:
-                        continue
+                        status_container.warning(f"Re-uploading: {local_file_path.name}")
+                        try:
+                            # Determine mime type
+                            mime_type = mimetypes.guess_type(local_file_path)[0]
+                            if not mime_type:
+                                mime_type = 'application/octet-stream'
+                            
+                            # Upload to Gemini
+                            gemini_file = genai.upload_file(
+                                str(local_file_path),
+                                mime_type=mime_type,
+                                display_name=local_file_path.name
+                            )
+                            
+                            # Update cloud name in file info
+                            file_info['cloud_name'] = gemini_file.name
+                            index_needs_update = True
+                            
+                            status_container.info(f"Waiting for {local_file_path.name} to be ready...")
+                            
+                            # Wait for file to become active
+                            NotepadFileManager.wait_for_files_active([gemini_file])
+                            
+                            status_container.success(f"Re-uploaded: {local_file_path.name}")
+                            
+                        except Exception as upload_err:
+                            status_container.error(f"Failed to re-upload {local_name}: {str(upload_err)}")
+                            print(f"Error re-uploading {local_name}: {str(upload_err)}")
+                            continue  # Skip adding to session state only if upload fails
 
-                    # Add to session state
-                    file_entry = {
-                        "name": local_file_path.name,
-                        "gemini_file": gemini_file,
-                        "selected": True
-                    }
-                    
-                    # Prevent duplicates
-                    if local_file_path.name not in st.session_state.uploaded_file_names:
-                        st.session_state.uploaded_files.append(file_entry)
-                        st.session_state.uploaded_file_names.add(local_file_path.name)
-                        st.session_state.cloud_files.append(gemini_file)
-                        st.session_state.cloud_file_names.add(gemini_file.name)
+                    # If we have a valid file (either existing or re-uploaded), add to session state
+                    if gemini_file:
+                        file_entry = {
+                            "name": local_file_path.name,
+                            "gemini_file": gemini_file,
+                            "selected": True
+                        }
+                        
+                        # Prevent duplicates
+                        if local_file_path.name not in st.session_state.uploaded_file_names:
+                            st.session_state.uploaded_files.append(file_entry)
+                            st.session_state.uploaded_file_names.add(local_file_path.name)
+                            st.session_state.cloud_files.append(gemini_file)
+                            st.session_state.cloud_file_names.add(gemini_file.name)
 
                 except Exception as e:
-                    st.warning(f"Error processing file {local_name}: {str(e)}")
+                    status_container.warning(f"Error processing file {local_name}: {str(e)}")
+
+            # Update progress to completion
+            if total_files > 0:
+                progress_bar.progress(1.0)
+
+            # Update index.json if needed
+            if index_needs_update:
+                status_container.info("Updating notepad index...")
+                with open(index_file, 'w') as f:
+                    json.dump(index_data, f, indent=4)
+
+            # Clear status indicators after short delay
+            time.sleep(1)
+            status_container.empty()
+            progress_container.empty()
 
             # Display files in sidebar
             with st.sidebar:
@@ -198,7 +267,6 @@ class NotepadFileManager:
                                 value=file.get('selected', True), 
                                 key=f"file_select_{idx}"
                             )
-
                 else:
                     st.write("No files uploaded")
 
