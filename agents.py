@@ -82,14 +82,16 @@ class SmlAgent:
         self.model = model
         self.temperature = temperature
         self.max_steps = max_steps
-        self.messages = []
         self.tool_map = {tool.name: tool for tool in tools}
         
+        # Initialize messages list with system prompt
+        self.messages = [{"role": "system", "content": self.system_prompt}]
+            
     def reset(self):
         """Reset conversation history"""
         logging.info("Resetting agent conversation history")
-        self.messages = []
-            
+        self.messages = [{"role": "system", "content": self.system_prompt}]
+
     def _process_llm_response(self, completion: ChatCompletion) -> Tuple[Optional[ChatCompletionMessage], str]:
         """Process LLM response and handle potential errors"""
         try:
@@ -175,20 +177,29 @@ class SmlAgent:
             update_spinner_status(f"🔧 Using tool: {tool_name}")
             result = tool.execute_fn(**arguments)
             
-            # Handle direct streaming responses
-            if isinstance(result, dict) and result.get('direct_stream'):
-                stream = result.get('result')
-                if stream:
-                    accumulated_response = ""
-                    for chunk in stream:
-                        if hasattr(chunk.choices[0].delta, 'content'):
-                            content = chunk.choices[0].delta.content
-                            if content:
-                                accumulated_response += content
-                    logging.info(f"Accumulated streaming response from {tool_name}")
-                    return accumulated_response
-                    
-            logging.info(f"Tool {tool_name} execution completed")
+            # Handle tool execution results
+            if isinstance(result, dict):
+                # First check if this is a direct stream response
+                if result.get('direct_stream', False):
+                    stream = result.get('result')
+                    if stream is None:
+                        return "No result from stream"
+                        
+                    # Handle OpenRouter streaming response
+                    if hasattr(stream, '__iter__'):
+                        accumulated_response = ""
+                        for chunk in stream:
+                            if hasattr(chunk, 'choices') and chunk.choices:
+                                delta = chunk.choices[0].delta
+                                if hasattr(delta, 'content') and delta.content:
+                                    accumulated_response += delta.content
+                        return accumulated_response
+                    return str(stream)
+                
+                # For non-streaming dict responses, just get the result
+                return str(result.get('result', result))
+            
+            # For string or other responses, convert to string
             return str(result)
             
         except Exception as e:
@@ -202,7 +213,6 @@ class SmlAgent:
         logging.info(f"Processing user input: {user_input}")
         
         # Add user message
-        self.messages.append({"role": "system", "content": self.system_prompt})
         self.messages.append({"role": "user", "content": user_input})
         
         step = 0
@@ -243,6 +253,16 @@ class SmlAgent:
                     # Execute tool call
                     result = self._handle_tool_call(tool_call)
                     
+                    # Check if tool execution failed
+                    if isinstance(result, str) and ('error' in result.lower() or 'failed' in result.lower()):
+                        # Add error response to messages and return
+                        error_message = {
+                            "role": "assistant",
+                            "content": f"I apologize, but I encountered an error: {result}"
+                        }
+                        self.messages.append(error_message)
+                        return error_message["content"]
+                    
                     # Add assistant and tool response messages
                     self.messages.append({
                         "role": "assistant",
@@ -259,8 +279,12 @@ class SmlAgent:
                     # Continue to next step if there are more tool calls
                     continue
                 
-                # If no tool calls, return the response content
+                # If no tool calls, return the response content and add to messages
                 if hasattr(response, 'content') and response.content:
+                    self.messages.append({
+                        "role": "assistant",
+                        "content": response.content
+                    })
                     return response.content
                     
                 # If we get here without returning, something went wrong
@@ -327,7 +351,20 @@ def auto_select_tools(user_input: str, available_tools: List[Tool], llm_client: 
     logging.info("Auto-selecting tools for input: %s", user_input)
     
     try:
-        # Prepare the prompt with tools README content
+        # Get chat history from session state
+        chat_history = st.session_state.get('messages', [])
+        
+        # Format chat history as string
+        history_str = ""
+        if chat_history:
+            history_str = "\n\n".join([
+                f"{msg['role'].upper()}: {msg['content']}" 
+                for msg in chat_history 
+                if msg['content'] is not None  # Skip messages without content
+            ])
+            history_str = f"\n\nNote that the previous chat history with the user:\n\n{history_str}"
+        
+        # Prepare the prompt with tools README content and chat history
         prompt_template = """You are a tool selection agent. Given a user brief and a list of potential tools, you select all of the tools that might be required to complete the job.
 
 Here are the available tools:
@@ -344,11 +381,11 @@ Do not include any other text in your response, only the JSON object.
 
 For the user request below, analyze what tools would be needed and return them in a JSON response:
 
-User request: """ + user_input
+User request: """ + user_input + history_str
 
         # Process the prompt to include README content
         prompt = process_inclusions(prompt_template, depth=5)
-        logging.debug("Processed prompt with README content")
+        logging.debug("Processed prompt with README content and chat history")
 
         # Use deepseek model for tool selection
         update_spinner_status("Analyzing request with Deepseek...")
@@ -437,6 +474,8 @@ def main():
         
         # Clear chat button
         if st.button("Clear Chat"):
+            if 'agent' in st.session_state:
+                st.session_state.agent.reset()
             st.session_state.messages = []
             logging.info("Chat history cleared")
             st.rerun()
@@ -448,15 +487,22 @@ Follow these guidelines:
 2. Provide clear, concise responses
 3. Cite sources when possible"""
 
-    # Initialize message history
+    # Initialize message history and agent in session state if not present
     if "messages" not in st.session_state:
         st.session_state.messages = []
         logging.info("Initialized new chat session")
     
-    # Display chat history
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+    if "agent" not in st.session_state:
+        st.session_state.agent = None
+    
+    # Display chat history using message_utils display_messages
+    from utils.message_utils import display_messages
+    display_messages(
+        messages=st.session_state.messages,
+        save_callback=None,  # We could add snippet saving later if needed
+        delete_callback=None,
+        context_id="agent_playground"
+    )
     
     # Chat input
     if prompt := st.chat_input("Message the agent..."):
@@ -475,36 +521,56 @@ Follow these guidelines:
             default_headers=helicone_config['headers']
         )
         
-        # Handle tool selection
-        selected_tools = []
+        # Handle tool selection and agent response in assistant message block
         with st.chat_message("assistant"):
+            # Create status placeholder for detailed updates
+            status_placeholder = st.empty()
+            # Store placeholder in session state for tool updates
+            st.session_state.spinner_placeholder = status_placeholder
+            
+            # Handle tool selection
+            selected_tools = []
             if auto_selected:
-                with st.spinner("Selecting appropriate tools..."):
-                    selected_tools = auto_select_tools(prompt, tools, client)
-                    if not selected_tools:
-                        st.error("Failed to auto-select tools. Please select tools manually.")
-                        return
+                status_placeholder.markdown("🤔 Selecting appropriate tools...")
+                selected_tools = auto_select_tools(prompt, tools, client)
+                if not selected_tools:
+                    status_placeholder.error("Failed to auto-select tools. Please select tools manually.")
+                    return
             else:
                 selected_tools = [t for t in tools if t.name in selected_tool_names]
             
             if not selected_tools:
-                st.error("No tools selected. Please select at least one tool.")
+                status_placeholder.error("No tools selected. Please select at least one tool.")
                 return
                 
             logging.info(f"Using tools: {[t.name for t in selected_tools]}")
             
-            # Initialize agent with selected tools
-            agent = SmlAgent(
-                system_prompt=system_prompt,
-                tools=selected_tools
-            )
+            # Initialize or reuse agent with selected tools
+            if st.session_state.agent is None:
+                st.session_state.agent = SmlAgent(
+                    system_prompt=system_prompt,
+                    tools=selected_tools
+                )
+            else:
+                # Update tools if they've changed
+                st.session_state.agent.tools = selected_tools
+                st.session_state.agent.tool_map = {tool.name: tool for tool in selected_tools}
             
             # Get agent response
-            with st.spinner("Agent is working..."):
-                response = agent.chat(prompt)
+            try:
+                response = st.session_state.agent.chat(prompt)
+                # Clear status placeholder before showing final response
+                status_placeholder.empty()
+                # Clear from session state
+                if 'spinner_placeholder' in st.session_state:
+                    del st.session_state.spinner_placeholder
                 st.markdown(response)
                 st.session_state.messages.append({"role": "assistant", "content": response})
                 logging.info("Agent response completed")
+            except Exception as e:
+                status_placeholder.error(f"Error: {str(e)}")
+                logging.error(f"Agent error: {str(e)}")
+                return
 
 if __name__ == "__main__":
     main() 
