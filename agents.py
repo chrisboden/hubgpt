@@ -1,9 +1,10 @@
 import os
 import json
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 import streamlit as st
 from openai import OpenAI
+from openai.types.chat import ChatCompletion, ChatCompletionMessage
 from termcolor import cprint
 from utils.ui_utils import update_spinner_status
 from utils.tool_utils import load_tools
@@ -14,6 +15,7 @@ from utils.chat_utils import (
     archive_chat_history,
     clear_chat_history
 )
+from utils.log_utils import get_helicone_config
 import importlib.util
 import sys
 from pathlib import Path
@@ -30,10 +32,12 @@ class Tool:
     
     def to_tool_schema(self):
         """Convert to OpenAI tool schema format"""
+        # Ensure tool name contains no dots
+        clean_name = self.name.split('.')[0]
         return {
             "type": "function",
             "function": {
-                "name": self.name,
+                "name": clean_name,
                 "description": self.description,
                 "parameters": self.parameters
             }
@@ -51,11 +55,24 @@ class SmlAgent:
         logging.info(f"Initializing SmlAgent with {len(tools)} tools")
         logging.info(f"Available tools: {[tool.name for tool in tools]}")
         
+        # Enhance system prompt with tool usage guidance
+        tool_guidance = """When using tools:
+1. Use the exact tool name as provided (e.g., 'use_notion' not 'use_notion.create_page')
+2. Put operations in the arguments (e.g., {"operation": "create_page"})
+3. Include all required parameters as specified in the tool schema"""
+        
+        self.system_prompt = f"{system_prompt}\n\n{tool_guidance}"
+        
+        # Get Helicone configuration
+        helicone_config = get_helicone_config()
+        
+        # Initialize OpenAI client with appropriate configuration
         self.client = OpenAI(
-            base_url=os.getenv('API_BASE_URL', 'https://openrouter.ai/api/v1'),
-            api_key=os.getenv('OPENROUTER_API_KEY')
+            base_url=helicone_config['base_url'],
+            api_key=os.getenv("OPENROUTER_API_KEY"),
+            default_headers=helicone_config['headers']
         )
-        self.system_prompt = system_prompt
+        
         self.tools = tools
         self.model = model
         self.temperature = temperature
@@ -68,12 +85,71 @@ class SmlAgent:
         logging.info("Resetting agent conversation history")
         self.messages = []
             
+    def _process_llm_response(self, completion: ChatCompletion) -> Tuple[Optional[ChatCompletionMessage], str]:
+        """Process LLM response and handle potential errors"""
+        try:
+            if not completion:
+                error_msg = "Empty response from LLM"
+                logging.error(error_msg)
+                return None, error_msg
+                
+            if not hasattr(completion, 'choices') or not completion.choices:
+                error_msg = f"Invalid response structure from LLM: {completion}"
+                logging.error(error_msg)
+                return None, error_msg
+                
+            response = completion.choices[0].message
+            if not response:
+                error_msg = f"No message in LLM response. Full response: {completion}"
+                logging.error(error_msg)
+                return None, error_msg
+                
+            return response, ""
+            
+        except Exception as e:
+            error_msg = f"Error processing LLM response: {str(e)}"
+            logging.error(error_msg)
+            logging.error(f"Raw completion: {completion}")
+            logging.exception("Full traceback:")
+            return None, error_msg
+
+    def _make_llm_request(self, params: Dict[str, Any]) -> Tuple[Optional[ChatCompletion], str]:
+        """Make LLM API request with error handling"""
+        try:
+            # Ensure stream is False for non-streaming responses
+            params["stream"] = False
+            
+            log_llm_request(params)
+            response = self.client.chat.completions.create(**params)
+            
+            # Log response for debugging
+            logging.info("LLM Response received")
+            logging.debug(f"Response model: {response.model}")
+            logging.debug(f"Response id: {response.id}")
+            
+            # Verify response is valid before processing
+            if not response or not hasattr(response, 'choices'):
+                error_msg = f"Invalid API response structure: {response}"
+                logging.error(error_msg)
+                return None, error_msg
+            
+            return response, ""
+            
+        except Exception as e:
+            error_msg = f"LLM API request failed: {str(e)}"
+            logging.error(error_msg)
+            logging.exception("Full traceback:")
+            return None, error_msg
+
     def _handle_tool_call(self, tool_call) -> str:
         """Execute a tool call and return the result"""
         try:
-            # Strip any method names from tool call (e.g. use_notion.create_page -> use_notion)
-            tool_name = tool_call.function.name.split('.')[0]
+            # Debug log the raw tool call
+            logging.info(f"Raw tool call: {tool_call}")
+            logging.info(f"Tool call function name: {tool_call.function.name}")
+            logging.info(f"Tool call function arguments: {tool_call.function.arguments}")
             
+            tool_name = tool_call.function.name
             if tool_name not in self.tool_map:
                 error_msg = f"Error: Unknown tool '{tool_name}'"
                 logging.error(error_msg)
@@ -111,11 +187,11 @@ class SmlAgent:
             return str(result)
             
         except Exception as e:
-            error_msg = f"Error executing {tool_name}: {str(e)}"
+            error_msg = f"Error executing tool '{tool_name}': {str(e)}"
             logging.error(error_msg)
-            update_spinner_status(f"❌ {error_msg}")
-            return f"Error: {str(e)}"
-            
+            logging.exception("Full traceback:")
+            return error_msg
+
     def chat(self, user_input: str) -> str:
         """Single turn chat with tool use"""
         logging.info(f"Processing user input: {user_input}")
@@ -131,7 +207,7 @@ class SmlAgent:
             logging.info(f"Step {step}/{self.max_steps}")
             
             try:
-                # Get model response
+                # Prepare request parameters
                 params = {
                     "model": self.model,
                     "messages": self.messages,
@@ -139,82 +215,60 @@ class SmlAgent:
                     "tool_choice": "auto",
                     "temperature": self.temperature
                 }
-                log_llm_request(params)
                 
-                completion = self.client.chat.completions.create(**params)
-                response = completion.choices[0].message
+                # Make LLM request
+                completion, error = self._make_llm_request(params)
+                if error:
+                    return f"Error occurred: {error}"
+                    
+                # Process response
+                response, error = self._process_llm_response(completion)
+                if error:
+                    return f"Error occurred: {error}"
                 
-                # Debug logging
-                logging.debug(f"Raw completion: {completion}")
-                logging.debug(f"Response object: {response}")
+                # Log response details for debugging
                 logging.debug(f"Response content: {response.content if hasattr(response, 'content') else 'No content'}")
                 logging.debug(f"Response tool_calls: {response.tool_calls if hasattr(response, 'tool_calls') else 'No tool_calls'}")
                 
-                # Log response safely with error handling
-                try:
-                    log_data = {
-                        "content": response.content if hasattr(response, 'content') else None
-                    }
-                    if hasattr(response, 'tool_calls') and response.tool_calls:
-                        log_data["tool_calls"] = [
-                            {
-                                "name": tc.function.name,
-                                "arguments": tc.function.arguments
-                            } for tc in response.tool_calls
-                        ]
-                    log_llm_response(log_data)
-                except Exception as e:
-                    logging.error(f"Error in response logging: {str(e)}")
-                    logging.error(f"Response state: content={hasattr(response, 'content')}, tool_calls={hasattr(response, 'tool_calls')}")
-                
                 # Handle tool calls if present
                 if hasattr(response, 'tool_calls') and response.tool_calls:
-                    tool_results = []
-                    for tool_call in response.tool_calls:
-                        logging.info(f"Tool call requested: {tool_call.function.name}")
-                        
-                        # Add assistant message with tool call
-                        self.messages.append({
-                            "role": "assistant",
-                            "content": response.content,
-                            "tool_calls": [tool_call.model_dump()]
-                        })
-                        
-                        # Execute tool and add result
-                        result = self._handle_tool_call(tool_call)
-                        tool_results.append(result)
-                        self.messages.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call.id,
-                            "name": tool_call.function.name,
-                            "content": result
-                        })
+                    tool_call = response.tool_calls[0]
+                    logging.info(f"Tool call requested: {tool_call.function.name}")
                     
-                    # Check for errors and continue if successful
-                    if not all(not str(r).startswith("Error") for r in tool_results):
-                        error_msg = "One or more tools reported errors"
-                        logging.error(error_msg)
-                        return error_msg
-                    continue  # Continue to next step with tool results
+                    # Execute tool call
+                    result = self._handle_tool_call(tool_call)
                     
-                else:
-                    # Regular response - no tool call
-                    update_spinner_status("✍️ Generating response...")
-                    logging.info("No tool call, returning direct response")
+                    # Add assistant and tool response messages
                     self.messages.append({
                         "role": "assistant",
-                        "content": response.content
+                        "content": None,
+                        "tool_calls": [tool_call]
                     })
+                    self.messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "name": tool_call.function.name,
+                        "content": result
+                    })
+                    
+                    # Continue to next step if there are more tool calls
+                    continue
+                
+                # If no tool calls, return the response content
+                if hasattr(response, 'content') and response.content:
                     return response.content
                     
+                # If we get here without returning, something went wrong
+                return "Error: No valid response from assistant"
+                
             except Exception as e:
                 error_msg = f"Error in chat: {str(e)}"
                 logging.error(error_msg)
+                logging.exception("Full traceback:")
                 update_spinner_status(f"❌ {error_msg}")
-                return f"Error occurred: {str(e)}"
+                return error_msg
                 
-        logging.warning("Max steps reached without resolution")
-        return "Max steps reached without resolution"
+        return "Maximum conversation steps reached"
 
 def load_tool(tool_module) -> Tool:
     """Load a HubGPT tool module into Tool format"""
@@ -364,7 +418,6 @@ def main():
     
     # Create agent with configurable settings
     with st.sidebar:
-        #st.subheader("Agent Settings")
         model = st.selectbox(
             "Model",
             ["openai/gpt-4o-mini", "deepseek/deepseek-chat", "google/gemini-2.0-flash-exp:free"]
@@ -373,7 +426,6 @@ def main():
         max_steps = st.slider("Max Steps", 1, 20, 10)
         
         # Tool selection
-        #st.subheader("Available Tools")
         tool_options = ["Auto"] + [tool.name for tool in tools]
         selected_tool_names = []
         auto_selected = False
@@ -386,10 +438,26 @@ def main():
                     selected_tool_names.append(tool_name)
         
         # Initialize OpenAI client for auto tool selection
-        client = OpenAI(
-            base_url=os.getenv('API_BASE_URL', 'https://openrouter.ai/api/v1'),
-            api_key=os.getenv('OPENROUTER_API_KEY')
-        )
+        helicone_key = os.getenv("HELICONE_API_KEY")
+        openrouter_key = os.getenv("OPENROUTER_API_KEY")
+        
+        if not helicone_key:
+            # Fallback to direct OpenRouter if Helicone not configured
+            client = OpenAI(
+                base_url=os.getenv('API_BASE_URL', 'https://openrouter.ai/api/v1'),
+                api_key=openrouter_key
+            )
+        else:
+            # Use Helicone proxy
+            client = OpenAI(
+                base_url="https://openrouter.helicone.ai/api/v1",
+                api_key=openrouter_key,
+                default_headers={
+                    "Helicone-Auth": f"Bearer {helicone_key}",
+                    "Helicone-Cache-Enabled": "true",
+                    "Helicone-Property-App": "hubgpt-agent"
+                }
+            )
         
         # Clear chat button
         if st.button("Clear Chat"):
