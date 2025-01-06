@@ -147,7 +147,7 @@ def resolve_path(path: str, allowed_directories: List[str]) -> str:
         update_spinner_status(f"Resolving path: {path}")
         print(colored(f"Resolving path: {path}", "yellow"))
         
-        # Special handling for paths starting with /data
+        # Special handling for paths starting with /data or /temp
         if path.startswith('/data/'):
             relative_path = path[6:]  # Remove '/data/' prefix
             full_path = os.path.join(DATA_DIRECTORY, relative_path)
@@ -156,6 +156,16 @@ def resolve_path(path: str, allowed_directories: List[str]) -> str:
             
             # Validate it's within DATA_DIRECTORY
             if os.path.commonpath([normalized_path, DATA_DIRECTORY]) == DATA_DIRECTORY:
+                update_spinner_status(f"Path resolved successfully to: {normalized_path}")
+                return normalized_path
+        elif path.startswith('/temp/'):
+            relative_path = path[6:]  # Remove '/temp/' prefix
+            full_path = os.path.join(TEMP_DIRECTORY, relative_path)
+            normalized_path = os.path.abspath(full_path)
+            print(colored(f"Converted /temp path to: {normalized_path}", "yellow"))
+            
+            # Validate it's within TEMP_DIRECTORY
+            if os.path.commonpath([normalized_path, TEMP_DIRECTORY]) == TEMP_DIRECTORY:
                 update_spinner_status(f"Path resolved successfully to: {normalized_path}")
                 return normalized_path
         
@@ -330,16 +340,18 @@ def write_file(llm_client, path: str, content: str) -> str:
         update_spinner_status(f"Writing file: {path}")
         print(colored(f"Writing file - Original path: {path}", "yellow"))
 
-        # If path starts with /data, make it relative to BASE_DIRECTORY
-        if path.startswith('/data'):
+        # Handle special paths
+        if path.startswith('/data/'):
             relative_path = path[1:]  # Remove leading slash
-            full_path = os.path.join(BASE_DIRECTORY, relative_path)
+            full_path = os.path.join(DATA_DIRECTORY, relative_path[5:])  # Remove 'data/' prefix
+        elif path.startswith('/temp/'):
+            relative_path = path[1:]  # Remove leading slash
+            full_path = os.path.join(TEMP_DIRECTORY, relative_path[5:])  # Remove 'temp/' prefix
         else:
             full_path = resolve_path(path, allowed_directories)
 
         print(colored(f"Full resolved path: {full_path}", "yellow"))
-        print(colored(
-            f"Directory exists? {os.path.exists(os.path.dirname(full_path))}", "yellow"))
+        print(colored(f"Directory exists? {os.path.exists(os.path.dirname(full_path))}", "yellow"))
 
         # Ensure the directory exists
         update_spinner_status("Creating directory structure...")
@@ -355,8 +367,7 @@ def write_file(llm_client, path: str, content: str) -> str:
 
         print(colored(f"File written successfully", "yellow"))
         print(colored(f"File exists? {os.path.exists(full_path)}", "yellow"))
-        print(colored(
-            f"File size: {os.path.getsize(full_path) if os.path.exists(full_path) else 'N/A'}", "yellow"))
+        print(colored(f"File size: {os.path.getsize(full_path) if os.path.exists(full_path) else 'N/A'}", "yellow"))
 
         update_spinner_status("File written successfully")
         return f"Successfully wrote to {full_path}"
