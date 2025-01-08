@@ -193,7 +193,7 @@ class ResponseHandler:
 
     def handle_non_streamed_response(self, completion: ChatCompletion) -> tuple[str, Optional[Dict]]:
         """
-        Handles non-streamed responses with support for tool calls and structured outputs.
+        Handles non-streamed responses with support for tool calls.
 
         Args:
             completion (ChatCompletion): Completion object from the LLM.
@@ -232,16 +232,6 @@ class ResponseHandler:
         # Handle and display message content if present
         if message.content:
             full_response = message.content
-            
-            # Try to parse JSON if response_format was specified as json
-            try:
-                if hasattr(completion, 'response_format') and completion.response_format.get('type') == 'json':
-                    parsed_json = json.loads(full_response)
-                    # Format JSON for display
-                    full_response = json.dumps(parsed_json, indent=2)
-            except json.JSONDecodeError:
-                pass  # Keep original response if not valid JSON
-                
             self.response_placeholder.markdown(full_response)
             print(colored("Response displayed", "green"))
         
@@ -251,7 +241,6 @@ class ResponseHandler:
     def handle_streamed_response(self, stream) -> tuple[str, Optional[Dict]]:
         """
         Processes streamed responses chunk by chunk, handling both content and tool calls.
-        Supports structured JSON outputs in streaming mode.
         
         Args:
             stream: Iterator of response chunks from the LLM
@@ -266,66 +255,62 @@ class ResponseHandler:
         current_tool_args = ""  # Buffer for accumulating tool arguments
         tool_name = None
         tool_call_id = None
-        accumulated_json = ""  # Buffer for accumulating JSON response
-        is_json_response = False
         
         try:
+            # Get stream from API if not provided
+            if isinstance(stream, dict):
+                stream = self._make_streaming_request(stream)
+            
+            # Process each chunk in the stream
             for chunk in stream:
                 if not chunk.choices:
                     continue
-                    
+                
                 delta = chunk.choices[0].delta
                 
-                # Check if this is a JSON response format
-                if hasattr(chunk, 'response_format') and chunk.response_format.get('type') == 'json':
-                    is_json_response = True
-                
-                # Handle tool calls
+                # Handle tool calls in the chunk
                 if hasattr(delta, 'tool_calls') and delta.tool_calls:
                     tool_call = delta.tool_calls[0]
                     
-                    if hasattr(tool_call, 'function'):
-                        if hasattr(tool_call.function, 'name'):
-                            tool_name = tool_call.function.name
-                            st.session_state.last_tool_name = tool_name
-                            print(colored(f"Tool name: {tool_name}", "cyan"))
-                            
-                        if hasattr(tool_call.function, 'arguments'):
-                            current_tool_args += tool_call.function.arguments
-                            
-                    if hasattr(tool_call, 'id'):
+                    # Track tool call ID when present
+                    if hasattr(tool_call, 'id') and tool_call.id:
                         tool_call_id = tool_call.id
                         st.session_state.last_tool_call_id = tool_call_id
+                        print(colored(f"Tool call ID captured: {tool_call_id}", "cyan"))
+                    
+                    # Process function information if present
+                    if hasattr(tool_call, 'function'):
+                        # Handle function name
+                        if hasattr(tool_call.function, 'name') and tool_call.function.name:
+                            tool_name = tool_call.function.name
+                            print(colored(f"Tool call detected: {tool_name}", "cyan"))
+                            st.session_state.last_tool_name = tool_name
+                            self.status_placeholder.markdown(f"*🔧 Using tool: {tool_name}*")
+                        
+                        # Accumulate function arguments
+                        if hasattr(tool_call.function, 'arguments'):
+                            current_tool_args += tool_call.function.arguments
+                        
+                    # Try to parse complete arguments when available
+                    if current_tool_args and not function_call_data:
+                        try:
+                            args = json.loads(current_tool_args)
+                            function_call_data = {
+                                'name': tool_name,
+                                'arguments': args,
+                                'id': tool_call_id
+                            }
+                            print(colored(f"Complete tool arguments for {tool_name} (ID: {tool_call_id}): {args}", "green"))
+                        except json.JSONDecodeError:
+                            # Continue accumulating if arguments are incomplete
+                            pass
                 
-                # Handle content
-                if hasattr(delta, 'content') and delta.content is not None:
-                    if is_json_response:
-                        accumulated_json += delta.content
-                    else:
-                        self.full_response += delta.content
-                        self.response_placeholder.markdown(self.full_response + "▌")
-                
-            # Process tool call if present
-            if tool_name and current_tool_args:
-                try:
-                    function_call_data = json.loads(current_tool_args)
-                    print(colored(f"Tool arguments: {function_call_data}", "green"))
-                except json.JSONDecodeError as e:
-                    print(colored(f"Error decoding tool arguments: {e}", "red"))
-            
-            # Process JSON response if present
-            if is_json_response and accumulated_json:
-                try:
-                    parsed_json = json.loads(accumulated_json)
-                    self.full_response = json.dumps(parsed_json, indent=2)
-                    self.response_placeholder.markdown(self.full_response)
-                except json.JSONDecodeError:
-                    self.full_response = accumulated_json  # Keep original if not valid JSON
-                    self.response_placeholder.markdown(self.full_response)
-            
-            # Clear the final cursor
-            if not is_json_response:
-                self.response_placeholder.markdown(self.full_response)
+                # Handle content updates
+                chunk_text = delta.content or ""
+                if chunk_text:
+                    self.full_response += chunk_text
+                    # Show typing indicator (▌) while processing
+                    self.response_placeholder.markdown(f"{self.full_response}{'▌' if not function_call_data else ''}")
             
             return self.full_response, function_call_data
             
@@ -333,7 +318,7 @@ class ResponseHandler:
             error_msg = f"Error processing stream: {str(e)}"
             logging.error(error_msg)
             logging.exception("Full traceback:")
-            self.status_placeholder.error(error_msg)
+            self.response_placeholder.markdown(f"❌ {error_msg}")
             return self.full_response, function_call_data
 
 
