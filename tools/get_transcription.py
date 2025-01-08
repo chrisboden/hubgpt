@@ -363,10 +363,6 @@ TOOL_METADATA = {
                 "video_url": {
                     "type": "string",
                     "description": "The URL of the YouTube video to transcribe"
-                },
-                "follow_on_instructions": {
-                    "type": "string",
-                    "description": "Optional instruction for what to do with the transcription after it's generated (e.g., 'post to notion', 'summarize', etc)"
                 }
             },
             "required": ["video_url"]

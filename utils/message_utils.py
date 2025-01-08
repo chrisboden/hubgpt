@@ -68,18 +68,28 @@ def delete_message(messages, index):
     messages.pop(index)
 
 
-def display_messages(messages, save_callback, delete_callback, copy_enabled=True, context_id=""):
+def display_messages(messages, save_callback, delete_callback, copy_enabled=True, context_id="", show_tool_messages=False):
     """
     Renders messages in a Streamlit chat interface with interactive features.
+    
+    Args:
+        messages (list): List of message dictionaries
+        save_callback (callable): Function to handle saving messages
+        delete_callback (callable): Function to handle deleting messages
+        copy_enabled (bool): Whether to show copy button
+        context_id (str): Unique identifier for the chat context
+        show_tool_messages (bool): Whether to display tool messages in expanders (default: False)
     """
     for idx, message in enumerate(messages):
         # Skip empty assistant messages
         if message['role'] == 'assistant' and message.get('content') == 'null':
-            # We'll skip rendering artifacts here and let the tool response handle it
             continue
             
         # Special handling for tool response messages
         if message['role'] == 'tool':
+            if not show_tool_messages:
+                continue
+                
             try:
                 tool_content = json.loads(message.get('content', '{}'))
                 # Special handling for make_artifact tool

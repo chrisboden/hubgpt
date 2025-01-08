@@ -117,6 +117,7 @@ print()
 Importantly, when dealing with streamed response, our code will need to accumulate chunks and parse the chunks for the tool call and arguments.
 
 
+
 # **Using Tool Calls with OpenRouter**
 
 ### **Understanding Tool Calls**
@@ -281,7 +282,6 @@ In some agent workflows, accumulation of the tool call and tool response message
 ## **Advanced OpenRouter Usage**
 
 
-
 ### **Handling Images & Multimodal Requests**
 
 OpenRouter supports sending images as either URLs or base64-encoded strings.
@@ -345,3 +345,208 @@ except TimeoutError:
 finally:
     signal.alarm(0)  # Disable alarm
 ```
+
+# **Using Structured Outputs with OpenRouter**
+
+OpenRouter supports structured outputs for compatible models (like GPT-4o and later versions), ensuring responses follow a specific JSON Schema format. This is particularly useful when you need consistent, well-formatted responses that can be reliably parsed by your application.
+
+Supported models include: OpenAI, Gemini, Cohere, Llama 3, QwQ, Mixtral, and more.
+
+### **Basic JSON Response Format**
+
+To get structured JSON responses, include a `response_format` parameter in your request:
+
+```python
+completion = client.chat.completions.create(
+    model="openai/gpt-4o-mini",
+    messages=[
+        {
+            "role": "user",
+            "content": "What's the weather like in London?"
+        }
+    ],
+    response_format={
+        "type": "json_schema",
+        "schema": {
+            "type": "object",
+            "properties": {
+                "location": {
+                    "type": "string",
+                    "description": "City name"
+                },
+                "temperature": {
+                    "type": "number",
+                    "description": "Temperature in Celsius"
+                },
+                "conditions": {
+                    "type": "string",
+                    "description": "Weather conditions"
+                }
+            },
+            "required": ["location", "temperature", "conditions"]
+        }
+    }
+)
+
+# The response will be a JSON object like:
+{
+    "location": "London",
+    "temperature": 18,
+    "conditions": "Partly cloudy with light drizzle"
+}
+```
+
+### **Streaming with Structured Outputs**
+
+Structured outputs also work with streaming responses. The model will stream valid partial JSON that, when complete, forms a valid response matching your schema:
+
+```python
+stream = client.chat.completions.create(
+    model="openai/gpt-4o-mini",
+    messages=[
+        {
+            "role": "user",
+            "content": "What's the weather like in London?"
+        }
+    ],
+    response_format={
+        "type": "json_schema",
+        "schema": {
+            "type": "object",
+            "properties": {
+                "location": {"type": "string"},
+                "temperature": {"type": "number"},
+                "conditions": {"type": "string"}
+            }
+        }
+    },
+    stream=True
+)
+
+# Accumulate JSON chunks
+json_response = ""
+for chunk in stream:
+    if chunk.choices[0].delta.content:
+        json_response += chunk.choices[0].delta.content
+
+# Parse final JSON
+result = json.loads(json_response)
+```
+
+### **Best Practices for Structured Outputs**
+
+1. **Include Clear Descriptions**: Add descriptive text to your schema properties to guide the model
+2. **Validate Response**: Always validate the returned JSON matches your schema
+3. **Handle Errors**: Implement proper error handling for JSON parsing
+4. **Type Safety**: Use strict types in your schema to ensure consistent output
+5. **Required Fields**: Specify which fields are required to ensure complete responses
+
+### **Model Support**
+
+Structured outputs are supported by select models including:
+- OpenAI models (GPT-4o and later)
+- Other compatible providers through OpenRouter
+
+Check the model's capabilities on OpenRouter's models page before using structured outputs.
+
+
+# **Retrieving Available Models**
+
+You can get a list of all available models through the OpenRouter API. This is useful for discovering new models and checking their capabilities, pricing, and context limits.
+
+### **Using the Models API**
+
+```python
+import requests
+import os
+
+# Get list of available models
+response = requests.get(
+    "https://openrouter.ai/api/v1/models",
+    headers={
+        "Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY')}"
+    }
+)
+
+models = response.json()
+
+# Example response structure:
+{
+    "data": [
+        {
+            "id": "openai/gpt-4o-mini",
+            "name": "GPT-4 Turbo",
+            "description": "Most capable GPT-4 model...",
+            "pricing": {
+                "prompt": "0.01",
+                "completion": "0.03"
+            },
+            "context_length": 128000,
+            "architecture": {
+                "model_type": "llm",
+                "parameters": "1.76T"
+            },
+            "capabilities": {
+                "tool_calls": true,
+                "structured_outputs": true,
+                "multimodal": false
+            }
+        },
+        // ... other models
+    ]
+}
+```
+
+### **Filtering Models by Capability**
+
+You can filter models based on their capabilities:
+
+```python
+# Get models that support structured outputs
+structured_output_models = [
+    model for model in models['data'] 
+    if model.get('capabilities', {}).get('structured_outputs')
+]
+
+# Get models that support tool calls
+tool_call_models = [
+    model for model in models['data']
+    if model.get('capabilities', {}).get('tool_calls')
+]
+
+# Get multimodal models
+multimodal_models = [
+    model for model in models['data']
+    if model.get('capabilities', {}).get('multimodal')
+]
+```
+
+### **Checking Model Pricing**
+
+The API provides current pricing information for each model:
+
+```python
+def get_model_cost(model_id):
+    for model in models['data']:
+        if model['id'] == model_id:
+            return {
+                'prompt_cost': float(model['pricing']['prompt']),
+                'completion_cost': float(model['pricing']['completion'])
+            }
+    return None
+
+# Example usage
+costs = get_model_cost('openai/gpt-4o-mini')
+print(f"Prompt cost: ${costs['prompt_cost']}/1k tokens")
+print(f"Completion cost: ${costs['completion_cost']}/1k tokens")
+```
+
+### **Best Practices**
+
+1. **Cache Model Information**: The models list doesn't change frequently, so consider caching it
+2. **Check Capabilities**: Always verify model capabilities before using features like tool calls or structured outputs
+3. **Monitor Costs**: Use the pricing information to estimate and track usage costs
+4. **Context Limits**: Check `context_length` to ensure your prompts don't exceed model limits
+5. **Error Handling**: Implement proper error handling for API requests
+
+Note: Different models may tokenize text differently, affecting token counts and costs. The API provides costs per 1,000 tokens based on each model's tokenizer.

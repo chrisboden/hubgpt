@@ -34,20 +34,28 @@ class LinkedInResearchTool:
         }
         
         # Ensure data directory exists
-        data_dir = 'data'
-        if not os.path.exists(data_dir):
+        self.data_dir = 'data'
+        if not os.path.exists(self.data_dir):
             try:
-                os.makedirs(data_dir)
-                print(colored(f"✓ Created data directory at {data_dir}", "green"))
+                os.makedirs(self.data_dir)
+                print(colored(f"✓ Created data directory at {self.data_dir}", "green"))
             except Exception as e:
                 print(colored(f"✗ Error creating data directory: {str(e)}", "red"))
                 raise
         
-        db_path = os.path.join(data_dir, 'linkedin.db')
+        self.db_path = os.path.join(self.data_dir, 'linkedin.db')
+        self._init_db()
+        
+        # Add rate limiting parameters
+        self.retry_count = 0
+        self.max_retries = 3
+        self.base_backoff = 2  # seconds
+        self.max_backoff = 32  # seconds
+
+    def _get_db(self):
+        """Get a fresh database connection"""
         try:
-            self.db = duckdb.connect(db_path)
-            print(colored(f"✓ Connected to database at {db_path}", "green"))
-            self._init_db()
+            return duckdb.connect(self.db_path)
         except Exception as e:
             print(colored(f"✗ Error connecting to database: {str(e)}", "red"))
             raise
@@ -55,31 +63,70 @@ class LinkedInResearchTool:
     def _init_db(self):
         """Initialize database tables if they don't exist"""
         try:
-            self.db.execute("""
-                CREATE TABLE IF NOT EXISTS person (
-                    linkedin_id VARCHAR PRIMARY KEY,
-                    profile_raw JSON,
-                    profile_summary JSON,
-                    posts_raw JSON,
-                    posts_summary JSON,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            
-            self.db.execute("""
-                CREATE TABLE IF NOT EXISTS company (
-                    linkedin_id VARCHAR PRIMARY KEY,
-                    profile_raw JSON,
-                    profile_summary JSON,
-                    posts_raw JSON,
-                    posts_summary JSON,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            print(colored("✓ Database initialized successfully", "green"))
+            with self._get_db() as db:
+                db.execute("""
+                    CREATE TABLE IF NOT EXISTS person (
+                        linkedin_id VARCHAR PRIMARY KEY,
+                        profile_raw JSON,
+                        profile_summary JSON,
+                        posts_raw JSON,
+                        posts_summary JSON,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                
+                db.execute("""
+                    CREATE TABLE IF NOT EXISTS company (
+                        linkedin_id VARCHAR PRIMARY KEY,
+                        profile_raw JSON,
+                        profile_summary JSON,
+                        posts_raw JSON,
+                        posts_summary JSON,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                print(colored("✓ Database initialized successfully", "green"))
         except Exception as e:
             print(colored(f"✗ Database initialization error: {str(e)}", "red"))
             raise
+
+    def _check_cache(self, linkedin_id: str, entity_type: str) -> Optional[Dict]:
+        """Check if we have recent data in the database"""
+        try:
+            # Define cache expiry (7 days)
+            CACHE_EXPIRY_DAYS = 7
+            
+            with self._get_db() as db:
+                result = db.execute(f"""
+                    SELECT 
+                        linkedin_id,
+                        profile_raw,
+                        profile_summary,
+                        posts_raw,
+                        posts_summary,
+                        created_at
+                    FROM {entity_type}
+                    WHERE linkedin_id = ?
+                    AND created_at > CURRENT_TIMESTAMP - INTERVAL '{CACHE_EXPIRY_DAYS} days'
+                """, [linkedin_id]).fetchone()
+            
+            if result:
+                print(colored(f"✓ Found recent cache entry for {linkedin_id}", "green"))
+                return {
+                    'linkedin_id': result[0],
+                    'profile_raw': json.loads(result[1]) if result[1] else None,
+                    'profile_summary': json.loads(result[2]) if result[2] else None,
+                    'posts_raw': json.loads(result[3]) if result[3] else None,
+                    'posts_summary': json.loads(result[4]) if result[4] else None,
+                    'created_at': result[5]
+                }
+            
+            print(colored(f"No recent cache entry found for {linkedin_id}", "yellow"))
+            return None
+            
+        except Exception as e:
+            print(colored(f"✗ Error checking cache: {str(e)}", "red"))
+            return None
 
     def _update_api_endpoint(self):
         """Switch to alternate API endpoint and update headers"""
@@ -89,14 +136,19 @@ class LinkedInResearchTool:
         print(colored(f"Switching to alternate API endpoint: {self.api_endpoints[self.current_api_index]}", "yellow"))
 
     def _make_api_request(self, endpoint_path: str, params: dict) -> Dict:
-        """Make API request with automatic fallback on rate limit"""
-        for attempt in range(len(self.api_endpoints)):
-            current_base = self.api_endpoints[self.current_api_index]
-            full_url = f"{current_base}/{endpoint_path}"
-            
+        """Make API request with improved rate limit handling"""
+        last_error = None
+        
+        for attempt in range(self.max_retries):
             try:
+                current_base = self.api_endpoints[self.current_api_index]
+                full_url = f"{current_base}/{endpoint_path}"
+                
                 print(colored(f"Making API request to: {full_url}", "cyan"))
                 print(f"Request params:\n{params}")
+                
+                # Calculate backoff time
+                backoff_time = min(self.base_backoff * (2 ** attempt), self.max_backoff)
                 
                 response = requests.get(
                     full_url,
@@ -105,22 +157,30 @@ class LinkedInResearchTool:
                 )
                 
                 if response.status_code == 200:
+                    # Reset retry count on success
+                    self.retry_count = 0
                     return response.json()
+                    
                 elif response.status_code == 429:  # Rate limit exceeded
                     print(colored(f"Rate limit exceeded on {current_base}", "yellow"))
+                    print(colored(f"Backing off for {backoff_time} seconds", "yellow"))
+                    time.sleep(backoff_time)
                     self._update_api_endpoint()
                     continue
+                    
                 else:
                     raise Exception(f"API request failed with status {response.status_code}")
                     
             except Exception as e:
+                last_error = e
                 print(colored(f"Error with endpoint {current_base}: {str(e)}", "red"))
-                if attempt < len(self.api_endpoints) - 1:
+                
+                if attempt < self.max_retries - 1:
+                    print(colored(f"Retrying in {backoff_time} seconds...", "yellow"))
+                    time.sleep(backoff_time)
                     self._update_api_endpoint()
                 else:
-                    raise Exception(f"All API endpoints failed. Last error: {str(e)}")
-
-    
+                    raise Exception(f"All API endpoints failed after {self.max_retries} attempts. Last error: {str(last_error)}")
 
     def _determine_entity_type(self, brief: str) -> str:
         """Determine if the brief is about a person or company"""
@@ -273,16 +333,22 @@ class LinkedInResearchTool:
         try:
             print(colored("Preparing profile data for summary...", "cyan"))
             
-            # Ensure we have valid profile data
-            if not profile_data:
+            # Enhanced validation and debug logging
+            print(colored(f"Raw profile data received: {json.dumps(profile_data, indent=2)}", "cyan"))
+            
+            # Ensure we have valid profile data - check both the data itself and its structure
+            if not profile_data or (isinstance(profile_data, dict) and not profile_data.get('data', {}) and not profile_data.get('firstName')):
+                print(colored("No valid profile data found in input", "yellow"))
                 return {
                     "status": "no_data",
                     "message": "No profile data available",
                     "timestamp": datetime.now().isoformat()
                 }
-                
-            print(colored(f"Profile data to summarize: {json.dumps(profile_data, indent=2)}", "cyan"))
             
+            # If profile_data has a 'data' key, use that, otherwise use profile_data directly
+            data_to_summarize = profile_data.get('data', profile_data)
+            print(colored(f"Data being sent to LLM for summary: {json.dumps(data_to_summarize, indent=2)}", "cyan"))
+                
             messages = [
                 {"role": "system", "content": f"""You are an expert at analyzing LinkedIn profiles. 
                 Create a normalized summary of this {entity_type}'s profile.
@@ -303,7 +369,7 @@ class LinkedInResearchTool:
                 - Notable achievements
                 
                 Return a JSON object with relevant fields based on the profile type."""},
-                {"role": "user", "content": f"Here is the data to summarise: {json.dumps(profile_data)}"}
+                {"role": "user", "content": f"Here is the data to summarise: {json.dumps(data_to_summarize)}"}
             ]
             
             print(colored(f"Calling LLM for profile summary with:\n\n{messages}"),"cyan")
@@ -335,69 +401,187 @@ class LinkedInResearchTool:
                 "timestamp": datetime.now().isoformat()
             }
 
+    def _clean_posts_data(self, posts_data: List[Dict]) -> List[Dict]:
+        """Clean and validate post data"""
+        cleaned_posts = []
+        for post in posts_data:
+            try:
+                # Extract essential fields with defaults
+                cleaned_post = {
+                    "text": post.get("text", "").strip(),
+                    "postedAt": post.get("postedAt", "unknown"),
+                    "totalReactionCount": post.get("totalReactionCount", 0),
+                    "postUrl": post.get("postUrl", ""),
+                }
+                
+                # Only include posts with actual content
+                if cleaned_post["text"]:
+                    cleaned_posts.append(cleaned_post)
+                    
+            except Exception as e:
+                print(colored(f"Error cleaning post: {str(e)}", "yellow"))
+                continue
+                
+        return cleaned_posts
 
     def _generate_posts_summary(self, posts_data: List[Dict], entity_type: str) -> Dict:
-        """Generate normalized posts summary using LLM"""
+        """Generate normalized posts summary using LLM with improved error handling"""
         try:
-            messages = [
-                {"role": "system", "content": f"""You are an expert at analyzing LinkedIn posting activity. 
-                Create a summary of this {entity_type}'s posting activity.
+            # Validate input
+            if not isinstance(posts_data, list):
+                return {
+                    "status": "error",
+                    "message": "Invalid posts data format",
+                    "timestamp": datetime.now().isoformat()
+                }
                 
-                For a company profile, you create an information-dense digest of their recent postings, ensuring to preserve key announcements, etc. This digest should provide an at-a-glance summary of the company's activities without having to read each and every post in full. Make sure to mention if the posts are not recent.
+            # Clean and validate posts
+            cleaned_posts = self._clean_posts_data(posts_data)
+            
+            if not cleaned_posts:
+                return {
+                    "status": "no_posts",
+                    "message": "No valid posts available",
+                    "timestamp": datetime.now().isoformat()
+                }
                 
-                For a person's profile, you create an information-dense digest of their recent postings, ensuring to preserve key achievements, thought-pieces, blog-style posts, annoucements, etc. This digest should provide an at-a-glance summary of the person's posting activities without having to read each and every post in full. Make sure to mention if the posts are not recent.
+            try:
+                messages = [
+                    {"role": "system", "content": f"""You are an expert at analyzing LinkedIn posting activity. 
+                    Create a summary of this {entity_type}'s posting activity.
+                    
+                    Focus on:
+                    1. Key announcements and achievements
+                    2. Professional insights and thought leadership
+                    3. Major events or milestones
+                    4. Industry trends and commentary
+                    
+                    Return a JSON object with:
+                    {{
+                        "summary": {{
+                            "recentPosts": [
+                                {{
+                                    "timestamp": "when posted",
+                                    "topic": "main topic",
+                                    "key_points": ["list of key points"],
+                                    "engagement": "engagement metrics"
+                                }}
+                            ],
+                            "topThemes": ["list of recurring themes"],
+                            "postingFrequency": "analysis of posting frequency"
+                        }}
+                    }}"""},
+                    {"role": "user", "content": f"Analyze these posts: {json.dumps(cleaned_posts)}"}
+                ]
                 
-                Return a JSON object with relevant fields based on the profile type."""},
-                {"role": "user", "content": f"Here are the posts to summarise: {json.dumps(posts_data)}"}
-            ]
-            print(f"Calling LLM for posts summary with:\n\n{messages}")
-            response = self.llm_client.chat.completions.create(
-                model="google/gemini-flash-1.5-8b",
-                messages=messages,
-                max_tokens=4000,
-                temperature=0.7,
-                response_format={"type": "json_object"}
-            )
-            print(f"Response from LLM for posts summary with:\n\n{response}")
-            return json.loads(response.choices[0].message.content)
+                response = self.llm_client.chat.completions.create(
+                    model="openai/gpt-4o-mini",
+                    messages=messages,
+                    max_tokens=4000,
+                    temperature=0.7,
+                    response_format={"type": "json_object"}
+                )
+                
+                summary = json.loads(response.choices[0].message.content)
+                
+                if not isinstance(summary, dict) or "summary" not in summary:
+                    raise ValueError("Invalid summary format returned from LLM")
+                    
+                return {
+                    "status": "success",
+                    "summary": summary["summary"],
+                    "timestamp": datetime.now().isoformat()
+                }
+                
+            except json.JSONDecodeError as e:
+                print(colored(f"Error parsing summary: {str(e)}", "yellow"))
+                return {
+                    "status": "error",
+                    "message": f"Error parsing summary: {str(e)}",
+                    "timestamp": datetime.now().isoformat()
+                }
+                
         except Exception as e:
             print(colored(f"✗ Error generating posts summary: {str(e)}", "red"))
-            raise
+            return {
+                "status": "error",
+                "message": str(e),
+                "timestamp": datetime.now().isoformat()
+            }
+
+    def _validate_profile_data(self, profile_data: Dict) -> bool:
+        """Validate profile data before saving"""
+        required_fields = ['linkedin_id', 'profile_raw']
+        
+        try:
+            # Check required fields exist
+            if not all(field in profile_data for field in required_fields):
+                print(colored(f"Missing required fields: {required_fields}", "red"))
+                return False
+                
+            # Validate linkedin_id
+            if not profile_data['linkedin_id'] or not isinstance(profile_data['linkedin_id'], str):
+                print(colored("Invalid linkedin_id", "red"))
+                return False
+                
+            # Validate profile_raw
+            if not profile_data['profile_raw'] or not isinstance(profile_data['profile_raw'], dict):
+                print(colored("Invalid profile_raw data", "red"))
+                return False
+                
+            return True
+            
+        except Exception as e:
+            print(colored(f"Error validating profile data: {str(e)}", "red"))
+            return False
 
     def _save_to_db(self, data: Dict, entity_type: str):
-        """Save data to appropriate database table"""
+        """Save data to appropriate database table with improved validation"""
         try:
+            # Validate input data
+            if not self._validate_profile_data(data):
+                raise ValueError("Invalid profile data")
+                
             table = entity_type
             current_timestamp = datetime.now().isoformat()
             
-            self.db.execute(f"""
-                INSERT INTO {table} (
-                    linkedin_id,
+            # Prepare data with proper JSON serialization
+            profile_raw = json.dumps(data['profile_raw']) if data['profile_raw'] else None
+            profile_summary = json.dumps(data['profile_summary']) if data['profile_summary'] else None
+            posts_raw = json.dumps(data['posts_raw']) if data['posts_raw'] else None
+            posts_summary = json.dumps(data['posts_summary']) if data['posts_summary'] else None
+            
+            # Use a fresh connection for the transaction
+            with self._get_db() as db:
+                db.execute(f"""
+                    INSERT INTO {table} (
+                        linkedin_id,
+                        profile_raw,
+                        profile_summary,
+                        posts_raw,
+                        posts_summary,
+                        created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT (linkedin_id) DO UPDATE SET
+                        profile_raw = EXCLUDED.profile_raw,
+                        profile_summary = EXCLUDED.profile_summary,
+                        posts_raw = EXCLUDED.posts_raw,
+                        posts_summary = EXCLUDED.posts_summary,
+                        created_at = EXCLUDED.created_at
+                """, [
+                    data['linkedin_id'],
                     profile_raw,
                     profile_summary,
                     posts_raw,
                     posts_summary,
-                    created_at
-                ) VALUES (?, ?, ?, ?, ?, ?)
-                ON CONFLICT (linkedin_id) DO UPDATE SET
-                    profile_raw = EXCLUDED.profile_raw,
-                    profile_summary = EXCLUDED.profile_summary,
-                    posts_raw = EXCLUDED.posts_raw,
-                    posts_summary = EXCLUDED.posts_summary,
-                    created_at = EXCLUDED.created_at
-            """, [
-                data['linkedin_id'],
-                json.dumps(data['profile_raw']),
-                json.dumps(data['profile_summary']) if data['profile_summary'] else None,
-                json.dumps(data['posts_raw']),
-                json.dumps(data['posts_summary']) if data['posts_summary'] else None,
-                current_timestamp
-            ])
+                    current_timestamp
+                ])
+                
             print(colored(f"✓ Data saved to {table} table", "green"))
+            
         except Exception as e:
             print(colored(f"✗ Database save error: {str(e)}", "red"))
             raise
-
 
     def research(self, brief: str) -> str:
         """Main research flow"""
@@ -410,6 +594,35 @@ class LinkedInResearchTool:
             
             if not linkedin_id:
                 return "No matching LinkedIn profile found. Please provide more specific information."
+            
+            # Check cache before making API calls
+            cached_data = self._check_cache(linkedin_id, entity_type)
+            if cached_data:
+                print(colored("Using cached data...", "green"))
+                # Generate final summary from cached data
+                messages = [
+                    {"role": "system", "content": """You are an expert at synthesizing LinkedIn information into clear, insightful summaries.
+                    If there are no posts available, focus on the profile information only."""},
+                    {"role": "user", "content": f"""Please create a comprehensive summary based on this cached data:
+                    
+                    Profile Summary: {json.dumps(cached_data['profile_summary'])}
+                    
+                    Posts Summary: {json.dumps(cached_data['posts_summary'])}
+                    
+                    Note: If the posts summary indicates no posts are available, focus on the profile information."""}
+                ]
+                
+                response = self.llm_client.chat.completions.create(
+                    model="openai/gpt-4o-mini",
+                    messages=messages,
+                    max_tokens=2000,
+                    temperature=0.7
+                )
+                
+                return response.choices[0].message.content
+            
+            # If no cache hit, proceed with API calls
+            print(colored("No recent cache found, fetching fresh data...", "cyan"))
             
             # Stage 2: Get profile and posts data
             print(colored("Stage 2: Getting profile and posts data...", "cyan"))
@@ -430,9 +643,9 @@ class LinkedInResearchTool:
             # Stage 4: Generate summaries
             print(colored("Stage 4: Generating summaries...", "cyan"))
             
-            # Generate profile summary
+            # Generate profile summary - pass profile_data directly, not nested under 'data'
             try:
-                profile_summary = self._generate_profile_summary(profile_data.get('data', {}), entity_type)
+                profile_summary = self._generate_profile_summary(profile_data, entity_type)
             except Exception as e:
                 print(colored(f"Warning: Could not generate profile summary: {str(e)}", "yellow"))
                 profile_summary = {"error": "Could not generate profile summary"}

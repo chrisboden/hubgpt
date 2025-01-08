@@ -47,19 +47,12 @@ def execute(
         
         # Check response
         if response.status_code == 200:
-            return {'status': 'success', 'response': response.json()}
+            return f"Successfully sent email: {subject}"
         else:
-            return {
-                'status': 'error', 
-                'message': f'Webhook returned status {response.status_code}',
-                'response': response.text
-            }
+            return f"Failed to send email: {response.status_code} - {response.text}"
     
     except Exception as e:
-        return {
-            'status': 'error',
-            'message': f'Error sending email: {str(e)}'
-        }
+        return f"Error sending email: {str(e)}"
 
 # Update Tool metadata for LLM integration
 TOOL_METADATA = {

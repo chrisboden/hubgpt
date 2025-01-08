@@ -13,7 +13,7 @@ from difflib import unified_diff
 from termcolor import colored
 from contextlib import contextmanager
 from utils.ui_utils import update_spinner_status
-
+import logging
 
 def expand_home(filepath: str) -> str:
     """Expand user home directory."""
@@ -21,48 +21,70 @@ def expand_home(filepath: str) -> str:
         return os.path.expanduser(filepath)
     return filepath
 
-
-# Constants
+# Constants and globals
 FILESYSTEM_PERMISSIONS = 0o644  # -rw-r--r--
 DIRECTORY_PERMISSIONS = 0o755   # drwxr-xr-x
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 
-# Initialize base and data directories
-update_spinner_status("Initializing file operation directories...")
-BASE_DIRECTORY = os.path.abspath(
-    os.path.expanduser(os.environ.get('BASE_DIRECTORY', '.')))
-DATA_DIRECTORY = os.path.join(BASE_DIRECTORY, 'data')
-FILES_DIRECTORY = os.path.join(DATA_DIRECTORY, 'files')
+class DirectoryManager:
+    _instance = None
+    _initialized = False
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(DirectoryManager, cls).__new__(cls)
+        return cls._instance
+    
+    def __init__(self):
+        if not self._initialized:
+            self._initialized = True
+            self._init_directories()
+    
+    def _init_directories(self):
+        """Initialize file operation directories"""
+        logging.info("Initializing file operation directories...")
+        
+        # Set up base directories
+        self.ROOT_DIRECTORY = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
+        self.TEMP_DIRECTORY = os.path.join(self.ROOT_DIRECTORY, 'temp')
+        self.DEMO_DIRECTORY = os.path.join(self.ROOT_DIRECTORY, 'demo')
+        self.DATA_DIRECTORY = os.path.join(self.ROOT_DIRECTORY, 'data')
+        
+        # Create directories
+        for directory in [self.TEMP_DIRECTORY, self.DEMO_DIRECTORY, self.DATA_DIRECTORY]:
+            os.makedirs(directory, mode=DIRECTORY_PERMISSIONS, exist_ok=True)
+        
+        # Set up allowed directories
+        self.allowed_directories = [
+            self.ROOT_DIRECTORY,
+            self.TEMP_DIRECTORY,
+            self.DEMO_DIRECTORY,
+            self.DATA_DIRECTORY
+        ]
+        
+        # Add environment directories
+        env_dirs = os.environ.get('ALLOWED_DIRECTORIES', '').split(':')
+        self.allowed_directories.extend([
+            os.path.abspath(expand_home(d))
+            for d in env_dirs
+            if d and d != '.'
+        ])
+        
+        # Remove duplicates while preserving order
+        self.allowed_directories = list(dict.fromkeys(self.allowed_directories))
+        
+        logging.debug(f"Initialized directories: {self.allowed_directories}")
+        logging.info("File operation directories initialized successfully")
 
-# Create necessary directories
-os.makedirs(DATA_DIRECTORY, mode=DIRECTORY_PERMISSIONS, exist_ok=True)
-os.makedirs(FILES_DIRECTORY, mode=DIRECTORY_PERMISSIONS, exist_ok=True)
+# Initialize the singleton
+dir_manager = DirectoryManager()
 
-# Define allowed directories for file operations
-allowed_directories = [
-    '/',  # Add root directory to allow absolute paths
-    BASE_DIRECTORY,
-    DATA_DIRECTORY,
-    FILES_DIRECTORY
-]
-
-# Add any additional directories from environment variable
-env_dirs = os.environ.get('ALLOWED_DIRECTORIES', '').split(':')
-allowed_directories.extend([
-    os.path.abspath(expand_home(d))
-    for d in env_dirs
-    if d and d != '.'
-])
-
-# Remove duplicates while preserving order
-allowed_directories = list(dict.fromkeys(allowed_directories))
-
-# Debug prints for directory paths
-print(colored("BASE_DIRECTORY: " + BASE_DIRECTORY, "yellow"))
-print(colored("DATA_DIRECTORY: " + DATA_DIRECTORY, "yellow"))
-print(colored("FILES_DIRECTORY: " + FILES_DIRECTORY, "yellow"))
-print(colored(f"Allowed directories: {allowed_directories}", "cyan"))
-update_spinner_status("File operation directories initialized successfully")
+# Export the directory paths and allowed directories
+ROOT_DIRECTORY = dir_manager.ROOT_DIRECTORY
+TEMP_DIRECTORY = dir_manager.TEMP_DIRECTORY
+DEMO_DIRECTORY = dir_manager.DEMO_DIRECTORY
+DATA_DIRECTORY = dir_manager.DATA_DIRECTORY
+allowed_directories = dir_manager.allowed_directories
 
 # Custom exceptions
 class TimeoutError(Exception):
@@ -123,40 +145,59 @@ def resolve_path(path: str, allowed_directories: List[str]) -> str:
     """
     try:
         update_spinner_status(f"Resolving path: {path}")
-        # Strip BASE_DIRECTORY if it's included in the path
-        if path.startswith(BASE_DIRECTORY):
-            path = path[len(BASE_DIRECTORY):].lstrip('/')
-
-        # Normalize path to ensure it's under /data/files
-        if path.startswith('/'):
-            path = path.lstrip('/')
-            if not path.startswith('data/files/'):
-                path = f"data/files/{path}"
-        else:
-            if not path.startswith('data/files/'):
-                path = f"data/files/{path}"
-
-        # Convert to absolute path relative to BASE_DIRECTORY
-        full_path = os.path.join(BASE_DIRECTORY, path)
+        print(colored(f"Resolving path: {path}", "yellow"))
         
-        # Normalize path (remove redundant separators, resolve .., etc.)
-        normalized_path = os.path.abspath(full_path)
+        # Special handling for paths starting with /data or /temp
+        if path.startswith('/data/'):
+            relative_path = path[6:]  # Remove '/data/' prefix
+            full_path = os.path.join(DATA_DIRECTORY, relative_path)
+            normalized_path = os.path.abspath(full_path)
+            print(colored(f"Converted /data path to: {normalized_path}", "yellow"))
+            
+            # Validate it's within DATA_DIRECTORY
+            if os.path.commonpath([normalized_path, DATA_DIRECTORY]) == DATA_DIRECTORY:
+                update_spinner_status(f"Path resolved successfully to: {normalized_path}")
+                return normalized_path
+        elif path.startswith('/temp/'):
+            relative_path = path[6:]  # Remove '/temp/' prefix
+            full_path = os.path.join(TEMP_DIRECTORY, relative_path)
+            normalized_path = os.path.abspath(full_path)
+            print(colored(f"Converted /temp path to: {normalized_path}", "yellow"))
+            
+            # Validate it's within TEMP_DIRECTORY
+            if os.path.commonpath([normalized_path, TEMP_DIRECTORY]) == TEMP_DIRECTORY:
+                update_spinner_status(f"Path resolved successfully to: {normalized_path}")
+                return normalized_path
+        
+        # If path is relative, try to resolve against each allowed directory
+        if not os.path.isabs(path):
+            for base_dir in allowed_directories:
+                full_path = os.path.join(base_dir, path)
+                normalized_path = os.path.abspath(full_path)
+                
+                # Check if the normalized path is under any allowed directory
+                if any(
+                    os.path.commonpath([normalized_path, os.path.abspath(allowed_dir)]) == os.path.abspath(allowed_dir)
+                    for allowed_dir in allowed_directories
+                ):
+                    update_spinner_status(f"Path resolved successfully to: {normalized_path}")
+                    return normalized_path
+        else:
+            # For absolute paths, just normalize and validate
+            normalized_path = os.path.abspath(path)
+            if any(
+                os.path.commonpath([normalized_path, os.path.abspath(allowed_dir)]) == os.path.abspath(allowed_dir)
+                for allowed_dir in allowed_directories
+            ):
+                update_spinner_status(f"Path resolved successfully to: {normalized_path}")
+                return normalized_path
 
-        # Validate against allowed directories
-        if not any(
-            os.path.commonpath([normalized_path, os.path.abspath(allowed_dir)]) == os.path.abspath(allowed_dir)
-            for allowed_dir in allowed_directories
-        ):
-            update_spinner_status("Path resolution failed - access denied")
-            raise ValueError(f"Access denied - path outside allowed directories: {normalized_path}")
-
-        update_spinner_status(f"Path resolved successfully to: {normalized_path}")
-        return normalized_path
+        update_spinner_status("Path resolution failed - access denied")
+        raise ValueError(f"Access denied - path outside allowed directories: {path}")
 
     except Exception as e:
         update_spinner_status(f"Path resolution failed: {str(e)}")
         raise ValueError(f"Error resolving path {path}: {str(e)}")
-
 
 def normalize_line_endings(text: str) -> str:
     """Normalize line endings to Unix style."""
@@ -299,16 +340,18 @@ def write_file(llm_client, path: str, content: str) -> str:
         update_spinner_status(f"Writing file: {path}")
         print(colored(f"Writing file - Original path: {path}", "yellow"))
 
-        # If path starts with /data, make it relative to BASE_DIRECTORY
-        if path.startswith('/data'):
+        # Handle special paths
+        if path.startswith('/data/'):
             relative_path = path[1:]  # Remove leading slash
-            full_path = os.path.join(BASE_DIRECTORY, relative_path)
+            full_path = os.path.join(DATA_DIRECTORY, relative_path[5:])  # Remove 'data/' prefix
+        elif path.startswith('/temp/'):
+            relative_path = path[1:]  # Remove leading slash
+            full_path = os.path.join(TEMP_DIRECTORY, relative_path[5:])  # Remove 'temp/' prefix
         else:
             full_path = resolve_path(path, allowed_directories)
 
         print(colored(f"Full resolved path: {full_path}", "yellow"))
-        print(colored(
-            f"Directory exists? {os.path.exists(os.path.dirname(full_path))}", "yellow"))
+        print(colored(f"Directory exists? {os.path.exists(os.path.dirname(full_path))}", "yellow"))
 
         # Ensure the directory exists
         update_spinner_status("Creating directory structure...")
@@ -324,8 +367,7 @@ def write_file(llm_client, path: str, content: str) -> str:
 
         print(colored(f"File written successfully", "yellow"))
         print(colored(f"File exists? {os.path.exists(full_path)}", "yellow"))
-        print(colored(
-            f"File size: {os.path.getsize(full_path) if os.path.exists(full_path) else 'N/A'}", "yellow"))
+        print(colored(f"File size: {os.path.getsize(full_path) if os.path.exists(full_path) else 'N/A'}", "yellow"))
 
         update_spinner_status("File written successfully")
         return f"Successfully wrote to {full_path}"
@@ -579,7 +621,7 @@ def search_files_tool(llm_client, path: str, pattern: str, exclude_patterns: Opt
 
 def get_default_download_directory() -> str:
     """Get the default directory for downloaded files."""
-    download_dir = os.path.join(BASE_DIRECTORY, 'data', 'files')
+    download_dir = os.path.join(DATA_DIRECTORY, 'files')
     os.makedirs(download_dir, exist_ok=True)
     return download_dir
 
