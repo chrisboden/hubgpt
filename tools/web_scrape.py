@@ -9,41 +9,54 @@ import json  # Add this import
 
 def process_scraped_content(content, llm_client):
     """
-    Process scraped content using an LLM to clean, structure, or enhance it.
+    Process scraped content using an LLM to clean and structure it while preserving links.
     
     Args:
         content (str): Raw scraped content
         llm_client: LLM client for processing
 
     Returns:
-        str: Processed content
+        str: Processed content with preserved links
     """
     try:
         # Truncate content if it's extremely long
         if len(content) > 50000:
             content = content[:50000]
         
-        # Define LLM messages for initial content processing
+        # Updated LLM messages to explicitly preserve links
         processing_messages = [
-            {"role": "system", "content": "You are an expert content processor. Clean and structure the given web scraped content, removing any irrelevant information, ads, or boilerplate text. Your cleaned output should be an information-dense and comprehensive summary that loses none of the key information. This summary will be used as context by an AI agent"},
-            {"role": "user", "content": f"Here is the content:\n\n{content}"}
+            {"role": "system", "content": """You are an expert content processor. Clean and structure the given web scraped content, removing irrelevant information, ads, or boilerplate text. 
+
+IMPORTANT: You must preserve ALL links in markdown format [text](url). Convert any HTML links (<a href="url">text</a>) to markdown format.
+
+Your output should:
+1. Be in clean markdown format
+2. Preserve all original links as [text](url)
+3. Maintain the content's information hierarchy
+4. Remove clutter while keeping all valuable information
+5. Be comprehensive and well-structured"""},
+            {"role": "user", "content": f"Process this content, ensuring all links are preserved:\n\n{content}"}
         ]
         
-        # Attempt LLM call
+        # Attempt LLM call with higher max tokens to accommodate link preservation
         response = llm_client.chat.completions.create(
             model="google/gemini-flash-1.5-8b",
             messages=processing_messages,
-            max_tokens=4000,
+            max_tokens=6000,  # Increased to handle longer content with links
             temperature=0.2
         )
         
-        # Extract processed content
         processed_content = response.choices[0].message.content
+        
+        # Verify link preservation with a warning if no links found
+        if "[" not in processed_content or "](" not in processed_content:
+            cprint("Warning: No markdown links found in processed content. Links may have been lost.", "yellow")
+            
         return processed_content
     
     except Exception as e:
         cprint(f"Error processing scraped content: {str(e)}", "red")
-        return content  # Return original content if processing fails
+        return content
 
 def execute(url, filename, llm_client=None):
     """
