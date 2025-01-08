@@ -8,6 +8,7 @@ from openai import OpenAI
 from utils.prompt_utils import load_advisor_data, get_available_advisors, load_prompt
 from utils.tool_utils import load_tools
 from utils.llm_utils import get_llm_response
+from utils.log_utils import setup_logging
 from utils.chat_utils import (
     initialize_session_state,
     load_chat_history,
@@ -218,6 +219,9 @@ def main():
     tools_directory = os.path.join(os.getcwd(), "tools")
     load_tools(tools_directory)
     initialize_session_state()
+
+    # Initialize logging - Add this line
+    setup_logging(os.getcwd())
     
     # Initialize manager
     manager = AdvisorManager()
