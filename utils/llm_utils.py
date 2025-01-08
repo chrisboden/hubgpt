@@ -295,6 +295,7 @@ class ResponseHandler:
                     if current_tool_args and not function_call_data:
                         try:
                             args = json.loads(current_tool_args)
+                            # Return clean arguments structure without nesting
                             function_call_data = {
                                 'name': tool_name,
                                 'arguments': args,
@@ -393,7 +394,7 @@ class ResponseHandler:
             # Set up spinner placeholder for tool updates
             st.session_state.spinner_placeholder = self.status_placeholder
             
-            # Handle nested function data structure from LLM
+            # Unwrap nested function data structure from LLM
             if isinstance(function_data, str):
                 try:
                     function_data = json.loads(function_data)
@@ -401,13 +402,13 @@ class ResponseHandler:
                     pass
                     
             # Extract actual arguments, handling potential double nesting
-            if 'arguments' in function_data:
-                args = function_data['arguments']
-                # Handle double nesting case
-                if isinstance(args, dict) and 'arguments' in args:
-                    function_data = args['arguments']
-                else:
-                    function_data = args
+            if isinstance(function_data, dict):
+                # Case 1: Nested under 'arguments' key
+                if 'arguments' in function_data:
+                    function_data = function_data['arguments']
+                # Case 2: Double nested with tool name
+                if isinstance(function_data, dict) and function_data.get('name') == tool_name and 'arguments' in function_data:
+                    function_data = function_data['arguments']
             
             print(colored(f"Cleaned function data: {function_data}", "yellow"))
             
