@@ -10,6 +10,7 @@ import openai
 import uuid
 from PIL import Image
 from io import BytesIO
+import time
 
 # Represents a structured search result with title, URL, and description
 class SearchResult:
@@ -59,10 +60,12 @@ class BraveSearchProvider(SearchProvider):
         if not self.api_key:
             raise ValueError("Brave API key is required")
         self.base_url = "https://api.search.brave.com/res/v1/web/search"
+        self.max_retries = 2
+        self.retry_delay = 1  # seconds
 
     def search(self, query: str, max_results: int = 10) -> List[SearchResult]:
         """
-        Perform a search using the Brave Search API.
+        Perform a search using the Brave Search API with retries and validation.
         
         Args:
             query (str): Search query string
@@ -71,23 +74,106 @@ class BraveSearchProvider(SearchProvider):
         Returns:
             List[SearchResult]: Processed search results
         """
-        try:
-            headers = {"X-Subscription-Token": self.api_key}
-            params = {"q": query, "count": max_results}
-            response = requests.get(self.base_url, headers=headers, params=params)
-            response.raise_for_status()
-            data = response.json()
-            
-            return [
-                SearchResult(
-                    title=result.get("title", "No title"),
-                    url=result.get("url", ""),
-                    description=result.get("description", "No description")
-                ) for result in data.get("results", [])[:max_results]
-            ]
-        except Exception as e:
-            print(f"Brave search failed: {str(e)}")
+        # Validate query length per API requirements
+        if not query or len(query) > 400 or len(query.split()) > 50:
+            print("❌ Invalid query: Must be between 1-400 chars and max 50 words")
             return []
+
+        for attempt in range(self.max_retries):
+            try:
+                headers = {
+                    "X-Subscription-Token": self.api_key,
+                    "Accept": "application/json",
+                    "Accept-Encoding": "gzip"
+                }
+                
+                params = {
+                    "q": query,
+                    "count": min(max_results, 20),  # API max is 20
+                    "offset": 0,
+                    "search_lang": "en",
+                    "country": "us",  # Lowercase as per API example
+                    "safesearch": "moderate",
+                    "text_decorations": False,
+                    "spellcheck": True
+                }
+                
+                print(f"🦁 Brave Search attempt {attempt + 1}/{self.max_retries}")
+                print(f"Request URL: {self.base_url}")
+                print(f"Request params: {params}")
+                
+                response = requests.get(self.base_url, headers=headers, params=params)
+                
+                print(f"Response status code: {response.status_code}")
+                
+                if response.status_code == 429:
+                    print(f"⚠️ Brave Search rate limit hit on attempt {attempt + 1}")
+                    if attempt < self.max_retries - 1:
+                        time.sleep(self.retry_delay)
+                        continue
+                
+                response.raise_for_status()
+                
+                try:
+                    data = response.json()
+                    print(f"Response data keys: {data.keys()}")
+                except json.JSONDecodeError as e:
+                    print(f"❌ Failed to decode JSON response: {str(e)}")
+                    print(f"Raw response content: {response.text[:500]}...")
+                    if attempt < self.max_retries - 1:
+                        continue
+                    return []
+                
+                # Check for error messages in response
+                if "error" in data:
+                    print(f"⚠️ Brave Search API error: {data['error']}")
+                    if attempt < self.max_retries - 1:
+                        continue
+                    return []
+                
+                # Get web results from the correct location in response
+                web_results = data.get("web", {}).get("results", [])
+                if not web_results:
+                    print("⚠️ No web results found in response")
+                    print(f"Available data keys: {data.keys()}")
+                    if attempt < self.max_retries - 1:
+                        continue
+                    return []
+                
+                results = []
+                for result in web_results[:max_results]:
+                    # Skip non-family-friendly results if present
+                    if not result.get("family_friendly", True):
+                        continue
+                        
+                    results.append(SearchResult(
+                        title=result.get("title", "No title"),
+                        url=result.get("url", ""),
+                        description=result.get("description", "No description")
+                    ))
+                
+                if not results:
+                    print("⚠️ Failed to parse any valid results from response")
+                    if attempt < self.max_retries - 1:
+                        continue
+                    return []
+                
+                print(f"✅ Brave Search succeeded with {len(results)} results")
+                return results
+                
+            except requests.exceptions.RequestException as e:
+                print(f"❌ Brave Search request failed: {str(e)}")
+                if attempt < self.max_retries - 1:
+                    time.sleep(self.retry_delay)
+                    continue
+            except Exception as e:
+                print(f"❌ Brave Search unexpected error: {str(e)}")
+                print(f"Error type: {type(e).__name__}")
+                if attempt < self.max_retries - 1:
+                    time.sleep(self.retry_delay)
+                    continue
+        
+        return []
 
 
 # Concrete search provider using the Serper API
@@ -399,60 +485,37 @@ class ResilientSearcher:
     def __init__(self):
         """
         Initialize search providers based on available API keys.
-        
-        Dynamically creates search providers using environment variables,
-        allowing fallback and flexibility in search strategies.
+        Prioritizes Brave search with multiple attempts before falling back.
         """
         # Debug logging to understand provider initialization
         print("🕵️ Initializing Search Providers:")
         print(f"BRAVE_API_KEY present: {bool(os.getenv('BRAVE_API_KEY'))}")
         print(f"TAVILY_API_KEY present: {bool(os.getenv('TAVILY_API_KEY'))}")
 
-        # Ordered list of search providers with conditional initialization
-        self.providers = [
-            BraveSearchProvider() if os.getenv("BRAVE_API_KEY") else None,
+        # Initialize Brave provider first if available
+        self.brave_provider = BraveSearchProvider() if os.getenv("BRAVE_API_KEY") else None
+        
+        # Fallback providers
+        self.fallback_providers = [
             TavilySearchProvider() if os.getenv("TAVILY_API_KEY") else None,
             SerperSearchProvider() if os.getenv("SERPER_API_KEY") else None,
             JinaSearchProvider() if os.getenv("JINA_API_KEY") else None,
             DDGSearchProvider(),  # Always available as a fallback
             SerpApiSearchProvider() if os.getenv("SERPAPI_API_KEY") else None,
         ]
-
-        self.image_providers = [
-            SerperImageSearchProvider() if os.getenv("SERPER_API_KEY") else None,
-            BraveImageSearchProvider() if os.getenv("BRAVE_API_KEY") else None,
-        ]
         
         # Additional debug logging to show active providers
         print("🔍 Active Providers:")
-        for provider in self.providers:
+        if self.brave_provider:
+            print(" - BraveSearchProvider (Primary)")
+        print("Fallback Providers:")
+        for provider in self.fallback_providers:
             if provider:
                 print(f" - {type(provider).__name__}")
 
-
-    def image_search(self, query: str, max_results: int = 10) -> List[ImageSearchResult]:
-        """Attempt image search using multiple providers"""
-        print(f"🔎 Attempting image search with query: {query}")
-        
-        for provider in self.image_providers:
-            if provider is not None:
-                print(f"Trying image provider: {type(provider).__name__}")
-                try:
-                    results = provider.image_search(query, max_results)
-                    if results:
-                        print(f"✅ Successfully retrieved images from {type(provider).__name__}")
-                        return results
-                except Exception as e:
-                    print(f"❌ {type(provider).__name__} failed: {str(e)}")
-        
-        return []
-    
     def search(self, query: str, max_results: int = 10) -> List[SearchResult]:
         """
-        Attempt to search using multiple providers in a resilient manner.
-        
-        Tries each configured search provider sequentially, returning 
-        results from the first successful provider.
+        Attempt to search using Brave first with multiple attempts before falling back.
         
         Args:
             query (str): Search query string
@@ -463,9 +526,18 @@ class ResilientSearcher:
         """
         print(f"🔎 Attempting to search with query: {query}")
         
-        for provider in self.providers:
+        # Try Brave first if available
+        if self.brave_provider:
+            print("🦁 Attempting Brave Search as primary provider")
+            results = self.brave_provider.search(query, max_results)
+            if results:
+                return results
+            print("⚠️ Brave Search returned no results, falling back to other providers")
+        
+        # Fall back to other providers
+        for provider in self.fallback_providers:
             if provider is not None:
-                print(f"Trying provider: {type(provider).__name__}")
+                print(f"Trying fallback provider: {type(provider).__name__}")
                 try:
                     results = provider.search(query, max_results)
                     if results:
