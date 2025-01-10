@@ -82,6 +82,7 @@ This app uses [Streamlit](https://streamlit.io/), a Python framework for rapid p
 │   ├── chats
 │   └── jane_smith.md
 ├── advisors.py
+├── agents.py
 ├── content
 ├── cursor_prompts
 │   ├── howto_add_comments.md
@@ -112,6 +113,7 @@ This app uses [Streamlit](https://streamlit.io/), a Python framework for rapid p
 │   │   └── index.json
 │   └── notepad_prompt.json
 ├── notepads.py
+├── papers
 ├── repo_tools
 │   ├── README.md
 │   ├── generate_env_file.py
@@ -162,6 +164,7 @@ This app uses [Streamlit](https://streamlit.io/), a Python framework for rapid p
 │   ├── make_book.py
 │   ├── use_ai.py
 │   ├── use_brainstorm.py
+│   ├── use_github.py
 │   ├── use_notion.py
 │   ├── use_reasoning.py
 │   ├── use_todo_list.py
@@ -248,7 +251,6 @@ Tools in this framework provide powerful, modular functionality that can be leve
             "destination": "/data/files/new_folder/renamed.md"
         }
     ]
-    
 5. `get_advice`: Get advice from a specified advisor based on the given query posed by a user
 6. `get_company_updates`: Fetch the recent LinkedIn updates posted by a given list of companies
 7. `get_current_weather`: Provide the current weather for a given location when asked by a user
@@ -267,13 +269,14 @@ Tools in this framework provide powerful, modular functionality that can be leve
 20. `make_book`: Generate a complete book with multiple chapters on any topic using AI. The tool handles research, writing, and formatting.
 21. `use_ai`: Makes a call to an AI language model API with specified messages and model selection. Importantly, this tool supports file inclusion in message content using special syntax. Key Features: 1. File Inclusion: Use <$filename$> syntax to include file contents 2. Directory Inclusion: Use <$dir:pattern$> for multiple files 3. Context Preservation: Include previous results or conversation history Common Usage Patterns: 1....
 22. `use_brainstorm`: Generate creative ideas using various brainstorming techniques. Respond with a clean markdown format that presents the ideas in the most useful format for the user. Methods: Reverse brainstorming involves identifying ways to cause a problem or achieve the opposite effect. Perfect for spotting potential issues and coming up with innovative solutions. Role storming adopting the perspective of someone else to...
-23. `use_notion`: This tool allows you to interact with Notion by either creating new pages or fetching existing page content. Use 'create_page' to add new content and 'fetch_content' to retrieve existing content.
-24. `use_sequential_thinking`: A tool for dynamic, reflective, and self-directed sequential reasoning. It stores a chain of thoughts, supports revisions and branching, and can optionally suggest next steps using an LLM if needed.
-25. `use_todo_list`: Use a todo list to keep track of activities. You can use `create` to create a new todo list, optionally with initial items. Use `read` to read a given todo list by passing in the id. Use `update` to update the state of the todo list, eg by marking an item as 'done'. Each item follows a structured schema with...
-26. `web_image_search`: Perform an image search to find the best matching image for a given user request
-27. `web_read_page`: Fetches and returns a clean markdown version of a webpage.
-28. `web_scrape`: Fetches and extracts textual content from a specified URL and saves it to a file. The content is saved in markdown format with proper formatting and structure. Use this tool to gather information from web pages for learning, data analysis, or incorporating external knowledge into your responses. This is helpful when you need to access the latest information or data...
-29. `web_search`: Performs a comprehensive web search using multiple search providers (Brave, Tavily, DuckDuckGo, etc.). The tool optimizes the search query using AI and returns ranked results. Use this tool when you need to find current information about any topic, verify facts, or gather data from multiple sources. Results include titles, URLs, and descriptions from various web pages.
+23. `use_github`: Interact with GitHub repositories to perform various operations like searching repos, getting file contents, managing PRs and issues, etc. Repository information can be provided via URL or owner/repo parameters. Can also analyze repositories and answer questions about them.
+24. `use_notion`: The use_notion tool allows you to interact with Notion by either creating new pages or fetching existing page content.
+25. `use_sequential_thinking`: A tool for dynamic, reflective, and self-directed sequential reasoning. It stores a chain of thoughts, supports revisions and branching, and can optionally suggest next steps using an LLM if needed.
+26. `use_todo_list`: Use a todo list to keep track of activities. You can use `create` to create a new todo list, optionally with initial items. Use `read` to read a given todo list by passing in the id. Use `update` to update the state of the todo list, eg by marking an item as 'done'. Each item follows a structured schema with...
+27. `web_image_search`: Perform an image search to find the best matching image for a given user request
+28. `web_read_page`: Fetches and returns a clean markdown version of a webpage.
+29. `web_scrape`: Fetches and extracts textual content from a specified URL and saves it to a file. The content is saved in markdown format with proper formatting and structure. Use this tool to gather information from web pages for learning, data analysis, or incorporating external knowledge into your responses. This is helpful when you need to access the latest information or data...
+30. `web_search`: Performs a comprehensive web search using multiple search providers (Brave, Tavily, DuckDuckGo, etc.). The tool optimizes the search query using AI and returns ranked results. Use this tool when you need to find current information about any topic, verify facts, or gather data from multiple sources. Results include titles, URLs, and descriptions from various web pages.
 
 
 ## Notepads

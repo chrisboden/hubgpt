@@ -623,11 +623,19 @@ messages=[
 
 ---
 
+## use_github
+
+**Source File:** `use_github.py`
+
+**Description:** Interact with GitHub repositories to perform various operations like searching repos, getting file contents, managing PRs and issues, etc. Repository information can be provided via URL or owner/repo parameters. Can also analyze repositories and answer questions about them.
+
+---
+
 ## use_notion
 
 **Source File:** `use_notion.py`
 
-**Description:** This tool allows you to interact with Notion by either creating new pages or fetching existing page content. Use 'create_page' to add new content and 'fetch_content' to retrieve existing content.
+**Description:** The use_notion tool allows you to interact with Notion by either creating new pages or fetching existing page content.
 
 ---
 

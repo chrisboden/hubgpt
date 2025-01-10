@@ -20,6 +20,7 @@
 │   ├── chats
 │   └── jane_smith.md
 ├── advisors.py
+├── agents.py
 ├── content
 ├── cursor_prompts
 │   ├── howto_add_comments.md
@@ -50,6 +51,7 @@
 │   │   └── index.json
 │   └── notepad_prompt.json
 ├── notepads.py
+├── papers
 ├── repo_tools
 │   ├── README.md
 │   ├── generate_env_file.py
@@ -100,6 +102,7 @@
 │   ├── make_book.py
 │   ├── use_ai.py
 │   ├── use_brainstorm.py
+│   ├── use_github.py
 │   ├── use_notion.py
 │   ├── use_reasoning.py
 │   ├── use_todo_list.py
