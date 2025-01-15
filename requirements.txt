@@ -1,7 +1,3 @@
-PIL
-Pillow
-Requests
-Wikipedia-API
 asyncio
 beautifulsoup4
 duckdb
@@ -11,11 +7,13 @@ halo
 openai
 pandas
 pathspec
+pillow
 protobuf
 python-dateutil
 python-dotenv
 python-frontmatter
 pytube
+pytz
 requests
 shortuuid
 st-copy-to-clipboard
@@ -23,5 +21,6 @@ streamlit
 tavily-python
 termcolor
 urllib3
+wikipedia-api
 youtube-transcript-api
 yt-dlp
