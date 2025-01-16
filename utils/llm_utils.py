@@ -9,6 +9,7 @@ from openai.types.chat import ChatCompletion
 from utils.tool_utils import execute_tool, TOOL_METADATA_REGISTRY
 from utils.chat_utils import save_chat_history
 from utils.log_utils import log_llm_request, log_llm_response, toggle_detailed_llm_logging, get_helicone_config
+import openai
 
 # Configure logging
 LOGGING_ENABLED = True
@@ -315,6 +316,21 @@ class ResponseHandler:
             
             return self.full_response, function_call_data
             
+        except openai.APIError as e:
+            error_msg = f"OpenRouter API Error: {str(e)}"
+            error_details = {
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "status_code": getattr(e, 'status_code', None),
+                "response": getattr(e, 'response', None),
+                "headers": getattr(e, 'headers', None),
+                "body": getattr(e, 'body', None)
+            }
+            logging.error(error_msg)
+            logging.error("Detailed error information:")
+            logging.error(json.dumps(error_details, indent=2))
+            self.response_placeholder.markdown(f"❌ {error_msg}")
+            return self.full_response, function_call_data
         except Exception as e:
             error_msg = f"Error processing stream: {str(e)}"
             logging.error(error_msg)

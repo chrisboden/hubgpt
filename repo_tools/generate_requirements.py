@@ -141,19 +141,22 @@ def generate_requirements():
                 'genai': 'google-generativeai',
                 'wikipediaapi': 'Wikipedia-API',
                 'dateutil': 'python-dateutil',  # Map dateutil to python-dateutil
+                'pil': 'Pillow',  # Map PIL/pil imports to Pillow package
+                'PIL': 'Pillow',  # Also map uppercase PIL to Pillow
                 # Add more mappings as needed
             }
             
             # Normalize package names (replace - with _)
-            normalized_packages = {pkg.replace('-', '_') for pkg in packages}
+            normalized_packages = {pkg.replace('-', '_').lower() for pkg in packages}
             
             # Add mapped package names and filter out local modules
             for imp in all_imports:
-                if imp in package_mappings:
-                    normalized_name = package_mappings[imp].replace('-', '_')
+                imp_lower = imp.lower()
+                if imp_lower in package_mappings:
+                    normalized_name = package_mappings[imp_lower].replace('-', '_').lower()
                     normalized_packages.add(normalized_name)
-                elif imp not in local_modules:  # Only add if not a local module
-                    normalized_packages.add(imp)
+                elif imp_lower not in local_modules:  # Only add if not a local module
+                    normalized_packages.add(imp_lower)
             
             # Filter out standard library modules and built-in packages
             stdlib_modules = set([

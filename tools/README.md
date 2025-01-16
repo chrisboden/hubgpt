@@ -687,3 +687,48 @@ messages=[
 
 ---
 
+## Available Tools
+
+### Email Creation (`email_create.py`)
+
+The email creation tool provides functionality to send branded emails using the Hub's HTML template.
+
+#### Features
+- Branded HTML email template with responsive design
+- Support for plain text and HTML content
+- CC and BCC recipient support
+- Custom sender email support
+- Zapier webhook integration for sending
+
+#### Basic Usage
+```python
+from tools.email_create import send_email
+
+# Simple usage
+result = send_email(
+    to="recipient@example.com",
+    subject="Hello from the Hub",
+    content="Your message here"
+)
+
+# Advanced usage
+result = send_email(
+    to=["recipient1@example.com", "recipient2@example.com"],
+    subject="Team Update",
+    content="Your message here",
+    cc="manager@example.com",
+    bcc=["archive@example.com"]
+)
+```
+
+#### Command Line Usage
+```bash
+python3 standalone_tools.py email_create \
+    --to "recipient@example.com" \
+    --subject "Hello from the Hub" \
+    --content "Your message here"
+```
+
+#### Required Environment Variables
+- `ZAPIER_EMAIL_WEBHOOK_URL`: Webhook URL for sending emails via Zapier
+

@@ -27,6 +27,7 @@
 │   ├── howto_add_logging.md
 │   ├── howto_add_spinner_status.md
 │   ├── howto_computer-use.md
+│   ├── howto_handle_function_calling.md
 │   ├── howto_researcher.md
 │   ├── howto_understand_this_app.md
 │   ├── howto_use_openrouter.md
@@ -69,6 +70,7 @@
 │   └── tools_readme_intro.md
 ├── requirements.txt
 ├── snippets
+├── standalone_tools.py
 ├── static
 │   ├── README.md
 │   ├── css
@@ -77,6 +79,9 @@
 │   └── images
 │       ├── logo.png
 │       └── logo_full.png
+├── tokenizer.html
+├── tokenizers.html
+├── tokenizers3.html
 ├── tools
 │   ├── .DS_Store
 │   ├── README.md
@@ -122,6 +127,7 @@
     ├── prompt_utils.py
     ├── scrape_utils.py
     ├── search_utils.py
+    ├── time_utils.py
     ├── tool_utils.py
     └── ui_utils.py
 ```

@@ -1,5 +1,5 @@
 {
-    "model": "google/gemini-flash-1.5-8b",
+    "model": "deepseek/deepseek-chat",
     "temperature": 1.15,
     "max_tokens": 8092,
     "tool_choice": "auto",

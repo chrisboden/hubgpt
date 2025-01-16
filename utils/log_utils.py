@@ -9,7 +9,7 @@ from logging.handlers import RotatingFileHandler
 
 # Global flags for logging control
 DETAILED_LLM_LOGGING = True
-INCLUDE_RAW_RESPONSE = False
+INCLUDE_RAW_RESPONSE = True
 USE_HELICONE = False  # Default to not using Helicone
 
 __all__ = [

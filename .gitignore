@@ -231,3 +231,6 @@ scrape.md
 teams.py
 
 .webui_secret_key
+
+# Private tools
+tools/member_db.py
