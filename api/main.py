@@ -17,6 +17,8 @@ import asyncio
 import time
 import psycopg2.pool
 from functools import lru_cache
+import httpx
+from supabase import create_client, Client
 
 # Load environment variables
 load_dotenv()
@@ -93,6 +95,63 @@ class Include(BaseModel):
     path: str
     content: str
     hash: str | None = None
+
+# Add Supabase client setup
+supabase: Client = create_client(
+    os.getenv('SUPABASE_URL'),
+    os.getenv('SUPABASE_KEY')  # Use SUPABASE_KEY instead of SUPABASE_ANON_KEY for admin access
+)
+
+@lru_cache(maxsize=100)
+async def get_resolved_advisor(advisor_name: str) -> Dict:
+    """Get advisor and resolve includes directly from Supabase Storage."""
+    try:
+        # Get advisor from database
+        response = supabase.table('advisors').select('*').eq('name', advisor_name).execute()
+        if not response.data:
+            raise HTTPException(status_code=404, detail=f"Advisor {advisor_name} not found")
+        
+        advisor = response.data[0]
+        
+        # Find all includes in the system message
+        pattern = r'<\$([^$]+)\$>'
+        includes = re.findall(pattern, advisor['system_message'])
+        
+        # Fetch all includes in parallel
+        async def fetch_include(path: str):
+            try:
+                # Extract bucket name from path (everything before first /)
+                bucket = path.split('/')[0]
+                # Get file path within bucket (everything after first /)
+                file_path = '/'.join(path.split('/')[1:])
+                
+                # Fix common path issues
+                if file_path == 'aboutme.md':
+                    file_path = 'about_me.md'  # Match actual filename in storage
+                    
+                print(f"Fetching from bucket: {bucket}, path: {file_path}")
+                
+                response = supabase.storage.from_(bucket).download(file_path)
+                return path, response.decode()
+            except Exception as e:
+                print(f"Error fetching include {path}: {str(e)}")
+                return path, f"[Include {path} not found]"
+        
+        # Create tasks for parallel execution
+        tasks = [fetch_include(path) for path in includes]
+        include_contents = await asyncio.gather(*tasks)
+        
+        # Replace all includes in the system message
+        resolved_message = advisor['system_message']
+        for path, content in include_contents:
+            resolved_message = resolved_message.replace(f'<${path}$>', content)
+        
+        # Return resolved advisor
+        advisor['system_message'] = resolved_message
+        return advisor
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error resolving advisor: {str(e)}")
 
 @app.get("/advisors", response_model=List[Advisor])
 async def get_advisors():
@@ -188,55 +247,55 @@ async def process_includes(content: str, conn) -> str:
 
 @app.get("/test/jim_collins")
 async def test_jim_collins():
-    """Test endpoint that gets Jim Collins advisor, processes includes, and streams LLM response."""
+    """Test endpoint that gets Jim Collins advisor and streams LLM response."""
     try:
-        # Get database connection
-        db_url = urlparse(os.getenv('dbpoolrconnxn'))
-        conn = psycopg2.connect(
-            dbname=db_url.path[1:],
-            user=db_url.username,
-            password=db_url.password,
-            host=db_url.hostname,
-            port=db_url.port
-        )
+        start_time = time.time()
+        conn = None
         
-        cur = conn.cursor(cursor_factory=RealDictCursor)
+        print(f"\nStarting Jim Collins test...")
         
-        # Get Jim Collins advisor
-        cur.execute("""
-            SELECT * FROM advisors 
-            WHERE name = 'Jim_Collins'
-        """)
-        advisor = cur.fetchone()
+        # Get resolved advisor from edge function
+        advisor_start = time.time()
+        print(f"Fetching advisor with resolved includes...")
+        advisor = await get_resolved_advisor('Jim_Collins')
+        print(f"Advisor fetch time: {time.time() - advisor_start:.2f}s")
         
         if not advisor:
             raise HTTPException(status_code=404, detail="Jim Collins advisor not found")
-        
+            
         # Convert Decimal values to float
         for key in ['temperature', 'top_p', 'frequency_penalty', 'presence_penalty']:
             if advisor[key] is not None:
                 advisor[key] = float(advisor[key])
         
-        # Process system message
-        system_message = await process_includes(advisor['system_message'], conn)
+        # Get database connection from pool
+        db_start = time.time()
+        print(f"Getting connection from pool...")
+        conn = get_pool().getconn()
+        print(f"DB connection time: {time.time() - db_start:.2f}s")
         
         # Create chat session
+        chat_start = time.time()
         chat_id = await create_chat(advisor['id'], conn)
-        print(f"Created chat session: {chat_id}")  # Debug log
+        print(f"Created chat session: {chat_id}")
+        print(f"Chat session time: {time.time() - chat_start:.2f}s")
         
         # Initialize OpenAI client with OpenRouter
+        client_start = time.time()
+        print(f"Initializing OpenAI client...")
         client = OpenAI(
             base_url=os.getenv('API_BASE_URL'),
             api_key=os.getenv("OPENROUTER_API_KEY"),
             default_headers={
-                'HTTP-Referer': 'https://hubgpt.ai',  # Required for OpenRouter
-                'X-Title': 'HubGPT',  # Optional, but good practice
+                'HTTP-Referer': 'https://hubgpt.ai',
+                'X-Title': 'HubGPT',
             }
         )
+        print(f"Client init time: {time.time() - client_start:.2f}s")
         
-        # Prepare messages
+        # Prepare messages using system message from resolved advisor
         messages = [
-            {"role": "system", "content": system_message},
+            {"role": "system", "content": advisor['system_message']},
             {
                 "role": "user", 
                 "content": "What kind of leaders can take companies from good to great? What are their key characteristics and behaviors?"
@@ -244,12 +303,8 @@ async def test_jim_collins():
         ]
         
         # Make LLM call with streaming
-        print(f"Making LLM API call...")  # Debug log
-        print(f"Stream value from DB: {advisor['stream']}, type: {type(advisor['stream'])}")  # Debug log
-
-        # Force streaming regardless of database value
-        stream_param = True
-        print(f"Using stream param: {stream_param}, type: {type(stream_param)}")  # Debug log
+        print(f"Making LLM API call...")
+        print(f"Total prep time before LLM call: {time.time() - start_time:.2f}s")
 
         response = client.chat.completions.create(
             model=advisor['model'],
@@ -259,7 +314,7 @@ async def test_jim_collins():
             top_p=advisor['top_p'] if advisor['top_p'] else 1,
             frequency_penalty=advisor['frequency_penalty'] if advisor['frequency_penalty'] else 0,
             presence_penalty=advisor['presence_penalty'] if advisor['presence_penalty'] else 0,
-            stream=True  # Force streaming
+            stream=True
         )
         
         async def stream_response():
@@ -274,8 +329,8 @@ async def test_jim_collins():
                         "advisor": advisor['name'],
                         "model": advisor['model'],
                         "temperature": advisor['temperature'],
-                        "system_message_length": len(system_message),
-                        "system_message_preview": system_message[:200] + "...",
+                        "system_message_length": len(advisor['system_message']),
+                        "system_message_preview": advisor['system_message'][:200] + "...",
                         "chat_id": chat_id,
                         "message_count": len(messages) - 1,  # Excluding system message
                         "streaming": True,
@@ -319,7 +374,7 @@ async def test_jim_collins():
                 if cur:
                     cur.close()
                 if conn:
-                    conn.close()
+                    get_pool().putconn(conn)
                 print(f"Total request time: {time.time() - start_time:.2f}s")  # Debug log
         
         return StreamingResponse(
@@ -335,10 +390,13 @@ async def test_jim_collins():
         )
         
     except Exception as e:
-        if 'cur' in locals():
+        print(f"Error in test_jim_collins: {str(e)}")  # Debug log
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")  # Debug log
+        if cur:
             cur.close()
-        if 'conn' in locals():
-            conn.close()
+        if conn:
+            get_pool().putconn(conn)
         raise HTTPException(status_code=500, detail=str(e))
 
 async def get_chat_history(chat_id: int, conn) -> List[Dict]:
@@ -392,52 +450,46 @@ async def save_message(chat_id: int, role: str, content: str, conn):
 async def chat_with_advisor(advisor_name: str, request: ChatRequest):
     """Generic chat endpoint that handles includes and streams responses."""
     conn = None
+    cur = None  # Define cur at the start
     start_time = time.time()
     try:
         print(f"\nStarting chat with advisor: {advisor_name}")
         
-        # Get database connection from pool
-        db_start = time.time()
-        print(f"Getting connection from pool...")
-        conn = get_pool().getconn()
-        print(f"DB connection time: {time.time() - db_start:.2f}s")
-
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-        
-        # Get advisor
+        # Get resolved advisor from edge function
         advisor_start = time.time()
-        print(f"Fetching advisor details...")  # Debug log
-        cur.execute("""
-            SELECT * FROM advisors 
-            WHERE LOWER(name) = LOWER(%s)
-        """, (advisor_name,))
-        advisor = cur.fetchone()
+        print(f"Fetching advisor with resolved includes...")
+        advisor = await get_resolved_advisor(advisor_name)
         print(f"Advisor fetch time: {time.time() - advisor_start:.2f}s")
         
         if not advisor:
             raise HTTPException(status_code=404, detail=f"Advisor {advisor_name} not found")
         
-        print(f"Found advisor: {advisor['name']}")  # Debug log
+        print(f"Found advisor: {advisor['name']}")
         
         # Convert Decimal values to float
         for key in ['temperature', 'top_p', 'frequency_penalty', 'presence_penalty']:
             if advisor[key] is not None:
                 advisor[key] = float(advisor[key])
         
+        # Get database connection from pool
+        db_start = time.time()
+        print(f"Getting connection from pool...")
+        conn = get_pool().getconn()
+        print(f"DB connection time: {time.time() - db_start:.2f}s")
+        
         # Get or create chat session
         chat_start = time.time()
         chat_id = request.chat_id
         if not chat_id:
-            print(f"Creating new chat session...")  # Debug log
+            print(f"Creating new chat session...")
             chat_id = await create_chat(advisor['id'], conn)
-            print(f"Created chat session: {chat_id}")  # Debug log
+            print(f"Created chat session: {chat_id}")
         else:
-            print(f"Using existing chat session: {chat_id}")  # Debug log
+            print(f"Using existing chat session: {chat_id}")
         print(f"Chat session time: {time.time() - chat_start:.2f}s")
         
-        # Process system message
+        # Use system message (already resolved from edge function)
         system_message = request.system_message_override or advisor['system_message']
-        system_message = await process_includes(system_message, conn)
         
         # Initialize OpenAI client with OpenRouter
         client_start = time.time()
