@@ -166,6 +166,7 @@ cython_debug/
 /advisors/ideas/*
 /advisors/archive/*
 /advisors/*.json
+/advisors/*.md
 
 /logs/*
 /snippets/*
@@ -231,3 +232,5 @@ scrape.md
 teams.py
 
 .webui_secret_key
+.DS_Store
+tools/linkedin_bio_writer.py

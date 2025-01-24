@@ -662,18 +662,6 @@ class LLMResponseManager:
     def handle_tool_response(self, tool_name, function_call_data):
         """
         Process tool execution and prepare follow-up conversation context.
-        
-        Workflow:
-        1. Execute the specified tool
-        2. Record the tool interaction in chat history
-        3. Prepare follow-up messages for potential additional processing
-        
-        Args:
-            tool_name: Name of the tool to execute
-            function_call_data: Detailed parameters for tool execution
-        
-        Returns:
-            tuple: Tool execution result and prepared follow-up messages
         """
         # Execute tool and capture its result
         tool_result = self.response_handler.handle_tool_execution(
@@ -699,6 +687,13 @@ class LLMResponseManager:
             function_call_data,
             tool_result
         )
+        
+        # For direct stream tools, add an additional assistant message with the same content
+        # but don't trigger a rerun since the content is already displayed
+        if tool_result.get('direct_stream'):
+            self.history_manager.add_assistant_response(tool_result['result'])
+            self.history_manager.save()
+            return tool_result, None
         
         # Prepare context for potential follow-up LLM interaction
         follow_up_messages = self._construct_follow_up_messages(
@@ -758,17 +753,6 @@ class LLMResponseManager:
     def process_response(self):
         """
         Central method orchestrating the entire LLM interaction workflow.
-        
-        Comprehensive process handling:
-        - UI setup
-        - Initial LLM call
-        - Tool execution (if applicable)
-        - Response generation
-        - Chat history management
-        - Error handling
-        
-        Returns:
-            list: Updated chat history after processing
         """
         try:
             with st.spinner(f"{self.selected_advisor} is thinking..."):
@@ -791,11 +775,12 @@ class LLMResponseManager:
                         
                         # Direct streaming for certain tools
                         if tool_result.get('direct_stream'):
-                            self.history_manager.add_assistant_response(tool_result['result'])
+                            # Remove this duplicate handling since it's already handled in handle_tool_response
+                            # self.history_manager.add_assistant_response(tool_result['result'])
                             self.history_manager.save()
-                            st.rerun()
+                            # st.rerun()  # Remove this rerun
                             return self.chat_history
-                            
+                        
                         # Follow-up LLM call for complex tool interactions
                         final_response, _ = self.make_llm_call(follow_up_messages)
                         self.history_manager.add_assistant_response(final_response)
@@ -805,7 +790,6 @@ class LLMResponseManager:
                         self.history_manager.add_assistant_response(full_response)
                         
         except Exception as e:
-            # Comprehensive error management
             st.error(f"An error occurred: {e}")
             logging.error(f"LLM Response Error: {e}")
             logging.exception(e)
