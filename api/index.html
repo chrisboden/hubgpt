@@ -64,7 +64,29 @@
     </style>
 </head>
 <body class="bg-gray-100">
-    <div class="container mx-auto px-4 py-8">
+    <!-- Login Form -->
+    <div id="loginForm" class="fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center">
+        <div class="bg-white p-8 rounded-lg shadow-lg w-96">
+            <h2 class="text-2xl font-bold mb-6">Login Required</h2>
+            <form id="authForm" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium mb-1">Username</label>
+                    <input type="text" id="username" class="w-full p-2 border rounded" required>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1">Password</label>
+                    <input type="password" id="password" class="w-full p-2 border rounded" required>
+                </div>
+                <div id="loginError" class="text-red-500 text-sm hidden"></div>
+                <button type="submit" class="w-full bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600">
+                    Login
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Main Content (initially hidden) -->
+    <div id="mainContent" class="container mx-auto px-4 py-8 hidden">
         <h1 class="text-3xl font-bold mb-8">HubGPT API Test Harness</h1>
 
         <!-- Health Check Section -->
@@ -261,6 +283,58 @@
         let currentConversationId = null;
         let currentReader = null;
         let currentController = null;
+        let authToken = null;
+
+        // Auth functions
+        async function login(username, password) {
+            try {
+                const response = await fetch(`${API_BASE}/auth/verify`, {
+                    headers: {
+                        'Authorization': 'Basic ' + btoa(username + ':' + password)
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error('Invalid credentials');
+                }
+
+                // Store auth token
+                authToken = btoa(username + ':' + password);
+                
+                // Hide login form and show main content
+                document.getElementById('loginForm').classList.add('hidden');
+                document.getElementById('mainContent').classList.remove('hidden');
+                
+                // Initialize app
+                document.getElementById('listAdvisors').click();
+            } catch (error) {
+                document.getElementById('loginError').textContent = error.message;
+                document.getElementById('loginError').classList.remove('hidden');
+            }
+        }
+
+        // Add auth header to all fetch requests
+        const originalFetch = window.fetch;
+        window.fetch = function() {
+            if (authToken && !arguments[1]?.headers?.Authorization) {
+                if (!arguments[1]) {
+                    arguments[1] = {};
+                }
+                if (!arguments[1].headers) {
+                    arguments[1].headers = {};
+                }
+                arguments[1].headers.Authorization = `Basic ${authToken}`;
+            }
+            return originalFetch.apply(this, arguments);
+        };
+
+        // Login form handler
+        document.getElementById('authForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            await login(username, password);
+        });
 
         // Health check functionality
         document.getElementById('healthCheck').addEventListener('click', async () => {

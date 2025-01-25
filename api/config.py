@@ -40,4 +40,8 @@ DEFAULT_MAX_TOKENS = 1000
 
 # Logging configuration
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
-LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s' 
+LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+
+# Auth settings
+API_USERNAME = os.getenv("API_USERNAME", "admin")
+API_PASSWORD = os.getenv("API_PASSWORD", "password") 

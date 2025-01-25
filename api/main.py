@@ -1,12 +1,14 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 import logging
 import sys
 import os
 from datetime import datetime
 from pathlib import Path
+import secrets
 
 from .routers import advisors, chat, files
 from . import config
@@ -22,6 +24,22 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
+
+# Initialize HTTP Basic Auth
+security = HTTPBasic()
+
+def verify_auth(credentials: HTTPBasicCredentials = Depends(security)):
+    """Verify HTTP Basic Auth credentials"""
+    is_username_correct = secrets.compare_digest(credentials.username, config.API_USERNAME)
+    is_password_correct = secrets.compare_digest(credentials.password, config.API_PASSWORD)
+    
+    if not (is_username_correct and is_password_correct):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid credentials",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    return credentials.username
 
 # Create FastAPI app
 app = FastAPI(
@@ -48,9 +66,9 @@ static_dir.mkdir(exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 # Include routers
-app.include_router(advisors.router, tags=["advisors"])
-app.include_router(chat.router, tags=["chat"])
-app.include_router(files.router, tags=["files"])
+app.include_router(advisors.router, tags=["advisors"], dependencies=[Depends(verify_auth)])
+app.include_router(chat.router, tags=["chat"], dependencies=[Depends(verify_auth)])
+app.include_router(files.router, tags=["files"], dependencies=[Depends(verify_auth)])
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
@@ -78,6 +96,11 @@ async def read_root():
             content=f"<h1>Error: {str(e)}</h1>",
             status_code=500
         )
+
+@app.get("/auth/verify")
+async def verify_credentials(username: str = Depends(verify_auth)):
+    """Verify credentials and return success"""
+    return {"status": "success", "username": username}
 
 @app.get("/health")
 async def health_check():
