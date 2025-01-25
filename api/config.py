@@ -17,7 +17,8 @@ if os.getenv("RAILWAY_ENVIRONMENT"):
     # Create a directory for this specific deployment
     DEPLOYMENT_DIR = BASE_DIR / "hubgpt"
 else:
-    BASE_DIR = Path(".")
+    # In development, use the project root
+    BASE_DIR = Path(__file__).parent.parent.absolute()
     DEPLOYMENT_DIR = BASE_DIR
 
 # Application directories

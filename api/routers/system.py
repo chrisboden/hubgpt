@@ -77,6 +77,7 @@ async def setup_environment():
             # Create a basic advisor for testing
             from ..services.advisor_service import create_json_content
             from ..models.advisors import AdvisorCreate, Message
+            from ..services.storage_service import write_json_file
             
             test_advisor = AdvisorCreate(
                 name="Test_Advisor",
@@ -95,7 +96,10 @@ async def setup_environment():
             
             content = create_json_content(test_advisor)
             test_path = ADVISORS_DIR / "Test_Advisor.json"
-            test_path.write_text(content)
+            success = write_json_file(test_path, content)
+            
+            if not success:
+                raise Exception("Failed to write test advisor file")
             
         return {
             "status": "success",
