@@ -10,8 +10,12 @@ API_VERSION = "0.1.0"
 API_TITLE = "HubGPT API"
 API_DESCRIPTION = "API backend for HubGPT - AI advisor framework"
 
-# File paths
-BASE_DIR = Path(".")
+# File paths - handle both development and production paths
+if os.getenv("RAILWAY_ENVIRONMENT"):
+    BASE_DIR = Path("/app")
+else:
+    BASE_DIR = Path(".")
+
 ADVISORS_DIR = BASE_DIR / "advisors"
 CHATS_DIR = ADVISORS_DIR / "chats"
 ARCHIVE_DIR = ADVISORS_DIR / "archive"
@@ -28,7 +32,7 @@ CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_METHODS = ["*"]
 CORS_ALLOW_HEADERS = ["*"]
 
-# OpenRouter settings (for future use)
+# OpenRouter settings
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 DEFAULT_MODEL = "gpt-4-0125-preview"  # Default model to use
 DEFAULT_TEMPERATURE = 0.7
