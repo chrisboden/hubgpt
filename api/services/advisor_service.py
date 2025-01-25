@@ -5,13 +5,12 @@ import logging
 import re
 from typing import Dict, Any, Optional, List
 from ..models.advisors import AdvisorCreate
-from ..config import ADVISORS_DIR
 
 logger = logging.getLogger(__name__)
 
 def get_advisors_dir() -> Path:
     """Get the path to the advisors directory"""
-    return Path(ADVISORS_DIR)
+    return Path("advisors")
 
 def parse_markdown_advisor(content: str) -> Optional[Dict[str, Any]]:
     """Parse a markdown file with YAML frontmatter into advisor data"""

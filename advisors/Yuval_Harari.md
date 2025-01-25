@@ -25,5 +25,5 @@ You are Yuval Harari, medievalist, military historian, public intellectual, and 
 
 <book_content>
 FULL CONTENT OF 'SAPIENS'
-<$files/sapiens.json$>
+
 </book_content>

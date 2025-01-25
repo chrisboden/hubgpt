@@ -31,7 +31,6 @@ from ..api_utils.llm_utils import (
 from ..api_utils.prompt_utils import load_prompt, load_advisor_data
 from ..api_utils.tool_utils import load_tools, execute_tool
 from ..api_utils.client import get_llm_client
-from ..config import CHATS_DIR, ARCHIVE_DIR, ADVISORS_DIR
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -47,10 +46,10 @@ except Exception as e:
 
 def ensure_chat_dirs():
     """Ensure chat directories exist"""
-    CHATS_DIR.mkdir(parents=True, exist_ok=True)
-    ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
+    Path("advisors/chats").mkdir(parents=True, exist_ok=True)
+    Path("advisors/archive").mkdir(parents=True, exist_ok=True)
 
-@router.get("/advisor/{advisor_id}/history", response_model=List[ConversationMetadata])
+@router.get("/chat/advisor/{advisor_id}/history", response_model=List[ConversationMetadata])
 async def get_conversation_history(advisor_id: str):
     """Get conversation history for an advisor"""
     try:
@@ -58,9 +57,9 @@ async def get_conversation_history(advisor_id: str):
         history = []
         
         # Check current chat
-        current_path = CHATS_DIR / f"{advisor_id}.json"
-        if current_path.exists():
-            messages = load_chat_history(str(current_path))
+        current_path = f"advisors/chats/{advisor_id}.json"
+        if os.path.exists(current_path):
+            messages = load_chat_history(current_path)
             if messages:
                 history.append(ConversationMetadata(
                     id=advisor_id,
@@ -71,8 +70,9 @@ async def get_conversation_history(advisor_id: str):
                 ))
         
         # Check archived chats
-        if ARCHIVE_DIR.exists():
-            for file in ARCHIVE_DIR.glob(f"{advisor_id}_*.json"):
+        archive_dir = Path("advisors/archive")
+        if archive_dir.exists():
+            for file in archive_dir.glob(f"{advisor_id}_*.json"):
                 messages = load_chat_history(str(file))
                 if messages:
                     chat_id = file.stem  # Get filename without extension
@@ -92,15 +92,15 @@ async def get_conversation_history(advisor_id: str):
         logger.error(f"Error getting conversation history: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/advisor/{advisor_id}/latest", response_model=ConversationHistory)
+@router.get("/chat/advisor/{advisor_id}/latest", response_model=ConversationHistory)
 async def get_latest_conversation(advisor_id: str):
     """Get the latest conversation for an advisor"""
     try:
         ensure_chat_dirs()
         
         # Try to load from current chats
-        chat_history_path = CHATS_DIR / f"{advisor_id}.json"
-        chat_history = load_chat_history(str(chat_history_path))
+        chat_history_path = f"advisors/chats/{advisor_id}.json"
+        chat_history = load_chat_history(chat_history_path)
         
         if chat_history:
             # Ensure chat_history is a list of messages
@@ -125,14 +125,14 @@ async def get_latest_conversation(advisor_id: str):
             created_at=datetime.now(),
             updated_at=datetime.now()
         )
-        save_chat_history([], str(chat_history_path))
+        save_chat_history([], chat_history_path)
         return new_chat
         
     except Exception as e:
         logger.error(f"Error getting latest conversation: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/{conversation_id}/cancel")
+@router.post("/chat/{conversation_id}/cancel")
 async def cancel_stream(conversation_id: str):
     """Cancel an ongoing stream for a conversation"""
     try:
@@ -150,7 +150,7 @@ async def cancel_stream(conversation_id: str):
 # Track active streams
 active_streams = {}
 
-@router.post("/{conversation_id}/message")
+@router.post("/chat/{conversation_id}/message")
 async def add_message(
     conversation_id: str,
     request: ChatRequest,
@@ -159,20 +159,20 @@ async def add_message(
     """Add a message to a conversation and get response (streaming or non-streaming)"""
     try:
         # First check if this is a current chat
-        current_path = CHATS_DIR / f"{conversation_id}.json"
-        if current_path.exists():
+        current_path = f"advisors/chats/{conversation_id}.json"
+        if os.path.exists(current_path):
             chat_history_path = current_path
             advisor_id = conversation_id
         # Then check if it's an archived chat
         elif '_' in conversation_id and len(conversation_id.split('_')[-1]) == 6:
-            chat_history_path = ARCHIVE_DIR / f"{conversation_id}.json"
+            chat_history_path = f"advisors/archive/{conversation_id}.json"
             advisor_id = '_'.join(conversation_id.split('_')[:-1])
         else:
             raise HTTPException(status_code=404, detail="Conversation not found")
             
         logger.info(f"Adding message to chat: {chat_history_path}")
             
-        chat_history = load_chat_history(str(chat_history_path))
+        chat_history = load_chat_history(chat_history_path)
         messages = chat_history if isinstance(chat_history, list) else []
             
         # Create and add user message (only role and content)
@@ -183,7 +183,7 @@ async def add_message(
         messages.append(user_message)
         
         # Save updated history with user message
-        save_chat_history(messages, str(chat_history_path))
+        save_chat_history(messages, chat_history_path)
         
         # Load advisor data and build API params
         try:
@@ -256,7 +256,7 @@ async def add_message(
                     if not any(msg.get("tool_calls") for msg in messages if isinstance(msg, dict)):
                         messages.append(assistant_message)
                         
-                    save_chat_history(messages, str(chat_history_path))
+                    save_chat_history(messages, chat_history_path)
                     
                     # Send done event and flush
                     yield "event: done\ndata: {}\n\n"
@@ -297,7 +297,7 @@ async def add_message(
             })
             
             # Save updated history
-            save_chat_history(messages, str(chat_history_path))
+            save_chat_history(messages, chat_history_path)
             
             return ChatResponse(
                 conversation_id=conversation_id,
@@ -319,16 +319,16 @@ async def get_conversation(conversation_id: str):
         
         # If ID has hex suffix, it's an archived chat
         if '_' in conversation_id and len(conversation_id.split('_')[-1]) == 6:
-            chat_history_path = ARCHIVE_DIR / f"{conversation_id}.json"
+            chat_history_path = f"advisors/archive/{conversation_id}.json"
         else:
-            chat_history_path = CHATS_DIR / f"{conversation_id}.json"
+            chat_history_path = f"advisors/chats/{conversation_id}.json"
             
         logger.info(f"Loading chat from: {chat_history_path}")
         
         if not os.path.exists(chat_history_path):
             raise HTTPException(status_code=404, detail="Conversation not found")
             
-        chat_history = load_chat_history(str(chat_history_path))
+        chat_history = load_chat_history(chat_history_path)
         if not chat_history:
             raise HTTPException(status_code=404, detail="Conversation is empty")
             
@@ -366,7 +366,7 @@ async def create_new_chat(advisor_id: str):
         new_chat_id = f"{advisor_id}_{timestamp}"
         
         # Archive current chat if it exists
-        current_path = CHATS_DIR / f"{advisor_id}.json"
+        current_path = f"advisors/chats/{advisor_id}.json"
         if os.path.exists(current_path):
             # Archive with proper directory paths
             archive_chat_history(
@@ -376,7 +376,7 @@ async def create_new_chat(advisor_id: str):
             )
         
         # Create new empty chat
-        save_chat_history([], str(current_path))
+        save_chat_history([], current_path)
         
         # Return new chat info
         return ConversationHistory(

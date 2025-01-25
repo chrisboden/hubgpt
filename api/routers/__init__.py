@@ -1,6 +1,3 @@
-from . import advisors
-from . import chat
-from . import files
-from . import system
+from . import advisors, chat, files
 
-__all__ = ['advisors', 'chat', 'files', 'system'] 
+__all__ = ['advisors', 'chat', 'files'] 

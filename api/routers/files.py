@@ -4,13 +4,10 @@ from pathlib import Path
 from datetime import datetime
 import shutil
 import os
-import logging
-from typing import Optional
 
 from ..models.files import FileInfo, FileList, FileContent, FileRename
 
-router = APIRouter(tags=["files"])
-logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/files", tags=["files"])
 
 # Get base files directory from environment or use default
 FILES_DIR = Path(os.getenv("FILES_DIR", "files"))
@@ -155,41 +152,4 @@ async def delete_file(path: str):
     else:
         file_path.unlink()
         
-    return JSONResponse(content={"message": "Path deleted"})
-
-@router.get("/volume-status")
-async def get_volume_status():
-    """Get status of the mounted volume"""
-    try:
-        volume_path = Path("/files")
-        if not volume_path.exists():
-            return {
-                "status": "error",
-                "message": "Volume not mounted",
-                "path": str(volume_path)
-            }
-            
-        # Get volume stats
-        total, used, free = shutil.disk_usage(volume_path)
-        
-        # List top-level directories
-        dirs = [d.name for d in volume_path.iterdir() if d.is_dir()]
-        
-        return {
-            "status": "ok",
-            "path": str(volume_path),
-            "space": {
-                "total_gb": total // (2**30),
-                "used_gb": used // (2**30),
-                "free_gb": free // (2**30),
-                "used_percent": (used * 100) // total
-            },
-            "directories": dirs,
-            "is_writable": os.access(volume_path, os.W_OK)
-        }
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": str(e),
-            "path": str(volume_path)
-        } 
+    return JSONResponse(content={"message": "Path deleted"}) 
