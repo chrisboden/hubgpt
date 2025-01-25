@@ -12,16 +12,23 @@ API_DESCRIPTION = "API backend for HubGPT - AI advisor framework"
 
 # File paths - handle both development and production paths
 if os.getenv("RAILWAY_ENVIRONMENT"):
-    BASE_DIR = Path("/app")
+    # In production, use the mounted volume for persistent storage
+    BASE_DIR = Path("/files")
+    # Create a directory for this specific deployment
+    DEPLOYMENT_DIR = BASE_DIR / "hubgpt"
 else:
     BASE_DIR = Path(".")
+    DEPLOYMENT_DIR = BASE_DIR
 
-ADVISORS_DIR = BASE_DIR / "advisors"
+# Application directories
+ADVISORS_DIR = DEPLOYMENT_DIR / "advisors"
 CHATS_DIR = ADVISORS_DIR / "chats"
 ARCHIVE_DIR = ADVISORS_DIR / "archive"
-LOGS_DIR = BASE_DIR / "logs"
+LOGS_DIR = DEPLOYMENT_DIR / "logs"
 
 # Ensure required directories exist
+DEPLOYMENT_DIR.mkdir(parents=True, exist_ok=True)
+ADVISORS_DIR.mkdir(parents=True, exist_ok=True)
 CHATS_DIR.mkdir(parents=True, exist_ok=True)
 ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
