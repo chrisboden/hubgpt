@@ -1,0 +1,83 @@
+    function addMessageToHistory(message) {
+        const chatHistory = document.getElementById('chatHistory');
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${message.role}`;
+        
+        // Create message content
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'content markdown-content';
+        
+        if (message.role === 'assistant') {
+            // For assistant messages, check if there are tool calls
+            if (message.tool_calls) {
+                // Create collapsible section for tool details
+                const toolDetails = document.createElement('details');
+                toolDetails.className = 'tool-details';
+                
+                // Add summary (header)
+                const summary = document.createElement('summary');
+                summary.textContent = `Tool Call: ${message.tool_calls[0].function.name}`;
+                toolDetails.appendChild(summary);
+                
+                // Add tool call details
+                const toolContent = document.createElement('pre');
+                toolContent.textContent = JSON.stringify(message.tool_calls[0], null, 2);
+                toolDetails.appendChild(toolContent);
+                
+                contentDiv.appendChild(toolDetails);
+            }
+            
+            // Add message content if present
+            if (message.content) {
+                contentDiv.innerHTML += marked.parse(message.content);
+            }
+        } else if (message.role === 'tool') {
+            // Create collapsible section for tool response
+            const toolDetails = document.createElement('details');
+            toolDetails.className = 'tool-details';
+            
+            // Add summary (header)
+            const summary = document.createElement('summary');
+            summary.textContent = `Tool Response: ${message.name}`;
+            toolDetails.appendChild(summary);
+            
+            // Add tool response details
+            const toolContent = document.createElement('pre');
+            toolContent.textContent = message.content;
+            toolDetails.appendChild(toolContent);
+            
+            contentDiv.appendChild(toolDetails);
+        } else {
+            // For user messages, just show content
+            contentDiv.innerHTML = marked.parse(message.content);
+        }
+        
+        messageDiv.appendChild(contentDiv);
+        chatHistory.appendChild(messageDiv);
+        chatHistory.scrollTop = chatHistory.scrollHeight;
+    }
+
+    // Add styles for tool details
+    <style>
+        .tool-details {
+            margin: 8px 0;
+            padding: 8px;
+            background: #f5f5f5;
+            border-radius: 4px;
+        }
+        
+        .tool-details summary {
+            cursor: pointer;
+            color: #666;
+            font-size: 0.9em;
+        }
+        
+        .tool-details pre {
+            margin: 8px 0 0 0;
+            padding: 8px;
+            background: #fff;
+            border-radius: 4px;
+            font-size: 0.85em;
+            overflow-x: auto;
+        }
+    </style> 

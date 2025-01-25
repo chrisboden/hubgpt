@@ -175,7 +175,7 @@ async def add_message(
             
         # Initialize LLM client and response handler
         client = get_llm_client()
-        handler = ResponseHandler(client)
+        response_handler = ResponseHandler(client, messages=messages)
         
         # Get tools from advisor config and resolve them
         tool_names = advisor_data.get('tools', [])
@@ -208,10 +208,11 @@ async def add_message(
             async def event_generator():
                 try:
                     # Get streaming response using ResponseHandler
-                    stream = handler._make_streaming_request(api_params)
+                    response = response_handler._make_streaming_request(api_params)
                     
-                    # Process stream using existing handler
-                    async for content in handler.handle_streamed_response(stream):
+                    # Get LLM response
+                    assistant_message = {"role": "assistant", "content": ""}
+                    async for content in response_handler.handle_streamed_response(response):
                         # Format as SSE event with proper data prefix
                         event_data = {
                             "conversation_id": conversation_id,
@@ -220,16 +221,20 @@ async def add_message(
                                 "content": content
                             }
                         }
+                        # Accumulate content for final message
+                        assistant_message["content"] += content
                         # Send chunk and flush immediately
                         chunk = f"data: {json.dumps(event_data)}\n\n"
                         yield chunk
                         await asyncio.sleep(0)  # Allow the event loop to send the chunk
                     
-                    # Save final response to chat history
-                    messages.append({
-                        "role": "assistant",
-                        "content": handler.full_response
-                    })
+                    # After streaming completes, get all messages including tool calls
+                    messages = response_handler.chat_messages
+                    
+                    # If no tool calls were made, add the accumulated assistant message
+                    if not any(msg.get("tool_calls") for msg in messages if isinstance(msg, dict)):
+                        messages.append(assistant_message)
+                        
                     save_chat_history(messages, chat_history_path)
                     
                     # Send done event and flush
@@ -237,15 +242,9 @@ async def add_message(
                     await asyncio.sleep(0)
                     
                 except Exception as e:
-                    logger.error(f"Error in stream processing: {str(e)}", exc_info=True)
-                    error_data = {
-                        "conversation_id": conversation_id,
-                        "message": {
-                            "role": "assistant",
-                            "content": f"Error: {str(e)}"
-                        }
-                    }
-                    yield f"data: {json.dumps(error_data)}\n\n"
+                    error_msg = f"Error getting LLM response: {str(e)}"
+                    logging.error(error_msg)
+                    yield error_msg
             
             return StreamingResponse(
                 event_generator(),
@@ -259,7 +258,7 @@ async def add_message(
             )
         else:
             # Handle non-streaming response
-            response, error = handler._make_llm_request(api_params)
+            response, error = response_handler._make_llm_request(api_params)
             if error:
                 raise HTTPException(status_code=500, detail=error)
             

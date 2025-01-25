@@ -129,16 +129,23 @@ class ToolManager:
 
 class ResponseHandler:
     """Manages LLM response processing"""
-    def __init__(self, client):
+    def __init__(self, client, messages=None):
         """
         Initializes the ResponseHandler.
 
         Args:
             client: Client to interact with the LLM.
+            messages: Optional list of messages for context
         """
         logging.info("Initializing ResponseHandler")
         self.client = client
+        self.messages = messages or []
         self.full_response = ""
+
+    @property
+    def chat_messages(self):
+        """Returns the current chat messages"""
+        return self.messages
 
     def _make_llm_request(self, params: Dict[str, Any]) -> Tuple[Optional[ChatCompletion], str]:
         """Make LLM API request with error handling"""
@@ -225,11 +232,15 @@ class ResponseHandler:
             
         Yields:
             str: Content chunks from the response
+        
+        Returns:
+            List: Updated messages array including tool calls and responses
         """
         logging.info("Starting handle_streamed_response")
         
         self.full_response = ""
         current_tool_call = None
+        assistant_message = {"role": "assistant", "content": ""}
         
         try:
             # OpenAI stream is a regular iterator, not async
@@ -243,6 +254,7 @@ class ResponseHandler:
                 if hasattr(delta, 'content') and delta.content:
                     content = delta.content
                     self.full_response += content
+                    assistant_message["content"] += content
                     # Log chunk in green
                     print(colored(content, 'green'), end='', flush=True)
                     yield content
@@ -254,6 +266,7 @@ class ResponseHandler:
                     # Initialize tool call if new
                     if not current_tool_call:
                         current_tool_call = {
+                            'id': tool_call.id,
                             'name': tool_call.function.name,
                             'arguments': ''
                         }
@@ -270,6 +283,17 @@ class ResponseHandler:
                     args = json.loads(current_tool_call['arguments'])
                     # Log tool arguments in cyan
                     print(colored(f"\nTool arguments: {json.dumps(args, indent=2)}\n", 'cyan'), flush=True)
+                    
+                    # Add assistant's tool call message to history
+                    assistant_message["tool_calls"] = [{
+                        "id": current_tool_call["id"],
+                        "type": "function",
+                        "function": {
+                            "name": current_tool_call["name"],
+                            "arguments": current_tool_call["arguments"]
+                        }
+                    }]
+                    self.messages.append(assistant_message)
                     
                     # Execute the tool
                     tool_result = ToolManager.execute_tool_call(
@@ -294,14 +318,44 @@ class ResponseHandler:
                                         print(colored(content, 'blue'), end='', flush=True)
                                         yield content
                     else:
-                        # For regular tools, format and yield the result
-                        # Log tool result in magenta
+                        # For regular tools, follow the tool call flow:
+                        # 1. Log tool result
                         print(colored(f"\nTool result: {json.dumps(tool_result, indent=2)}\n", 'magenta'), flush=True)
                         
-                        # Yield formatted result
-                        result_content = f"Here is what I found: {json.dumps(tool_result)}"
-                        self.full_response += result_content
-                        yield result_content
+                        # 2. Create tool response message
+                        tool_message = {
+                            "role": "tool",
+                            "name": current_tool_call['name'],
+                            "tool_call_id": current_tool_call['id'],
+                            "content": json.dumps(tool_result)
+                        }
+                        
+                        # 3. Add tool response to messages
+                        self.messages.append(tool_message)
+                        
+                        # 4. Get LLM's response to tool result
+                        tool_response = self.client.chat.completions.create(
+                            messages=self.messages,
+                            stream=True,
+                            model=self.messages[0].get('model', 'gpt-4o-mini'),  # Use original model
+                            temperature=1.0
+                        )
+                        
+                        # 5. Stream LLM's final response
+                        assistant_message = {"role": "assistant", "content": ""}
+                        for chunk in tool_response:
+                            if chunk.choices:
+                                delta = chunk.choices[0].delta
+                                if hasattr(delta, 'content') and delta.content:
+                                    content = delta.content
+                                    self.full_response += content
+                                    assistant_message["content"] += content
+                                    print(colored(content, 'green'), end='', flush=True)
+                                    yield content
+                        
+                        # 6. Add final assistant response to messages
+                        if assistant_message["content"]:
+                            self.messages.append(assistant_message)
                     
                 except json.JSONDecodeError as e:
                     logging.error(f"Error decoding tool arguments: {e}")
