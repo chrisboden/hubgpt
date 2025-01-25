@@ -195,6 +195,11 @@ class ResponseHandler:
                 headers["Helicone-Property-Tools"] = ",".join(str(t) for t in params['tools'])
             
             # Log complete request parameters
+            print("\n==================================================")
+            print("LLM REQUEST:")
+            print("==================================================")
+            print(json.dumps(params, indent=2))
+            print("==================================================\n")
             log_llm_request(params)
             
             # Make the streaming request
@@ -265,8 +270,44 @@ class ResponseHandler:
                     args = json.loads(current_tool_call['arguments'])
                     # Log tool arguments in cyan
                     print(colored(f"\nTool arguments: {json.dumps(args, indent=2)}\n", 'cyan'), flush=True)
+                    
+                    # Execute the tool
+                    tool_result = ToolManager.execute_tool_call(
+                        current_tool_call['name'],
+                        args,
+                        self.client
+                    )
+                    
+                    # Check if tool uses direct streaming
+                    if isinstance(tool_result, dict) and tool_result.get('direct_stream'):
+                        # For direct streaming tools, yield their stream directly
+                        stream_result = tool_result.get('result')
+                        if stream_result:
+                            # Process the direct stream similar to main stream
+                            for chunk in stream_result:
+                                if chunk.choices:
+                                    delta = chunk.choices[0].delta
+                                    if hasattr(delta, 'content') and delta.content:
+                                        content = delta.content
+                                        self.full_response += content
+                                        # Log chunk in blue to differentiate tool stream
+                                        print(colored(content, 'blue'), end='', flush=True)
+                                        yield content
+                    else:
+                        # For regular tools, format and yield the result
+                        # Log tool result in magenta
+                        print(colored(f"\nTool result: {json.dumps(tool_result, indent=2)}\n", 'magenta'), flush=True)
+                        
+                        # Yield formatted result
+                        result_content = f"Here is what I found: {json.dumps(tool_result)}"
+                        self.full_response += result_content
+                        yield result_content
+                    
                 except json.JSONDecodeError as e:
                     logging.error(f"Error decoding tool arguments: {e}")
+                except Exception as e:
+                    logging.error(f"Error executing tool: {e}")
+                    yield f"I apologize, but I encountered an error: {str(e)}"
             
             # Add newline after completion
             print()
