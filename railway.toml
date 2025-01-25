@@ -1,0 +1,13 @@
+[build]
+builder = "nixpacks"
+buildCommand = "pip install -r requirements.txt"
+
+[deploy]
+startCommand = "uvicorn api.main:app --host 0.0.0.0 --port $PORT"
+healthcheckPath = "/health"
+healthcheckTimeout = 100
+restartPolicyType = "on_failure"
+
+[deploy.envs]
+PYTHON_VERSION = "3.11"
+RAILWAY_ENVIRONMENT = "production" 

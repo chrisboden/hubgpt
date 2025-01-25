@@ -41,9 +41,11 @@ app.add_middleware(
 
 # Get the directory containing this file
 current_dir = Path(__file__).parent.absolute()
+static_dir = current_dir / "static"
+static_dir.mkdir(exist_ok=True)
 
 # Mount static files using absolute path
-app.mount("/static", StaticFiles(directory=str(current_dir)), name="static")
+app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 # Include routers
 app.include_router(advisors.router, tags=["advisors"])
@@ -53,17 +55,28 @@ app.include_router(chat.router, tags=["chat"])
 async def read_root():
     """Serve the index.html file"""
     try:
+        # Try the direct path first
         index_path = current_dir / "index.html"
         if not index_path.exists():
-            logger.error(f"index.html not found at {index_path}")
-            return HTMLResponse(content="<h1>Error: index.html not found</h1>", status_code=404)
+            # Try the static directory as fallback
+            index_path = static_dir / "index.html"
+            if not index_path.exists():
+                logger.error(f"index.html not found in either {current_dir} or {static_dir}")
+                return HTMLResponse(
+                    content="<h1>Error: index.html not found</h1>",
+                    status_code=404
+                )
         
+        logger.info(f"Serving index.html from {index_path}")
         with open(index_path) as f:
             content = f.read()
             return HTMLResponse(content=content)
     except Exception as e:
         logger.error(f"Error serving index.html: {str(e)}")
-        return HTMLResponse(content=f"<h1>Error: {str(e)}</h1>", status_code=500)
+        return HTMLResponse(
+            content=f"<h1>Error: {str(e)}</h1>",
+            status_code=500
+        )
 
 @app.get("/health")
 async def health_check():
@@ -71,7 +84,8 @@ async def health_check():
     return {
         "status": "healthy",
         "version": config.API_VERSION,
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now().isoformat(),
+        "environment": os.getenv("RAILWAY_ENVIRONMENT", "development")
     }
 
 
