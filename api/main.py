@@ -1,9 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 import logging
 import sys
+import os
 from datetime import datetime
 from pathlib import Path
 
@@ -38,22 +39,31 @@ app.add_middleware(
     allow_headers=config.CORS_ALLOW_HEADERS,
 )
 
+# Get the directory containing this file
+current_dir = Path(__file__).parent.absolute()
+
 # Mount static files using absolute path
-static_dir = config.BASE_DIR / "api"
-app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+app.mount("/static", StaticFiles(directory=str(current_dir)), name="static")
 
 # Include routers
 app.include_router(advisors.router, tags=["advisors"])
 app.include_router(chat.router, tags=["chat"])
 
-@app.get("/")
+@app.get("/", response_class=HTMLResponse)
 async def read_root():
     """Serve the index.html file"""
-    index_path = static_dir / "index.html"
-    if not index_path.exists():
-        logger.error(f"index.html not found at {index_path}")
-        return {"error": "index.html not found"}
-    return FileResponse(str(index_path))
+    try:
+        index_path = current_dir / "index.html"
+        if not index_path.exists():
+            logger.error(f"index.html not found at {index_path}")
+            return HTMLResponse(content="<h1>Error: index.html not found</h1>", status_code=404)
+        
+        with open(index_path) as f:
+            content = f.read()
+            return HTMLResponse(content=content)
+    except Exception as e:
+        logger.error(f"Error serving index.html: {str(e)}")
+        return HTMLResponse(content=f"<h1>Error: {str(e)}</h1>", status_code=500)
 
 @app.get("/health")
 async def health_check():
