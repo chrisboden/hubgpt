@@ -50,21 +50,25 @@ def get_member_emails(limit: Optional[int] = None) -> List[str]:
     members = get_member_data(limit)
     return [m['email'] for m in members if 'email' in m and m['email']]
 
-# Tool metadata for the framework
-TOOL_METADATA = {
-    "name": "use_crm",
-    "description": "Access Hub member data from Google Sheets CRM",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "limit": {
-                "type": "integer",
-                "description": "Optional limit on number of records to return"
-            }
-        }
-    }
-}
+
 
 def execute(limit: Optional[int] = None):
     """Tool execution function"""
     return get_member_data(limit) 
+
+# Tool metadata for the framework
+TOOL_METADATA = {
+    "function": {
+        "name": "use_crm",
+        "description": "Access Hub member data from Google Sheets CRM",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer",
+                    "description": "Optional limit on number of records to return"
+                }
+            }
+        }
+    }
+}

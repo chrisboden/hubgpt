@@ -2,6 +2,7 @@ asyncio
 beautifulsoup4
 duckdb
 duckduckgo-search
+fastapi
 google-generativeai
 halo
 openai
@@ -9,11 +10,15 @@ pandas
 pathspec
 pillow
 protobuf
+psycopg2
+psycopg2-binary
+pydantic
 python-dateutil
 python-dotenv
 python-frontmatter
 pytube
 pytz
+pyyaml
 requests
 shortuuid
 st-copy-to-clipboard
@@ -21,6 +26,7 @@ streamlit
 tavily-python
 termcolor
 urllib3
+uvicorn
 wikipedia-api
 youtube-transcript-api
 yt-dlp

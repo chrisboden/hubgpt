@@ -49,18 +49,39 @@ def generate_requirements():
         root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         print(colored(f"Scanning directory: {root_dir}", 'blue'))
 
-        # Get list of our own Python modules to exclude
-        local_modules = {
-            os.path.splitext(f)[0] 
-            for f in os.listdir(root_dir) 
-            if os.path.isfile(os.path.join(root_dir, f)) and f.endswith('.py')
+        # Get list of our own Python modules to exclude - scan both root and api directory
+        local_modules = set()
+        
+        # Scan root directory
+        for f in os.listdir(root_dir):
+            if os.path.isfile(os.path.join(root_dir, f)) and f.endswith('.py'):
+                local_modules.add(os.path.splitext(f)[0])
+            elif os.path.isdir(os.path.join(root_dir, f)):
+                if os.path.exists(os.path.join(root_dir, f, '__init__.py')):
+                    local_modules.add(f)
+                # Also add the directory name with hyphen variant
+                local_modules.add(f.replace('_', '-'))
+        
+        # Scan api directory specifically
+        api_dir = os.path.join(root_dir, 'api')
+        if os.path.exists(api_dir):
+            for f in os.listdir(api_dir):
+                if os.path.isfile(os.path.join(api_dir, f)) and f.endswith('.py'):
+                    local_modules.add(os.path.splitext(f)[0])
+                elif os.path.isdir(os.path.join(api_dir, f)):
+                    if os.path.exists(os.path.join(api_dir, f, '__init__.py')):
+                        local_modules.add(f)
+                    # Also add the directory name with hyphen variant
+                    local_modules.add(f.replace('_', '-'))
+        
+        # Add known internal packages
+        internal_packages = {
+            'api-utils', 'routers', 'services', 'tool-utils', 'models',
+            'api_utils', 'tool_utils', 'log_utils', 'log-utils'
         }
-        local_modules.update({
-            d for d in os.listdir(root_dir)
-            if os.path.isdir(os.path.join(root_dir, d)) and 
-            os.path.exists(os.path.join(root_dir, d, '__init__.py'))
-        })
-        print(colored(f"Excluding local modules: {', '.join(local_modules)}", 'blue'))
+        local_modules.update(internal_packages)
+        
+        print(colored(f"Excluding local modules: {', '.join(sorted(local_modules))}", 'blue'))
 
         # Read .gitignore patterns
         gitignore_path = os.path.join(root_dir, '.gitignore')
@@ -143,6 +164,8 @@ def generate_requirements():
                 'dateutil': 'python-dateutil',  # Map dateutil to python-dateutil
                 'pil': 'Pillow',  # Map PIL/pil imports to Pillow package
                 'PIL': 'Pillow',  # Also map uppercase PIL to Pillow
+                'fastapi': 'uvicorn',  # Add uvicorn when FastAPI is used
+                'starlette': 'uvicorn',  # Add uvicorn when Starlette is used
                 # Add more mappings as needed
             }
             
@@ -158,7 +181,7 @@ def generate_requirements():
                 elif imp_lower not in local_modules:  # Only add if not a local module
                     normalized_packages.add(imp_lower)
             
-            # Filter out standard library modules and built-in packages
+            # Filter out standard library modules, built-in packages, and local modules
             stdlib_modules = set([
                 'os', 'sys', 'json', 'datetime', 'time', 'uuid', 'shutil', 
                 'tempfile', 'pathlib', 'mimetypes', 'ast', 're', 'typing',
@@ -183,21 +206,12 @@ def generate_requirements():
                 'urllib', 'uu', 'wave', 'webbrowser', 'winreg', 'wsgiref',
                 'xdrlib', 'xml', 'xmlrpc', 'zipfile', 'zipimport', 'zlib'
             ])
-            normalized_packages = {pkg for pkg in normalized_packages if pkg not in stdlib_modules and pkg not in local_modules}
-            
-            # Remove any duplicate package names (considering normalized names)
-            final_packages = set()
-            for pkg in normalized_packages:
-                # Convert back to preferred format (with hyphens)
-                preferred_name = pkg.replace('_', '-')
-                final_packages.add(preferred_name)
-            
-            # Remove any duplicate package names (considering normalized names)
-            final_packages = set()
-            for pkg in normalized_packages:
-                # Convert back to preferred format (with hyphens)
-                preferred_name = pkg.replace('_', '-')
-                final_packages.add(preferred_name)
+            normalized_packages = {
+                pkg for pkg in normalized_packages 
+                if pkg not in stdlib_modules and 
+                pkg.replace('-', '_') not in local_modules and 
+                pkg.replace('_', '-') not in local_modules
+            }
             
             # Remove any duplicate package names (considering normalized names)
             final_packages = set()

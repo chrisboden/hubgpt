@@ -432,7 +432,7 @@ The code will have access to all standard Python libraries plus the agent's tool
 
 **Source File:** `email_create.py`
 
-**Description:** Send an HTML email using a Zapier webhook. Creates rich HTML emails with optional plain text fallback.
+**Description:** Send an HTML email using the Hub's branded template. Perfect for sending announcements, newsletters, or any communication that should have the Hub's professional look.
 
 ---
 
@@ -459,6 +459,14 @@ The code will have access to all standard Python libraries plus the agent's tool
 ## get_advice
 
 **Source File:** `get_advice.py`
+
+**Description:** Get advice from a specified advisor based on the given query posed by a user
+
+---
+
+## get_advice
+
+**Source File:** `use_team.py`
 
 **Description:** Get advice from a specified advisor based on the given query posed by a user
 
@@ -623,6 +631,14 @@ messages=[
 
 ---
 
+## use_crm
+
+**Source File:** `use_crm.py`
+
+**Description:** Access Hub member data from Google Sheets CRM
+
+---
+
 ## use_github
 
 **Source File:** `use_github.py`
@@ -686,49 +702,4 @@ messages=[
 **Description:** Performs a comprehensive web search using multiple search providers (Brave, Tavily, DuckDuckGo, etc.). The tool optimizes the search query using AI and returns ranked results. Use this tool when you need to find current information about any topic, verify facts, or gather data from multiple sources. Results include titles, URLs, and descriptions from various web pages.
 
 ---
-
-## Available Tools
-
-### Email Creation (`email_create.py`)
-
-The email creation tool provides functionality to send branded emails using the Hub's HTML template.
-
-#### Features
-- Branded HTML email template with responsive design
-- Support for plain text and HTML content
-- CC and BCC recipient support
-- Custom sender email support
-- Zapier webhook integration for sending
-
-#### Basic Usage
-```python
-from tools.email_create import send_email
-
-# Simple usage
-result = send_email(
-    to="recipient@example.com",
-    subject="Hello from the Hub",
-    content="Your message here"
-)
-
-# Advanced usage
-result = send_email(
-    to=["recipient1@example.com", "recipient2@example.com"],
-    subject="Team Update",
-    content="Your message here",
-    cc="manager@example.com",
-    bcc=["archive@example.com"]
-)
-```
-
-#### Command Line Usage
-```bash
-python3 standalone_tools.py email_create \
-    --to "recipient@example.com" \
-    --subject "Hello from the Hub" \
-    --content "Your message here"
-```
-
-#### Required Environment Variables
-- `ZAPIER_EMAIL_WEBHOOK_URL`: Webhook URL for sending emails via Zapier
 
