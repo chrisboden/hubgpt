@@ -121,59 +121,7 @@ The API uses a structured file-based storage system designed for reliability and
   - Method restrictions
   - Header management
 
-### Planned (Milestone D)
-- [ ] Notepad functionality
-  - Document storage
-  - Version control
-  - Search capabilities
-- [ ] Document analysis
-  - Text extraction
-  - Metadata processing
-  - Content indexing
-- [ ] Multi-document queries
-  - Cross-document search
-  - Context aggregation
-  - Relevance ranking
-- [ ] Enhanced tool support
-  - Tool discovery
-  - Parameter validation
-  - Result handling
 
-### Future (Milestone E)
-- [ ] Real-time collaboration
-  - Shared sessions
-  - Concurrent editing
-  - Change synchronization
-- [ ] Chat export/import
-  - Multiple formats
-  - Selective export
-  - Bulk import
-- [ ] Custom model support
-  - Model configuration
-  - Provider integration
-  - Performance optimization
-- [ ] Advanced prompt engineering
-  - Template system
-  - Context management
-  - Dynamic prompting
-
-### Backlog (Milestone F)
-- [ ] Analytics dashboard
-  - Usage metrics
-  - Performance stats
-  - Error tracking
-- [ ] Usage monitoring
-  - Resource utilization
-  - Cost tracking
-  - Anomaly detection
-- [ ] Performance optimization
-  - Caching
-  - Load balancing
-  - Response time improvement
-- [ ] Bulk operations
-  - Batch processing
-  - Scheduled tasks
-  - Data migration
 
 ## Architecture Diagram
 

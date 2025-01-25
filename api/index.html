@@ -196,6 +196,61 @@
                 <pre id="advisorJson" class="p-4 bg-gray-100 rounded"></pre>
             </div>
         </div>
+
+        <!-- File Management Section -->
+        <div class="bg-white rounded-lg shadow p-6 mb-8">
+            <h2 class="text-xl font-semibold mb-4">File Management</h2>
+            
+            <!-- File Tree -->
+            <div class="grid grid-cols-3 gap-4">
+                <div class="col-span-1 border-r pr-4">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-semibold">Files</h3>
+                        <button id="refreshFiles" class="text-sm bg-green-500 text-white px-2 py-1 rounded hover:bg-green-600">
+                            Refresh
+                        </button>
+                    </div>
+                    <div id="fileTree" class="overflow-y-auto max-h-[400px]">
+                        <!-- File tree will be populated here -->
+                    </div>
+                    
+                    <!-- New File/Folder Form -->
+                    <div class="mt-4 p-4 bg-gray-50 rounded">
+                        <h4 class="font-semibold mb-2">Create New</h4>
+                        <div class="space-y-2">
+                            <input type="text" id="newPath" class="w-full p-2 border rounded" placeholder="path/to/file.txt">
+                            <select id="newType" class="w-full p-2 border rounded">
+                                <option value="file">File</option>
+                                <option value="directory">Directory</option>
+                            </select>
+                            <textarea id="newContent" class="w-full p-2 border rounded" placeholder="File content (for files only)" rows="3"></textarea>
+                            <button id="createNew" class="w-full bg-blue-500 text-white py-2 rounded hover:bg-blue-600">
+                                Create
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- File Content -->
+                <div class="col-span-2">
+                    <div class="mb-4 flex justify-between items-center">
+                        <h3 id="currentFile" class="text-lg font-semibold">No file selected</h3>
+                        <div class="space-x-2">
+                            <button id="saveFile" class="text-sm bg-blue-500 text-white px-4 py-1 rounded hover:bg-blue-600" style="display: none;">
+                                Save
+                            </button>
+                            <button id="renameFile" class="text-sm bg-yellow-500 text-white px-4 py-1 rounded hover:bg-yellow-600" style="display: none;">
+                                Rename
+                            </button>
+                            <button id="deleteFile" class="text-sm bg-red-500 text-white px-4 py-1 rounded hover:bg-red-600" style="display: none;">
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+                    <textarea id="fileContent" class="w-full h-[400px] p-4 border rounded font-mono" placeholder="Select a file to view/edit content"></textarea>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -204,6 +259,8 @@
         let isEditMode = false;
         let currentAdvisorName = null;
         let currentConversationId = null;
+        let currentReader = null;
+        let currentController = null;
 
         // Health check functionality
         document.getElementById('healthCheck').addEventListener('click', async () => {
@@ -569,80 +626,67 @@
             }
         }
 
-        // Add cancel functionality
-        let eventSource = null;
-
+        // Add the cancel function
         async function cancelStream() {
-            if (currentConversationId) {
-                try {
-                    // Close the EventSource
-                    if (eventSource) {
-                        eventSource.close();
-                        eventSource = null;
-                    }
-                    
-                    // Call cancel endpoint
-                    const response = await fetch(`${API_BASE}/chat/${currentConversationId}/cancel`, {
-                        method: 'POST'
-                    });
-                    const result = await response.json();
-                    console.log('Stream cancelled:', result);
-                    
-                    // Hide cancel button and enable input/send
-                    document.getElementById('cancelButton').classList.add('hidden');
-                    document.getElementById('messageInput').disabled = false;
-                    document.getElementById('sendButton').disabled = false;
-                    
-                } catch (error) {
-                    console.error('Error cancelling stream:', error);
-                }
+            console.log('Canceling stream...');
+            
+            // Abort the fetch request
+            if (currentController) {
+                currentController.abort();
             }
-        }
-
-        // Update sendMessage function to handle button states
-        async function sendMessage() {
-            const messageInput = document.getElementById('messageInput');
-            const message = messageInput.value.trim();
-            if (!message || !currentConversationId) return;
-
-            // Get UI elements
+            
+            // Call the cancel endpoint
+            try {
+                const response = await fetch(`${API_BASE}/chat/${currentConversationId}/cancel`, {
+                    method: 'POST'
+                });
+                if (!response.ok) {
+                    console.error('Error canceling stream:', response.status);
+                }
+            } catch (error) {
+                console.error('Error calling cancel endpoint:', error);
+            }
+            
+            // Reset UI
+            const input = document.getElementById('messageInput');
             const sendButton = document.getElementById('sendButton');
             const cancelButton = document.getElementById('cancelButton');
+            input.disabled = false;
+            sendButton.disabled = false;
+            cancelButton.style.display = 'none';
+            input.focus();
+        }
 
+        // Update the sendMessage function to use AbortController
+        async function sendMessage(message) {
+            if (!currentConversationId) {
+                alert('Please select or create a chat first');
+                return;
+            }
+            
             try {
-                // Show cancel button and disable input BEFORE making the request
-                messageInput.disabled = true;
-                sendButton.disabled = true;
-                cancelButton.style.display = ''; // Remove the display:none to show the button
-                
-                // Add user message to chat
-                addMessageToHistory({
+                // Add user message to display immediately
+                const userMessage = {
                     role: 'user',
                     content: message
-                });
-                messageInput.value = '';
-
-                // Send message and handle streaming response
-                const response = await fetch(`${API_BASE}/chat/${currentConversationId}/message`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Accept': 'text/event-stream'
-                    },
-                    body: JSON.stringify({
-                        message: message
-                    })
-                });
-
-                if (!response.ok) {
-                    throw new Error(`Failed to send message: ${response.status}`);
-                }
-
+                };
+                displayChatHistory([...getCurrentMessages(), userMessage]);
+                
+                // Disable input and show cancel button while processing
+                const input = document.getElementById('messageInput');
+                const sendButton = document.getElementById('sendButton');
+                const cancelButton = document.getElementById('cancelButton');
+                input.disabled = true;
+                sendButton.disabled = true;
+                cancelButton.style.display = 'inline-block';
+                
+                console.log(`Sending message to conversation ${currentConversationId}`);
+                
                 // Create assistant message container
-                let assistantMessage = '';
-                const assistantDiv = document.createElement('div');
-                assistantDiv.className = 'message mb-4';
-                assistantDiv.dataset.role = 'assistant';
+                const chatHistory = document.getElementById('chatHistory');
+                const assistantMessageDiv = document.createElement('div');
+                assistantMessageDiv.className = 'message mb-4';
+                assistantMessageDiv.dataset.role = 'assistant';
                 
                 const roleDiv = document.createElement('div');
                 roleDiv.className = 'text-sm text-gray-500';
@@ -650,57 +694,124 @@
                 
                 const contentDiv = document.createElement('div');
                 contentDiv.className = 'content inline-block p-2 rounded bg-gray-200 text-gray-800 markdown-content';
+                contentDiv.innerHTML = '';
                 
-                assistantDiv.appendChild(roleDiv);
-                assistantDiv.appendChild(contentDiv);
-                document.getElementById('chatHistory').appendChild(assistantDiv);
-
-                // Handle streaming response
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
-                let buffer = '';
-
-                try {
-                    while (true) {
-                        const {value, done} = await reader.read();
-                        if (done) break;
-                        
-                        buffer += decoder.decode(value, {stream: true});
-                        
-                        const lines = buffer.split('\n');
-                        buffer = lines.pop() || '';
-                        
-                        for (const line of lines) {
-                            if (line.startsWith('data: ')) {
-                                try {
-                                    const data = JSON.parse(line.slice(6));
-                                    if (data.message && data.message.content) {
-                                        assistantMessage += data.message.content;
-                                        contentDiv.innerHTML = marked.parse(assistantMessage);
-                                        document.getElementById('chatHistory').scrollTop = document.getElementById('chatHistory').scrollHeight;
-                                    }
-                                } catch (error) {
-                                    console.error('Error parsing chunk:', error, line);
-                                }
-                            } else if (line === 'event: done') {
-                                console.log('Stream complete');
-                                break;
-                            }
-                        }
-                    }
-                } finally {
-                    // Reset UI state after streaming
-                    messageInput.disabled = false;
-                    sendButton.disabled = false;
-                    cancelButton.style.display = 'none';
+                assistantMessageDiv.appendChild(roleDiv);
+                assistantMessageDiv.appendChild(contentDiv);
+                chatHistory.appendChild(assistantMessageDiv);
+                chatHistory.scrollTop = chatHistory.scrollHeight;
+                
+                // Create new AbortController for this request
+                currentController = new AbortController();
+                
+                // Send the message and get response
+                const messageEndpoint = `${API_BASE}/chat/${currentConversationId}/message`;
+                console.log(`Sending message to endpoint: ${messageEndpoint}`);
+                
+                const response = await fetch(messageEndpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'text/event-stream'
+                    },
+                    body: JSON.stringify({
+                        message: message
+                    }),
+                    signal: currentController.signal
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Failed to send message: ${response.status}`);
                 }
 
+                // Check if response is streaming (SSE)
+                const contentType = response.headers.get('Content-Type');
+                if (contentType && contentType.includes('text/event-stream')) {
+                    // Handle streaming response
+                    currentReader = response.body.getReader();
+                    const decoder = new TextDecoder();
+                    let buffer = '';
+                    let fullResponse = '';
+
+                    try {
+                        while (true) {
+                            const {value, done} = await currentReader.read();
+                            if (done) break;
+                            
+                            // Decode chunk and add to buffer
+                            buffer += decoder.decode(value, {stream: true});
+                            
+                            // Process complete SSE messages from buffer
+                            const lines = buffer.split('\n');
+                            buffer = lines.pop() || '';
+                            
+                            for (const line of lines) {
+                                if (line.startsWith('data: ')) {
+                                    try {
+                                        const data = JSON.parse(line.slice(6));
+                                        if (data.message && data.message.content) {
+                                            const chunk = data.message.content;
+                                            console.log('Processing chunk:', chunk);
+                                            fullResponse += chunk;
+                                            contentDiv.innerHTML = marked.parse(fullResponse);
+                                            chatHistory.scrollTop = chatHistory.scrollHeight;
+                                        }
+                                    } catch (error) {
+                                        console.error('Error parsing chunk:', error, line);
+                                    }
+                                } else if (line === 'event: done') {
+                                    console.log('Stream complete');
+                                    break;
+                                }
+                            }
+                        }
+                    } finally {
+                        // Clean up
+                        currentReader = null;
+                        currentController = null;
+                        
+                        // Reset UI
+                        input.disabled = false;
+                        sendButton.disabled = false;
+                        cancelButton.style.display = 'none';
+                        input.focus();
+                    }
+                } else {
+                    // Handle non-streaming response
+                    const data = await response.json();
+                    console.log('Received non-streaming response:', data);
+                    if (data.message && data.message.content) {
+                        contentDiv.innerHTML = marked.parse(data.message.content);
+                        chatHistory.scrollTop = chatHistory.scrollHeight;
+                    }
+                    
+                    // Reset UI
+                    input.disabled = false;
+                    sendButton.disabled = false;
+                    cancelButton.style.display = 'none';
+                    input.focus();
+                }
+                
             } catch (error) {
-                console.error('Error sending message:', error);
-                // Reset UI state on error
-                messageInput.disabled = false;
+                if (error.name === 'AbortError') {
+                    console.log('Request was canceled');
+                } else {
+                    console.error('Error sending message:', error);
+                    alert(`Failed to send message: ${error.message}`);
+                }
+                
+                // Clean up
+                currentReader = null;
+                currentController = null;
+                
+                // Reset UI
+                const input = document.getElementById('messageInput');
+                const sendButton = document.getElementById('sendButton');
+                const cancelButton = document.getElementById('cancelButton');
+                input.disabled = false;
                 sendButton.disabled = false;
                 cancelButton.style.display = 'none';
+                input.focus();
             }
         }
 
@@ -789,17 +900,271 @@
         document.getElementById('messageInput').addEventListener('keypress', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
-                sendMessage();
+                const message = e.target.value.trim();
+                if (message) {
+                    sendMessage(message);
+                    e.target.value = '';
+                }
             }
         });
 
-        document.getElementById('sendButton').addEventListener('click', sendMessage);
+            document.getElementById('sendButton').addEventListener('click', () => {
+                const input = document.getElementById('messageInput');
+                const message = input.value.trim();
+            if (message) {
+                    sendMessage(message);
+                    input.value = '';
+                }
+            });
+            
+        // Add event listener for cancel button
         document.getElementById('cancelButton').addEventListener('click', cancelStream);
         
         // Initial load of advisors
         document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('listAdvisors').click();
         });
+
+        // File Management
+        let currentPath = '';
+        
+        function buildFileTree(files) {
+            // Sort files: directories first, then files
+            files.sort((a, b) => {
+                if (a.is_dir !== b.is_dir) return b.is_dir - a.is_dir;
+                return a.path.localeCompare(b.path);
+            });
+
+            // Create a tree structure
+            const tree = {
+                children: {},
+                is_dir: true
+            };
+
+            // Build tree structure
+            for (const file of files) {
+                if (!file.path) continue; // Skip root
+                const parts = file.path.split('/');
+                let current = tree;
+                
+                for (let i = 0; i < parts.length; i++) {
+                    const part = parts[i];
+                    const isLast = i === parts.length - 1;
+                    
+                    if (!current.children[part]) {
+                        current.children[part] = {
+                            name: part,
+                            path: parts.slice(0, i + 1).join('/'),
+                            is_dir: isLast ? file.is_dir : true,
+                            children: {},
+                            size: isLast ? file.size : null,
+                            modified: isLast ? file.modified : null
+                        };
+                    }
+                    current = current.children[part];
+                }
+            }
+
+            return buildFileTreeHTML(tree, '');
+        }
+
+        function buildFileTreeHTML(node, indent) {
+            let html = '';
+            const entries = Object.entries(node.children);
+            
+            for (const [name, item] of entries) {
+                const isDir = item.is_dir;
+                const icon = isDir ? '📁' : '📄';
+                const indentSpaces = '&nbsp;'.repeat(indent.length * 4);
+                
+                html += `
+                    <div class="py-1">
+                        <div class="hover:bg-gray-100 rounded px-2 py-1 cursor-pointer flex items-center" 
+                             onclick="handleFileClick('${item.path}', ${isDir})">
+                            ${indentSpaces}${icon} ${name}
+                        </div>
+                        ${isDir ? buildFileTreeHTML(item, indent + '  ') : ''}
+                    </div>
+                `;
+            }
+            
+            return html;
+        }
+
+        async function refreshFileTree() {
+            try {
+                const response = await fetch('/files');
+                const data = await response.json();
+                document.getElementById('fileTree').innerHTML = buildFileTree(data.files);
+            } catch (error) {
+                console.error('Error fetching files:', error);
+            }
+        }
+
+        async function handleFileClick(path, isDir) {
+            currentPath = path;
+            document.getElementById('currentFile').textContent = path;
+            
+            if (!isDir) {
+                try {
+                    const response = await fetch(`/files/${path}`);
+                    const content = await response.text();
+                    document.getElementById('fileContent').value = content;
+                    
+                    // Show file action buttons
+                    document.getElementById('saveFile').style.display = 'inline-block';
+                    document.getElementById('renameFile').style.display = 'inline-block';
+                    document.getElementById('deleteFile').style.display = 'inline-block';
+                } catch (error) {
+                    console.error('Error fetching file content:', error);
+                }
+            } else {
+                document.getElementById('fileContent').value = '';
+                // Hide file action buttons for directories
+                document.getElementById('saveFile').style.display = 'none';
+                document.getElementById('renameFile').style.display = 'none';
+                document.getElementById('deleteFile').style.display = 'none';
+            }
+        }
+
+        async function createNew() {
+            const path = document.getElementById('newPath').value.trim();
+            const type = document.getElementById('newType').value;
+            const content = document.getElementById('newContent').value;
+            
+            if (!path) {
+                alert('Please enter a path');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/files/${path}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: type === 'file' ? JSON.stringify({ content }) : null
+                });
+                
+                if (!response.ok) {
+                    const error = await response.text();
+                    throw new Error(error);
+                }
+                
+                // Clear form and reload tree
+                document.getElementById('newPath').value = '';
+                document.getElementById('newContent').value = '';
+                refreshFileTree();
+            } catch (error) {
+                console.error('Error creating:', error);
+                alert(`Failed to create: ${error.message}`);
+            }
+        }
+
+        async function saveFile() {
+            if (!currentPath) return;
+            
+            const content = document.getElementById('fileContent').value;
+            try {
+                const response = await fetch(`/files/${currentPath}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ content })
+                });
+                
+                if (!response.ok) {
+                    const error = await response.text();
+                    throw new Error(error);
+                }
+                alert('File saved successfully');
+            } catch (error) {
+                console.error('Error saving:', error);
+                alert(`Failed to save: ${error.message}`);
+            }
+        }
+
+        async function renameFile() {
+            if (!currentPath) return;
+            
+            const newName = prompt('Enter new name:');
+            if (!newName) return;
+            
+            try {
+                const response = await fetch(`/files/${currentPath}`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ new_name: newName })
+                });
+                
+                if (!response.ok) {
+                    const error = await response.text();
+                    throw new Error(error);
+                }
+                
+                // Reset UI state
+                currentPath = '';
+                document.getElementById('currentFile').textContent = 'No file selected';
+                document.getElementById('fileContent').value = '';
+                document.getElementById('saveFile').style.display = 'none';
+                document.getElementById('renameFile').style.display = 'none';
+                document.getElementById('deleteFile').style.display = 'none';
+                
+                refreshFileTree();
+            } catch (error) {
+                console.error('Error renaming:', error);
+                alert(`Failed to rename: ${error.message}`);
+            }
+        }
+
+        async function deleteFile() {
+            if (!currentPath) return;
+            
+            if (!confirm('Are you sure you want to delete this item?')) return;
+            
+            try {
+                const response = await fetch(`/files/${currentPath}`, {
+                    method: 'DELETE'
+                });
+                
+                if (!response.ok) {
+                    const error = await response.text();
+                    throw new Error(error);
+                }
+                
+                // Reset UI state
+                currentPath = '';
+                document.getElementById('currentFile').textContent = 'No file selected';
+                document.getElementById('fileContent').value = '';
+                document.getElementById('saveFile').style.display = 'none';
+                document.getElementById('renameFile').style.display = 'none';
+                document.getElementById('deleteFile').style.display = 'none';
+                
+                refreshFileTree();
+            } catch (error) {
+                console.error('Error deleting:', error);
+                alert(`Failed to delete: ${error.message}`);
+            }
+        }
+
+        // Add event listeners
+        document.getElementById('refreshFiles').addEventListener('click', refreshFileTree);
+        document.getElementById('createNew').addEventListener('click', createNew);
+        document.getElementById('saveFile').addEventListener('click', saveFile);
+        document.getElementById('renameFile').addEventListener('click', renameFile);
+        document.getElementById('deleteFile').addEventListener('click', deleteFile);
+        
+        // Show/hide content textarea based on type selection
+        document.getElementById('newType').addEventListener('change', (e) => {
+            document.getElementById('newContent').style.display = 
+                e.target.value === 'file' ? 'block' : 'none';
+        });
+
+        // Initial file tree load
+        refreshFileTree();
     </script>
 </body>
 </html>

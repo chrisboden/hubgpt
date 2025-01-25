@@ -132,6 +132,24 @@ async def get_latest_conversation(advisor_id: str):
         logger.error(f"Error getting latest conversation: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.post("/chat/{conversation_id}/cancel")
+async def cancel_stream(conversation_id: str):
+    """Cancel an ongoing stream for a conversation"""
+    try:
+        # Get the response handler from the active streams
+        response_handler = active_streams.get(conversation_id)
+        if response_handler:
+            response_handler.cancel()
+            active_streams.pop(conversation_id)
+            return {"status": "cancelled"}
+        return {"status": "no_active_stream"}
+    except Exception as e:
+        logger.error(f"Error cancelling stream: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Track active streams
+active_streams = {}
+
 @router.post("/chat/{conversation_id}/message")
 async def add_message(
     conversation_id: str,
@@ -176,6 +194,9 @@ async def add_message(
         # Initialize LLM client and response handler
         client = get_llm_client()
         response_handler = ResponseHandler(client, messages=messages)
+        
+        # Store response handler for potential cancellation
+        active_streams[conversation_id] = response_handler
         
         # Get tools from advisor config and resolve them
         tool_names = advisor_data.get('tools', [])
@@ -245,6 +266,11 @@ async def add_message(
                     error_msg = f"Error getting LLM response: {str(e)}"
                     logging.error(error_msg)
                     yield error_msg
+                finally:
+                    # Clean up response handler from active streams
+                    active_streams.pop(conversation_id, None)
+                    # Cancel the stream if the client disconnects
+                    response_handler.cancel()
             
             return StreamingResponse(
                 event_generator(),
@@ -252,27 +278,27 @@ async def add_message(
                 headers={
                     "Cache-Control": "no-cache",
                     "Connection": "keep-alive",
-                    "Content-Type": "text/event-stream",
                     "X-Accel-Buffering": "no"
                 }
             )
         else:
-            # Handle non-streaming response
+            # For non-streaming responses, use make_llm_request
             response, error = response_handler._make_llm_request(api_params)
             if error:
                 raise HTTPException(status_code=500, detail=error)
-            
-            # Get content from response
+                
+            # Get response content
             content = response.choices[0].message.content
             
-            # Add assistant's response to messages and save
+            # Add assistant message to history
             messages.append({
                 "role": "assistant",
                 "content": content
             })
+            
+            # Save updated history
             save_chat_history(messages, chat_history_path)
             
-            # Return regular JSON response
             return ChatResponse(
                 conversation_id=conversation_id,
                 message={

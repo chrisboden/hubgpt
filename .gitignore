@@ -166,13 +166,14 @@ cython_debug/
 /advisors/ideas/*
 /advisors/archive/*
 /advisors/*.json
+/advisors/*.md
 
 /logs/*
 /snippets/*
-/content/*
+/files/*
 /teams/chats/*
 /teams/archive/*
-/me/*
+/files/me/*
 /notepads/*
 /data/*
 
@@ -185,26 +186,26 @@ cython_debug/
 !/snippets/.gitkeep
 !/teams/chats/.gitkeep
 !/teams/archive/.gitkeep
-!/me/.gitkeep
+!/files/me/.gitkeep
 !/notepads/.gitkeep
-!/content/.gitkeep
+!/files/content/.gitkeep
 !/data/.gitkeep
 
 # Then keep your existing specific file exceptions
-!/me/example_aboutme.txt
-!/me/example_custom_instructions.txt
-!/me/example_tips_copywriting.txt
+!/filesme/example_aboutme.txt
+!/filesme/example_custom_instructions.txt
+!/filesme/example_tips_copywriting.txt
 
 !/notepads/default
 !/notepads/notepad_prompt.json
 
-!/advisors/Naval_Ravikant.json
-!/advisors/Yuval_Harari.json
-!/advisors/Bob_Smith.json
-!/advisors/Mr_Feedreader.json
+!/advisors/Naval_Ravikant.md
+!/advisors/Yuval_Harari.md
+!/advisors/Bob_Smith.md
+!/advisors/Mr_Feedreader.md
 
-!/content/navalmanack.json
-!/content/naval_interview1.txt
+!/files/navalmanack.json
+!/files/naval_interview1.txt
 
 logs/advisorchat.log
 

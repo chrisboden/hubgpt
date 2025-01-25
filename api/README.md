@@ -63,6 +63,11 @@ The API uses a file-based storage system:
   - `/*.json` or `/*.md`: Advisor configuration files
   - `/chats/`: Current chat files (e.g., `Yuval_Harari.json`)
   - `/archive/`: Archived chat files with hex suffix (e.g., `Yuval_Harari_e5ba7d.json`)
+- `/files/`: Root directory for user-managed files
+  - Supports nested folder structure
+  - Any file type allowed
+  - Used for storing context and reference materials
+  - Accessible by tools and advisors
 
 ### Chat File Formats
 
@@ -91,6 +96,8 @@ The API uses a file-based storage system:
 - `GET /advisors`: List all available advisors
 - `GET /advisors/{advisor_id}`: Get specific advisor
 - `POST /advisors`: Create new advisor
+- `PUT /advisors/{advisor_id}`: Update existing advisor
+- `DELETE /advisors/{advisor_id}`: Delete advisor
 
 ### Chat
 
@@ -103,8 +110,34 @@ The API uses a file-based storage system:
   - Streaming uses Server-Sent Events (SSE)
   - Content-Type: text/event-stream for streaming
   - Content-Type: application/json for non-streaming
+  - Streaming controlled by advisor's `stream` parameter
+- `POST /chat/{conversation_id}/cancel`: Cancel ongoing streaming response
+  - Stops LLM processing immediately
+  - Cleans up server resources
+  - Returns 200 if successful
 - `POST /chat/{conversation_id}/clear`: Archive current conversation
 - `DELETE /chat/{conversation_id}`: Delete conversation
+
+### File Management
+
+- `GET /files`: List all files and folders in the /files directory
+- `GET /files/{path}`: Get contents of a specific file
+- `POST /files/{path}`: Create a new file or folder
+  - Set Content-Type: application/json for file creation with content
+  - Set Content-Type: application/x-directory for folder creation
+- `PUT /files/{path}`: Update an existing file's contents
+- `PATCH /files/{path}`: Rename a file or folder
+  - Requires new_name in request body
+  - Maintains file/folder structure
+- `DELETE /files/{path}`: Delete a file or folder
+  - Recursively deletes folders and their contents
+  - Returns 404 if path doesn't exist
+
+### Health Check
+
+- `GET /health`: Check API health status
+  - Returns basic health metrics
+  - Used for monitoring
 
 ## Chat Management
 
@@ -123,12 +156,15 @@ The API uses a file-based storage system:
    - Delete: 
      - For archived chats: Permanently deletes the file
      - For current chat: Deletes and creates new blank chat
+   - Cancel: Stops ongoing streaming response
 
 4. **Response Streaming**:
    - Configurable via advisor template (`stream: true`)
    - Uses Server-Sent Events for real-time updates
    - Automatic fallback to non-streaming when not configured
-   - Returns plain text content for frontend rendering
+   - Supports cancellation during streaming
+   - Returns formatted SSE events with message content
+   - Tool calls and responses included in stream
 
 ## Test Harness
 
@@ -141,6 +177,7 @@ The included test harness (`index.html`) provides a simple interface for testing
    - Chat history viewing and navigation
    - New chat creation
    - Clear/delete operations
+   - Stream cancellation support
 
 2. **Technical Details**:
    - Uses EventSource for SSE handling
@@ -148,6 +185,7 @@ The included test harness (`index.html`) provides a simple interface for testing
    - Real-time UI updates during streaming
    - Proper error handling and recovery
    - Client-side message formatting
+   - Cancellation button during streaming
 
 ## Development
 

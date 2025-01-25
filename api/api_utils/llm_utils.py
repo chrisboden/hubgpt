@@ -141,11 +141,28 @@ class ResponseHandler:
         self.client = client
         self.messages = messages or []
         self.full_response = ""
+        self._cancelled = False
+        self._current_stream = None
 
     @property
     def chat_messages(self):
         """Returns the current chat messages"""
         return self.messages
+
+    def cancel(self):
+        """Cancels the current stream if one exists"""
+        logging.info("Cancelling stream")
+        self._cancelled = True
+        if self._current_stream:
+            try:
+                # Close the stream if it has a close method
+                if hasattr(self._current_stream, 'close'):
+                    self._current_stream.close()
+                # For OpenAI streams, we can also try to cancel the response
+                if hasattr(self._current_stream, 'response'):
+                    self._current_stream.response.close()
+            except Exception as e:
+                logging.error(f"Error closing stream: {e}")
 
     def _make_llm_request(self, params: Dict[str, Any]) -> Tuple[Optional[ChatCompletion], str]:
         """Make LLM API request with error handling"""
@@ -190,6 +207,9 @@ class ResponseHandler:
     def _make_streaming_request(self, params: Dict[str, Any]):
         """Make streaming LLM API request with error handling"""
         try:
+            # Reset cancelled flag
+            self._cancelled = False
+            
             # Ensure streaming is enabled
             params["stream"] = True
             
@@ -210,12 +230,12 @@ class ResponseHandler:
             log_llm_request(params)
             
             # Make the streaming request
-            response = self.client.chat.completions.create(
+            self._current_stream = self.client.chat.completions.create(
                 **params,
                 extra_headers=headers
             )
             logging.debug("Streaming response created successfully")
-            return response
+            return self._current_stream
             
         except Exception as e:
             error_msg = f"Streaming LLM request failed: {str(e)}"
@@ -245,6 +265,11 @@ class ResponseHandler:
         try:
             # OpenAI stream is a regular iterator, not async
             for chunk in stream:
+                # Check if stream was cancelled
+                if self._cancelled:
+                    logging.info("Stream cancelled, stopping processing")
+                    break
+                    
                 if not chunk.choices:
                     continue
                     
@@ -277,8 +302,8 @@ class ResponseHandler:
                     if hasattr(tool_call.function, 'arguments'):
                         current_tool_call['arguments'] += tool_call.function.arguments
             
-            # Process completed tool call if present
-            if current_tool_call:
+            # Process completed tool call if present and not cancelled
+            if current_tool_call and not self._cancelled:
                 try:
                     args = json.loads(current_tool_call['arguments'])
                     # Log tool arguments in cyan
@@ -309,6 +334,11 @@ class ResponseHandler:
                         if stream_result:
                             # Process the direct stream similar to main stream
                             for chunk in stream_result:
+                                # Check if stream was cancelled
+                                if self._cancelled:
+                                    logging.info("Stream cancelled during tool execution")
+                                    break
+                                    
                                 if chunk.choices:
                                     delta = chunk.choices[0].delta
                                     if hasattr(delta, 'content') and delta.content:
@@ -333,29 +363,36 @@ class ResponseHandler:
                         # 3. Add tool response to messages
                         self.messages.append(tool_message)
                         
-                        # 4. Get LLM's response to tool result
-                        tool_response = self.client.chat.completions.create(
-                            messages=self.messages,
-                            stream=True,
-                            model=self.messages[0].get('model', 'gpt-4o-mini'),  # Use original model
-                            temperature=1.0
-                        )
-                        
-                        # 5. Stream LLM's final response
-                        assistant_message = {"role": "assistant", "content": ""}
-                        for chunk in tool_response:
-                            if chunk.choices:
-                                delta = chunk.choices[0].delta
-                                if hasattr(delta, 'content') and delta.content:
-                                    content = delta.content
-                                    self.full_response += content
-                                    assistant_message["content"] += content
-                                    print(colored(content, 'green'), end='', flush=True)
-                                    yield content
-                        
-                        # 6. Add final assistant response to messages
-                        if assistant_message["content"]:
-                            self.messages.append(assistant_message)
+                        # Only proceed with final response if not cancelled
+                        if not self._cancelled:
+                            # 4. Get LLM's response to tool result
+                            tool_response = self.client.chat.completions.create(
+                                messages=self.messages,
+                                stream=True,
+                                model=self.messages[0].get('model', 'gpt-4o-mini'),  # Use original model
+                                temperature=1.0
+                            )
+                            
+                            # 5. Stream LLM's final response
+                            assistant_message = {"role": "assistant", "content": ""}
+                            for chunk in tool_response:
+                                # Check if stream was cancelled
+                                if self._cancelled:
+                                    logging.info("Stream cancelled during final response")
+                                    break
+                                    
+                                if chunk.choices:
+                                    delta = chunk.choices[0].delta
+                                    if hasattr(delta, 'content') and delta.content:
+                                        content = delta.content
+                                        self.full_response += content
+                                        assistant_message["content"] += content
+                                        print(colored(content, 'green'), end='', flush=True)
+                                        yield content
+                            
+                            # 6. Add final assistant response to messages if not cancelled
+                            if assistant_message["content"] and not self._cancelled:
+                                self.messages.append(assistant_message)
                     
                 except json.JSONDecodeError as e:
                     logging.error(f"Error decoding tool arguments: {e}")
@@ -370,6 +407,9 @@ class ResponseHandler:
             error_msg = f"Error processing stream: {str(e)}"
             logging.error(error_msg)
             logging.exception("Full traceback:")
+        finally:
+            # Clean up stream reference
+            self._current_stream = None
 
 class ChatHistoryManager:
     """Manages chat history updates and persistence"""

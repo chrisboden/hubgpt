@@ -94,9 +94,9 @@ CREATE TABLE public.chat_includes (
 ### Common Include Patterns
 
 Advisors typically use includes for:
-1. User context: `<$me/aboutme.md$>`
-2. Custom instructions: `<$me/custom_instructions.txt$>`
-3. Knowledge bases: `<$content/filename.json$>`
+1. User context: `<$files/me/aboutme.md$>`
+2. Custom instructions: `<$files/me/custom_instructions.txt$>`
+3. Knowledge bases: `<$files/filename.json$>`
 
 ## Working with Advisors
 

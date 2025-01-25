@@ -8,7 +8,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-from .routers import advisors, chat
+from .routers import advisors, chat, files
 from . import config
 
 # Configure logging
@@ -50,6 +50,7 @@ app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 # Include routers
 app.include_router(advisors.router, tags=["advisors"])
 app.include_router(chat.router, tags=["chat"])
+app.include_router(files.router, tags=["files"])
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root():

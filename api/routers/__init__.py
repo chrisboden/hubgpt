@@ -1,3 +1,3 @@
-from . import advisors, chat
+from . import advisors, chat, files
 
-__all__ = ['advisors', 'chat'] 
+__all__ = ['advisors', 'chat', 'files'] 

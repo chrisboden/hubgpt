@@ -88,7 +88,7 @@ def execute(llm_client=None, limit=20):
             
             # System message with file inclusion
             system_message = """
-            ABOUT ME: <$me/aboutme.md$>
+            ABOUT ME: <$files/me/aboutme.md$>
             
             ---
             
