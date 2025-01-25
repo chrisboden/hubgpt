@@ -98,4 +98,48 @@ async def create_advisor(advisor: AdvisorCreate):
     if not advisor_data:
         raise HTTPException(status_code=500, detail="Failed to load created advisor")
         
+    return Advisor(**advisor_data)
+
+@router.put("/advisors/{advisor_id}", response_model=Advisor)
+async def update_advisor(advisor_id: str, advisor: AdvisorCreate):
+    """Update an existing advisor"""
+    advisors_dir = get_advisors_dir()
+    
+    # Check if advisor exists and get its current format
+    json_path = advisors_dir / f"{advisor_id}.json"
+    md_path = advisors_dir / f"{advisor_id}.md"
+    
+    existing_path = None
+    is_json = False
+    if json_path.exists():
+        existing_path = json_path
+        is_json = True
+    elif md_path.exists():
+        existing_path = md_path
+        is_json = False
+    else:
+        raise HTTPException(status_code=404, detail="Advisor not found")
+    
+    # Create new content in original format
+    if is_json:
+        content = create_json_content(advisor)
+        success = write_json_file(existing_path, content)
+    else:  # markdown
+        content = create_markdown_content(advisor)
+        try:
+            with open(existing_path, 'w') as f:
+                f.write(content)
+            success = True
+        except Exception as e:
+            logger.error(f"Error updating markdown advisor: {str(e)}")
+            success = False
+    
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to update advisor")
+    
+    # Load and return the updated advisor
+    advisor_data = load_advisor(existing_path)
+    if not advisor_data:
+        raise HTTPException(status_code=500, detail="Failed to load updated advisor")
+    
     return Advisor(**advisor_data) 

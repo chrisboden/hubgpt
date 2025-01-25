@@ -1,21 +1,21 @@
 ---
-model: google/gemini-flash-1.5-8b
-temperature: 1
+frequency_penalty: 0.0
 max_output_tokens: 8092
+model: google/gemini-flash-1.5-8b
 stream: true
-tools:
-  - get_current_weather
+temperature: 1.15
+tools: []
 ---
 
 NOTE: Today's date is <$datetime:%Y-%m-%d$>
 
 # ABOUT ME
 
-<$me/aboutme.md$>
+<$files/me/aboutme.md$>
 
 # CUSTOM INSTRUCTIONS
 
-<$me/custom_instructions.txt$>
+<$files/me/custom_instructions.txt$>
 
 -------
 
