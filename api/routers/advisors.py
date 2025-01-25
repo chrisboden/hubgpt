@@ -14,7 +14,7 @@ from ..services.storage_service import ensure_directory, write_json_file
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-@router.get("/advisors", response_model=List[AdvisorSummary])
+@router.get("/", response_model=List[AdvisorSummary])
 async def list_advisors():
     """List all available advisors"""
     advisors_dir = get_advisors_dir()
@@ -41,7 +41,7 @@ async def list_advisors():
             
     return advisors
 
-@router.get("/advisors/{advisor_id}", response_model=Advisor)
+@router.get("/{advisor_id}", response_model=Advisor)
 async def get_advisor(advisor_id: str):
     """Get a specific advisor by ID"""
     advisors_dir = get_advisors_dir()
@@ -62,7 +62,7 @@ async def get_advisor(advisor_id: str):
             
     raise HTTPException(status_code=404, detail="Advisor not found")
 
-@router.post("/advisors", response_model=Advisor)
+@router.post("/", response_model=Advisor)
 async def create_advisor(advisor: AdvisorCreate):
     """Create a new advisor"""
     advisors_dir = get_advisors_dir()
@@ -100,7 +100,7 @@ async def create_advisor(advisor: AdvisorCreate):
         
     return Advisor(**advisor_data)
 
-@router.put("/advisors/{advisor_id}", response_model=Advisor)
+@router.put("/{advisor_id}", response_model=Advisor)
 async def update_advisor(advisor_id: str, advisor: AdvisorCreate):
     """Update an existing advisor"""
     advisors_dir = get_advisors_dir()
