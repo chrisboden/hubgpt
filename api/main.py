@@ -38,8 +38,9 @@ app.add_middleware(
     allow_headers=config.CORS_ALLOW_HEADERS,
 )
 
-# Mount static files
-app.mount("/static", StaticFiles(directory="api"), name="static")
+# Mount static files using absolute path
+static_dir = config.BASE_DIR / "api"
+app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 # Include routers
 app.include_router(advisors.router, tags=["advisors"])
@@ -48,7 +49,11 @@ app.include_router(chat.router, tags=["chat"])
 @app.get("/")
 async def read_root():
     """Serve the index.html file"""
-    return FileResponse("api/index.html")
+    index_path = static_dir / "index.html"
+    if not index_path.exists():
+        logger.error(f"index.html not found at {index_path}")
+        return {"error": "index.html not found"}
+    return FileResponse(str(index_path))
 
 @app.get("/health")
 async def health_check():
