@@ -1,5 +1,5 @@
 ---
-model: google/gemini-flash-1.5-8b
+model: google/gemini-2.0-flash-thinking-exp:free
 temperature: 1.0
 max_output_tokens: 8092
 top_p: 1

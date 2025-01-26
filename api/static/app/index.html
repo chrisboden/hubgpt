@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HubGPT Chat</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="stylesheet" href="styles.css">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        border: "hsl(var(--border))",
+                        input: "hsl(var(--input))",
+                        ring: "hsl(var(--ring))",
+                        background: "hsl(var(--background))",
+                        foreground: "hsl(var(--foreground))",
+                        primary: {
+                            DEFAULT: "hsl(var(--primary))",
+                            foreground: "hsl(var(--primary-foreground))",
+                        },
+                        secondary: {
+                            DEFAULT: "hsl(var(--secondary))",
+                            foreground: "hsl(var(--secondary-foreground))",
+                        },
+                        destructive: {
+                            DEFAULT: "hsl(var(--destructive))",
+                            foreground: "hsl(var(--destructive-foreground))",
+                        },
+                        muted: {
+                            DEFAULT: "hsl(var(--muted))",
+                            foreground: "hsl(var(--muted-foreground))",
+                        },
+                        accent: {
+                            DEFAULT: "hsl(var(--accent))",
+                            foreground: "hsl(var(--accent-foreground))",
+                        },
+                    },
+                    borderRadius: {
+                        lg: "var(--radius)",
+                        md: "calc(var(--radius) - 2px)",
+                        sm: "calc(var(--radius) - 4px)",
+                    },
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-background text-foreground antialiased">
+    <!-- Login Form -->
+    <div id="login-form" class="fixed inset-0 bg-background/50 backdrop-blur-sm flex items-center justify-center">
+        <div class="bg-card p-8 rounded-lg shadow-lg w-96">
+            <h2 class="text-2xl font-bold mb-6">Login Required</h2>
+            <form class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium mb-1">Username</label>
+                    <input type="text" name="username" class="w-full p-2 border rounded bg-background" required>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1">Password</label>
+                    <input type="password" name="password" class="w-full p-2 border rounded bg-background" required>
+                </div>
+                <div id="login-error" class="text-destructive text-sm hidden"></div>
+                <button type="submit" class="w-full bg-primary text-primary-foreground py-2 px-4 rounded hover:bg-primary/90">
+                    Login
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Main App -->
+    <div id="app" class="hidden">
+        <div class="flex h-screen">
+        <!-- Left Sidebar -->
+        <div class="w-80 border-r border-border bg-muted/10 p-4 flex flex-col">
+            <!-- Advisor Selection -->
+            <div class="mb-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-lg font-semibold">Advisors</h2>
+                </div>
+                <select id="advisor-select" class="w-full p-2 border rounded bg-background">
+                    <option value="">Select an advisor...</option>
+                </select>
+            </div>
+
+            <!-- Chat History -->
+            <div class="flex-1 overflow-y-auto mb-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-semibold">Chat History</h3>
+                    <button id="new-chat-btn" class="text-sm bg-primary text-primary-foreground px-2 py-1 rounded hover:bg-primary/90">
+                        New Chat
+                    </button>
+                </div>
+                <div id="chat-history" class="space-y-2">
+                    <!-- Chat history will be populated here -->
+                </div>
+            </div>
+
+            <!-- File Upload Area -->
+            <div class="border-2 border-dashed border-border rounded-lg p-4 text-center" id="file-dropzone">
+                <div class="text-sm text-muted-foreground">
+                    <svg class="mx-auto h-12 w-12 text-muted-foreground/50" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true">
+                        <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                    <p class="mt-1">Drop files here or click to upload</p>
+                </div>
+                <input id="file-input" type="file" class="hidden" multiple>
+            </div>
+        </div>
+
+        <!-- Main Chat Area -->
+        <div class="flex-1 flex flex-col">
+            <!-- Chat Messages -->
+            <div class="flex-1 overflow-auto p-4 pb-32" id="messages-container">
+                <!-- Messages will be populated here -->
+            </div>
+
+            <!-- Message Input -->
+            <div class="border-t border-border p-4 fixed bottom-0 left-80 right-0 bg-background shadow-lg">
+                <div class="flex items-end space-x-2">
+                    <div class="flex-1">
+                        <textarea 
+                            id="message-input"
+                            rows="3"
+                            class="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-none"
+                            placeholder="Message HubGPT..."
+                        ></textarea>
+                    </div>
+                    <button 
+                        id="send-button"
+                        class="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2"
+                    >
+                        Send
+                    </button>
+                </div>
+            </div>
+        </div>
+        </div>
+
+        <!-- Error Toast -->
+        <div id="error-toast" class="fixed bottom-4 right-4 z-50"></div>
+    </div>
+
+    <!-- Scripts -->
+    <script>
+        // Initialize dark mode based on system preference
+        if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.classList.add('dark');
+        }
+    </script>
+    <script type="module" src="lib/store.js"></script>
+    <script type="module" src="lib/api-client.js"></script>
+    <script type="module" src="components/advisor-card.js"></script>
+    <script type="module" src="components/chat-bubble.js"></script>
+    <script type="module" src="app.js"></script>
+</body>
+</html>

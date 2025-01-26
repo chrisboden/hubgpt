@@ -10,8 +10,8 @@ from datetime import datetime
 from pathlib import Path
 import secrets
 
-from .routers import advisors, chat, files
-from . import config
+from api.routers import advisors, chat, files
+from api import config
 
 # Configure logging
 logging.basicConfig(
@@ -111,5 +111,3 @@ async def health_check():
         "timestamp": datetime.now().isoformat(),
         "environment": os.getenv("RAILWAY_ENVIRONMENT", "development")
     }
-
-
