@@ -50,15 +50,20 @@ def create_markdown_content(advisor: AdvisorCreate) -> str:
         'model': advisor.model,
         'temperature': advisor.temperature,
         'max_output_tokens': advisor.max_tokens,
-        'top_p': advisor.top_p,
-        'frequency_penalty': advisor.frequency_penalty,
-        'presence_penalty': advisor.presence_penalty,
-        'stream': advisor.stream,
-        'tools': advisor.tools or []
+        'stream': advisor.stream
     }
     
-    # Remove None values
-    frontmatter = {k: v for k, v in frontmatter.items() if v is not None}
+    # Add optional fields only if they are not None
+    if advisor.gateway is not None:
+        frontmatter['gateway'] = advisor.gateway
+    if advisor.tools:
+        frontmatter['tools'] = advisor.tools
+    if advisor.top_p is not None:
+        frontmatter['top_p'] = advisor.top_p
+    if advisor.frequency_penalty is not None:
+        frontmatter['frequency_penalty'] = advisor.frequency_penalty
+    if advisor.presence_penalty is not None:
+        frontmatter['presence_penalty'] = advisor.presence_penalty
     
     # Get system message from messages array
     system_message = next((msg.content for msg in advisor.messages if msg.role == 'system'), '')
@@ -71,17 +76,27 @@ def create_markdown_content(advisor: AdvisorCreate) -> str:
 
 def create_json_content(advisor: AdvisorCreate) -> Dict[str, Any]:
     """Create JSON content from advisor data"""
-    return {
+    content = {
         'model': advisor.model,
         'temperature': advisor.temperature,
         'max_tokens': advisor.max_tokens,
         'stream': advisor.stream,
-        'top_p': advisor.top_p,
-        'frequency_penalty': advisor.frequency_penalty,
-        'presence_penalty': advisor.presence_penalty,
-        'tools': advisor.tools,
         'messages': [msg.dict() for msg in advisor.messages]  # Convert Message objects to dicts
     }
+    
+    # Add optional fields only if they are not None
+    if advisor.gateway is not None:
+        content['gateway'] = advisor.gateway
+    if advisor.tools:
+        content['tools'] = advisor.tools
+    if advisor.top_p is not None:
+        content['top_p'] = advisor.top_p
+    if advisor.frequency_penalty is not None:
+        content['frequency_penalty'] = advisor.frequency_penalty
+    if advisor.presence_penalty is not None:
+        content['presence_penalty'] = advisor.presence_penalty
+        
+    return content
 
 def load_advisor(advisor_path: Path) -> Optional[Dict[str, Any]]:
     """Load an advisor from a file"""

@@ -144,3 +144,50 @@
 ::-webkit-scrollbar-thumb {
   @apply bg-muted-foreground/20 rounded-full hover:bg-muted-foreground/30;
 }
+
+/* Add to existing styles */
+
+.app-container {
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+}
+
+/* Settings button */
+#settings-toggle {
+    @apply text-muted-foreground hover:text-foreground transition-colors;
+}
+
+/* Settings sidebar */
+#settings-sidebar {
+    z-index: 50;
+    background-color: hsl(var(--background));
+}
+
+#settings-sidebar input[type="text"],
+#settings-sidebar input[type="number"],
+#settings-sidebar textarea,
+#settings-sidebar select {
+    @apply w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
+}
+
+#settings-sidebar textarea {
+    @apply font-mono resize-y;
+    min-height: 100px;
+}
+
+#settings-sidebar label {
+    @apply text-sm font-medium text-foreground;
+}
+
+/* Form transitions */
+#advisor-edit-form {
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+#advisor-edit-form:not(.hidden) {
+    opacity: 1;
+    transform: translateY(0);
+}

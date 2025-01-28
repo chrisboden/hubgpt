@@ -13,10 +13,11 @@ class Advisor(BaseModel):
     max_tokens: int = DEFAULT_MAX_TOKENS
     stream: bool = True
     messages: List[Message]
-    top_p: float = 1.0
-    frequency_penalty: float = 0.0
-    presence_penalty: float = 0.0
+    gateway: Optional[str] = 'openrouter'
     tools: Optional[List[str]] = None
+    top_p: Optional[float] = None
+    frequency_penalty: Optional[float] = None
+    presence_penalty: Optional[float] = None
 
 class AdvisorSummary(BaseModel):
     name: str
@@ -31,8 +32,9 @@ class AdvisorCreate(BaseModel):
     max_tokens: int = DEFAULT_MAX_TOKENS
     stream: bool = True
     messages: List[Message]
-    top_p: float = 1.0
-    frequency_penalty: float = 0.0
-    presence_penalty: float = 0.0
+    gateway: Optional[str] = 'openrouter'
     tools: Optional[List[str]] = None
+    top_p: Optional[float] = None
+    frequency_penalty: Optional[float] = None
+    presence_penalty: Optional[float] = None
     format: str = "json"  # Either "json" or "md" 

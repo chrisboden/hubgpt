@@ -101,6 +101,23 @@
             <pre id="healthResult" class="mt-4 p-4 bg-gray-100 rounded"></pre>
         </div>
 
+        <!-- Advisors List Section -->
+        <div class="bg-white rounded-lg shadow p-6 mb-8">
+            <h2 class="text-xl font-semibold mb-4">Available Advisors</h2>
+            <div class="flex space-x-4">
+                <select id="advisorSelect" class="flex-1 p-2 border rounded">
+                    <option value="">Select an advisor...</option>
+                </select>
+                <button id="viewAdvisor" class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded">
+                    View Details
+                </button>
+                <button id="editAdvisor" class="bg-yellow-500 hover:bg-yellow-600 text-white font-semibold py-2 px-4 rounded">
+                    Edit
+                </button>
+            </div>
+            <div id="advisorsList" class="mt-4 space-y-4"></div>
+        </div>
+
         <!-- Create/Edit Advisor Section -->
         <div class="bg-white rounded-lg shadow p-6 mb-8">
             <h2 id="formTitle" class="text-xl font-semibold mb-4">Create Advisor</h2>
@@ -136,6 +153,18 @@
                             <option value="false">No</option>
                         </select>
                     </div>
+                    <div class="mb-4">
+                        <label class="block text-gray-700 text-sm font-bold mb-2" for="gateway">
+                            Gateway
+                        </label>
+                        <select id="gateway" name="gateway" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                            <option value="openrouter">OpenRouter</option>
+                            <option value="google">Google</option>
+                            <option value="openai">OpenAI</option>
+                            <option value="groq">Groq</option>
+                            <option value="deepseek">DeepSeek</option>
+                        </select>
+                    </div>
                 </div>
                 <div>
                     <label class="block text-sm font-medium mb-1">System Message</label>
@@ -156,18 +185,6 @@
                 </div>
             </form>
             <pre id="createResult" class="mt-4 p-4 bg-gray-100 rounded hidden"></pre>
-        </div>
-
-        <!-- Advisors List Section -->
-        <div class="bg-white rounded-lg shadow p-6 mb-8">
-            <h2 class="text-xl font-semibold mb-4">Available Advisors</h2>
-            <button 
-                id="listAdvisors" 
-                class="bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-4 rounded"
-            >
-                List Advisors
-            </button>
-            <div id="advisorsList" class="mt-4 space-y-4"></div>
         </div>
 
         <!-- Chat Interface -->
@@ -379,7 +396,45 @@
             return tools.length > 0 ? tools : null;
         }
 
-        // Handle form submission (both create and edit)
+        // Function to load advisors
+        async function loadAdvisors() {
+            try {
+                const response = await fetch(`${API_BASE}/advisors`);
+                const advisors = await response.json();
+                
+                // Update the advisor select dropdown
+                const selectElement = document.getElementById('advisorSelect');
+                selectElement.innerHTML = '<option value="">Select an advisor...</option>';
+                
+                advisors.forEach(advisor => {
+                    const option = document.createElement('option');
+                    option.value = advisor.name;
+                    option.textContent = `${advisor.name} (${advisor.model})`;
+                    selectElement.appendChild(option);
+                });
+
+                // Also update the chat advisor select
+                const chatSelect = document.getElementById('chatAdvisorSelect');
+                chatSelect.innerHTML = '<option value="">Select an advisor...</option>';
+                advisors.forEach(advisor => {
+                    const option = document.createElement('option');
+                    option.value = advisor.name;
+                    option.textContent = advisor.name;
+                    chatSelect.appendChild(option);
+                });
+            } catch (error) {
+                document.getElementById('advisorsList').innerHTML = `
+                    <div class="p-4 bg-red-100 text-red-700 rounded">
+                        Error: ${error.message}
+                    </div>
+                `;
+            }
+        }
+
+        // Load advisors initially
+        loadAdvisors();
+
+        // Replace the old listAdvisors click handler with the new function
         async function handleFormSubmit(e) {
             e.preventDefault();
             const form = e.target;
@@ -388,32 +443,66 @@
             
             try {
                 const formData = new FormData(form);
+                
+                // Start with only the required fields
                 const data = {
                     name: isEditMode ? currentAdvisorName : formData.get('name')?.trim() || '',
-                    model: formData.get('model')?.trim() || '',
-                    temperature: parseFloat(formData.get('temperature')),
-                    max_tokens: parseInt(formData.get('max_tokens')),
-                    stream: formData.get('stream') === 'true',
                     messages: [
                         {
                             role: 'system',
                             content: formData.get('system_message')?.trim() || ''
                         }
-                    ],
-                    format: formData.get('format'),
-                    tools: parseTools(formData.get('tools'))
+                    ]
                 };
 
-                // Validate data
+                // Only add fields that were explicitly set in the form
+                const model = formData.get('model')?.trim();
+                if (model) {
+                    data.model = model;
+                }
+
+                const temperature = formData.get('temperature');
+                if (temperature !== null && temperature !== '') {
+                    data.temperature = parseFloat(temperature);
+                }
+
+                const maxTokens = formData.get('max_tokens');
+                if (maxTokens !== null && maxTokens !== '') {
+                    data.max_tokens = parseInt(maxTokens);
+                }
+
+                const stream = formData.get('stream');
+                if (stream !== null) {
+                    data.stream = stream === 'true';
+                }
+
+                const gateway = formData.get('gateway')?.trim();
+                if (gateway) {
+                    data.gateway = gateway;
+                }
+
+                const format = formData.get('format')?.trim();
+                if (format) {
+                    data.format = format;
+                }
+
+                const tools = parseTools(formData.get('tools'));
+                if (tools) {
+                    data.tools = tools;
+                }
+
+                // Validate required data
                 if (!data.messages[0].content) {
                     throw new Error('System message is required');
                 }
-                if (isNaN(data.temperature) || data.temperature < 0 || data.temperature > 2) {
+                if (data.temperature !== undefined && (isNaN(data.temperature) || data.temperature < 0 || data.temperature > 2)) {
                     throw new Error('Temperature must be between 0 and 2');
                 }
-                if (isNaN(data.max_tokens) || data.max_tokens < 1) {
-                    data.max_tokens = 1000;
+                if (data.max_tokens !== undefined && (isNaN(data.max_tokens) || data.max_tokens < 1)) {
+                    throw new Error('Max tokens must be greater than 0');
                 }
+
+                console.log('Submitting advisor data:', data);  // Debug log
 
                 const url = isEditMode ? 
                     `${API_BASE}/advisors/${currentAdvisorName}` : 
@@ -448,14 +537,15 @@
                     resetToCreateMode();
                 } else {
                     form.reset();
+                    // Only set default values for fields that should have them
                     form.temperature.value = '1.0';
                     form.max_tokens.value = '1000';
                     form.stream.value = 'true';
-                    form.format.value = 'json';
+                    form.gateway.value = 'openrouter';
                 }
                 
                 // Refresh advisor list
-                document.getElementById('listAdvisors').click();
+                await loadAdvisors();
             } catch (error) {
                 console.error('Form submission error:', error);
                 createResult.textContent = `Error: ${error.message}`;
@@ -470,62 +560,18 @@
         // Cancel edit button handler
         document.getElementById('cancelEdit').onclick = resetToCreateMode;
 
-        // List advisors functionality
-        document.getElementById('listAdvisors').addEventListener('click', async () => {
-            try {
-                const response = await fetch(`${API_BASE}/advisors`);
-                const advisors = await response.json();
-                
-                const listElement = document.getElementById('advisorsList');
-                listElement.innerHTML = '';
-                
-                advisors.forEach(advisor => {
-                    const advisorElement = document.createElement('div');
-                    advisorElement.className = 'p-4 bg-gray-100 rounded flex justify-between items-center';
-                    
-                    const infoDiv = document.createElement('div');
-                    infoDiv.innerHTML = `
-                        <h3 class="font-semibold">${advisor.name}</h3>
-                        ${advisor.description ? `<p class="text-sm text-gray-600">${advisor.description}</p>` : ''}
-                        <p class="text-xs text-gray-500">Model: ${advisor.model}</p>
-                    `;
-                    
-                    const buttonGroup = document.createElement('div');
-                    buttonGroup.className = 'space-x-2';
-                    
-                    const viewButton = document.createElement('button');
-                    viewButton.textContent = 'View Details';
-                    viewButton.className = 'bg-blue-500 hover:bg-blue-600 text-white text-sm py-1 px-3 rounded';
-                    viewButton.onclick = () => loadAdvisorDetails(advisor.name);
-                    
-                    const editButton = document.createElement('button');
-                    editButton.textContent = 'Edit';
-                    editButton.className = 'bg-yellow-500 hover:bg-yellow-600 text-white text-sm py-1 px-3 rounded';
-                    editButton.onclick = () => loadAdvisorForEdit(advisor.name);
-                    
-                    buttonGroup.appendChild(viewButton);
-                    buttonGroup.appendChild(editButton);
-                    
-                    advisorElement.appendChild(infoDiv);
-                    advisorElement.appendChild(buttonGroup);
-                    listElement.appendChild(advisorElement);
-                });
+        // Add event listeners for view and edit buttons
+        document.getElementById('viewAdvisor').addEventListener('click', () => {
+            const selectedAdvisor = document.getElementById('advisorSelect').value;
+            if (selectedAdvisor) {
+                loadAdvisorDetails(selectedAdvisor);
+            }
+        });
 
-                // Also update the chat advisor select
-                const chatSelect = document.getElementById('chatAdvisorSelect');
-                chatSelect.innerHTML = '<option value="">Select an advisor...</option>';
-                advisors.forEach(advisor => {
-                    const option = document.createElement('option');
-                    option.value = advisor.name;
-                    option.textContent = advisor.name;
-                    chatSelect.appendChild(option);
-                });
-            } catch (error) {
-                document.getElementById('advisorsList').innerHTML = `
-                    <div class="p-4 bg-red-100 text-red-700 rounded">
-                        Error: ${error.message}
-                    </div>
-                `;
+        document.getElementById('editAdvisor').addEventListener('click', () => {
+            const selectedAdvisor = document.getElementById('advisorSelect').value;
+            if (selectedAdvisor) {
+                loadAdvisorForEdit(selectedAdvisor);
             }
         });
 
@@ -562,6 +608,33 @@
                 form.stream.value = advisor.stream.toString();
                 form.system_message.value = advisor.messages[0].content;
                 form.tools.value = advisor.tools ? advisor.tools.join(', ') : '';
+                form.gateway.value = advisor.gateway || 'openrouter';  // Set gateway value
+                
+                // Update model options based on gateway
+                const gateway = form.gateway.value;
+                const modelSelect = form.model;
+                modelSelect.innerHTML = '';
+                
+                switch(gateway) {
+                    case 'openrouter':
+                        addModels(['gpt-4o-mini', 'gpt-4o', 'claude-3-opus']);
+                        break;
+                    case 'google':
+                        addModels(['gemini-1.5-flash-8b', 'gemini-1.5-pro']);
+                        break;
+                    case 'openai':
+                        addModels(['gpt-4-turbo-preview', 'gpt-4']);
+                        break;
+                    case 'groq':
+                        addModels(['mixtral-8x7b', 'llama2-70b']);
+                        break;
+                    case 'deepseek':
+                        addModels(['deepseek-coder', 'deepseek-chat']);
+                        break;
+                }
+                
+                // Set the model after populating options
+                form.model.value = advisor.model;
                 
                 form.scrollIntoView({ behavior: 'smooth' });
                 
@@ -1239,6 +1312,70 @@
 
         // Initial file tree load
         refreshFileTree();
+
+        // Update the displayRequest function to include gateway
+        function displayRequest() {
+            const gateway = document.getElementById('gateway').value;
+            const model = document.getElementById('model').value;
+            const temperature = document.getElementById('temperature').value;
+            const maxTokens = document.getElementById('max_tokens').value;
+            const prompt = document.getElementById('prompt').value;
+
+            const request = {
+                gateway,
+                model,
+                temperature: parseFloat(temperature),
+                max_tokens: parseInt(maxTokens),
+                messages: [
+                    {
+                        role: "user",
+                        content: prompt
+                    }
+                ]
+            };
+
+            document.getElementById('request-preview').textContent = 
+                JSON.stringify(request, null, 2);
+        }
+
+        // Add gateway change handler
+        document.getElementById('gateway').addEventListener('change', () => {
+            const gateway = document.getElementById('gateway').value;
+            const modelSelect = document.getElementById('model');
+            
+            // Update available models based on gateway
+            modelSelect.innerHTML = '';
+            
+            switch(gateway) {
+                case 'openrouter':
+                    addModels(['gpt-4o-mini', 'gpt-4o', 'claude-3-opus']);
+                    break;
+                case 'google':
+                    addModels(['gemini-1.5-flash-8b', 'gemini-1.5-pro']);
+                    break;
+                case 'openai':
+                    addModels(['gpt-4-turbo-preview', 'gpt-4']);
+                    break;
+                case 'groq':
+                    addModels(['mixtral-8x7b', 'llama2-70b']);
+                    break;
+                case 'deepseek':
+                    addModels(['deepseek-coder', 'deepseek-chat']);
+                    break;
+            }
+            
+            displayRequest();
+        });
+
+        function addModels(models) {
+            const modelSelect = document.getElementById('model');
+            models.forEach(model => {
+                const option = document.createElement('option');
+                option.value = model;
+                option.textContent = model;
+                modelSelect.appendChild(option);
+            });
+        }
     </script>
 </body>
 </html>

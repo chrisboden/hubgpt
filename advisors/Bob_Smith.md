@@ -1,21 +1,12 @@
 ---
-model: openai/gpt-4o-mini
-temperature: 1
 max_output_tokens: 8092
+model: deepseek/deepseek-r1
 stream: true
-tools:
-  - linkedin_bio_writer
+temperature: 1.0
 ---
 
 NOTE: Today's date is <$datetime:%Y-%m-%d$>
 
-# ABOUT ME
-
-<$files/me/aboutme.md$>
-
-## CUSTOM INSTRUCTIONS
-
-<$files/me/custom_instructions.txt$>
 
 # ABOUT YOU:
 

@@ -112,7 +112,15 @@
         </div>
 
         <!-- Main Chat Area -->
-        <div class="flex-1 flex flex-col">
+        <div class="flex-1 flex flex-col relative">
+            <!-- Settings Button -->
+            <button id="settings-toggle" class="absolute top-4 right-4 p-2 rounded-full hover:bg-muted/20 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-settings">
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                </svg>
+            </button>
+
             <!-- Chat Messages -->
             <div class="flex-1 overflow-auto p-4 pb-32" id="messages-container">
                 <!-- Messages will be populated here -->
@@ -138,10 +146,83 @@
                 </div>
             </div>
         </div>
+
+        <!-- Right sidebar for advisor editing -->
+        <div id="settings-sidebar" class="fixed top-0 right-0 h-full w-96 bg-background border-l border-border transform translate-x-full transition-transform duration-300 ease-in-out shadow-lg overflow-y-auto">
+            <div class="p-6">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-xl font-semibold">Advisor Settings</h2>
+                    <button id="close-settings" class="p-2 hover:bg-muted/20 rounded-full">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                    </button>
+                </div>
+
+                <div class="space-y-6">
+                    <div class="space-y-2">
+                        <label for="advisor-edit-select" class="text-sm font-medium">Select Advisor</label>
+                        <select id="advisor-edit-select" class="w-full p-2 border rounded-md bg-background">
+                            <option value="">Select an advisor to edit</option>
+                            <option value="new">Create New Advisor</option>
+                        </select>
+                    </div>
+
+                    <form id="advisor-edit-form" class="space-y-4 hidden">
+                        <div class="space-y-2">
+                            <label for="advisor-name" class="text-sm font-medium">Name</label>
+                            <input type="text" id="advisor-name" name="advisor-name" class="w-full p-2 border rounded-md bg-background" required>
+                        </div>
+
+                        <div class="space-y-2">
+                            <label for="advisor-model" class="text-sm font-medium">Model</label>
+                            <input type="text" id="advisor-model" name="advisor-model" class="w-full p-2 border rounded-md bg-background" required>
+                        </div>
+
+                        <div class="space-y-2">
+                            <label for="advisor-temperature" class="text-sm font-medium">Temperature</label>
+                            <input type="number" 
+                                id="advisor-temperature" 
+                                name="advisor-temperature"
+                                min="0" 
+                                max="2" 
+                                step="0.01" 
+                                class="w-full p-2 border rounded-md bg-background" 
+                                required>
+                        </div>
+
+                        <div class="space-y-2">
+                            <label for="advisor-gateway" class="text-sm font-medium">Gateway</label>
+                            <input type="text" id="advisor-gateway" name="advisor-gateway" class="w-full p-2 border rounded-md bg-background">
+                        </div>
+
+                        <div class="space-y-2">
+                            <label for="advisor-tools" class="text-sm font-medium">Tools (comma-separated)</label>
+                            <input type="text" id="advisor-tools" name="advisor-tools" class="w-full p-2 border rounded-md bg-background">
+                        </div>
+
+                        <div class="space-y-2">
+                            <label for="advisor-prompt" class="text-sm font-medium">System Prompt</label>
+                            <textarea id="advisor-prompt" name="advisor-prompt" rows="15" class="w-full p-2 border rounded-md bg-background font-mono text-sm" required></textarea>
+                        </div>
+
+                        <div class="pt-4">
+                            <button type="submit" class="w-full bg-primary text-primary-foreground p-2 rounded-md hover:bg-primary/90 transition-colors">
+                                Save Changes
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
         </div>
 
         <!-- Error Toast -->
         <div id="error-toast" class="fixed bottom-4 right-4 z-50"></div>
+        
+        <!-- Success Toast -->
+        <div id="success-toast" class="fixed bottom-4 right-4 z-50"></div>
     </div>
 
     <!-- Scripts -->

@@ -2,25 +2,89 @@
 
 import json
 import logging
+import os
 from typing import Dict, Any, List, Optional, Union, Tuple
 from termcolor import colored
 from openai.types.chat import ChatCompletion
 from .tool_utils import execute_tool, TOOL_METADATA_REGISTRY
 from .chat_utils import save_chat_history
 from .log_utils import log_llm_request, log_llm_response, toggle_detailed_llm_logging, get_helicone_config
+import openai
 
 # Configure logging
 LOGGING_ENABLED = True
 
 class LLMParams:
     """Manages LLM API parameters and configuration"""
+    
+    # Gateway configurations
+    GATEWAY_CONFIG = {
+        'openrouter': {
+            'base_url_env': 'OPENROUTER_BASE_URL',
+            'api_key_env': 'OPENROUTER_API_KEY'
+        },
+        'openai': {
+            'base_url_env': 'OPENAI_BASE_URL',
+            'api_key_env': 'OPENAI_API_KEY'
+        },
+        'google': {
+            'base_url_env': 'GOOGLE_BASE_URL',
+            'api_key_env': 'GEMINI_API_KEY'
+        },
+        'groq': {
+            'base_url_env': 'GROQ_BASE_URL',
+            'api_key_env': 'GROQ_API_KEY'
+        },
+        'deepseek': {
+            'base_url_env': 'DEEPSEEK_BASE_URL',
+            'api_key_env': 'DEEPSEEK_API_KEY'
+        }
+    }
+    
+    @staticmethod
+    def get_gateway_credentials(gateway: str = 'openrouter') -> tuple[str, str]:
+        """
+        Get the base URL and API key for the specified gateway.
+        Falls back to OpenRouter if gateway not found.
+
+        Args:
+            gateway (str): The gateway identifier (e.g., 'openrouter', 'openai', etc.)
+
+        Returns:
+            tuple[str, str]: (base_url, api_key) for the gateway
+        """
+        # Default to openrouter if gateway not found
+        gateway = gateway.lower()
+        if gateway not in LLMParams.GATEWAY_CONFIG:
+            logging.warning(f"Gateway {gateway} not found, falling back to openrouter")
+            gateway = 'openrouter'
+            
+        config = LLMParams.GATEWAY_CONFIG[gateway]
+        base_url = os.getenv(config['base_url_env'])
+        api_key = os.getenv(config['api_key_env'])
+
+        # Special handling for OpenAI gateway
+        if gateway == 'openai':
+            base_url = base_url or "https://api.openai.com/v1"
+        
+        # Validate credentials
+        if not base_url or not api_key:
+            missing = []
+            if not base_url:
+                missing.append(config['base_url_env'])
+            if not api_key:
+                missing.append(config['api_key_env'])
+            error_msg = f"Missing environment variables for {gateway} gateway: {', '.join(missing)}"
+            logging.error(error_msg)
+            raise ValueError(error_msg)
+
+        logging.info(f"Using gateway: {gateway} with base_url: {base_url}")
+        return base_url, api_key
+
     @staticmethod
     def get_default():
         """
         Returns a dictionary of default parameters for the LLM API.
-
-        Returns:
-            Dict: Default parameters including model, temperature, max_tokens, etc.
         """
         return {
             'model': 'gpt-4o-mini',
@@ -30,74 +94,61 @@ class LLMParams:
             'frequency_penalty': 0,
             'presence_penalty': 0,
             'stream': True,
-            'response_format': None  # Default to None for natural language responses
+            'response_format': None,
+            'gateway': 'openrouter'  # Default gateway
         }
 
     @staticmethod
     def build_api_params(default_params: Dict, overrides: Dict, messages: List, tools: List) -> Dict:
         """
         Builds the final API parameters by merging default parameters with overrides.
-        Excludes non-API parameters to ensure compatibility.
-
-        Args:
-            default_params (Dict): Default parameters.
-            overrides (Dict): Parameters to override the defaults.
-            messages (List): List of messages to be sent to the LLM.
-            tools (List): List of resolved tool metadata.
-
-        Returns:
-            Dict: Final API parameters.
         """
-        # Define valid OpenAI/OpenRouter API parameters
-        valid_params = {
-            'model', 'temperature', 'max_tokens', 'top_p', 
-            'frequency_penalty', 'presence_penalty', 'stream',
-            'response_format', 'tools', 'tool_choice', 'messages',
-            # OpenRouter specific params
-            'transforms', 'provider'
-        }
+        # Get gateway from overrides or default to openrouter
+        gateway = overrides.get('gateway', 'openrouter').lower()
+        
+        # Define valid parameters based on gateway
+        base_params = {'model', 'temperature', 'max_tokens', 'stream', 'messages', 'tools', 'tool_choice', 'gateway'}
+        
+        # Add gateway-specific parameters
+        if gateway in ['openrouter', 'openai']:
+            base_params.update({
+                'top_p', 'frequency_penalty', 'presence_penalty',
+                'response_format'
+            })
         
         # Start with default params
         api_params = {**default_params}
         
         # Add valid overrides
         for key, value in overrides.items():
-            if key in valid_params:
-                # Handle provider parameter specially to ensure correct structure
-                if key == 'provider' and isinstance(value, dict):
-                    provider_config = {}
-                    if 'order' in value:
-                        provider_config['order'] = value['order']
-                    if 'ignore' in value:
-                        provider_config['ignore'] = value['ignore']
-                    if provider_config:
-                        api_params['provider'] = provider_config
-                else:
-                    api_params[key] = value
+            if key not in ['spinner_placeholder', 'status_placeholder', 'provider']:
+                api_params[key] = value
         
         # Add messages
         api_params['messages'] = messages
         
         # Add tools if provided
         if tools:
-            # Tools should already be in OpenAI function format
             api_params['tools'] = tools
             api_params['tool_choice'] = overrides.get('tool_choice', 'auto')
             logging.info(f"Added tools to API params: {json.dumps(tools, indent=2)}")
         
         # Handle response format if specified
-        if 'response_format' in overrides:
+        if 'response_format' in overrides and gateway in ['openrouter', 'openai']:
             api_params['response_format'] = {
                 'type': overrides['response_format']
             }
         
-        # Final validation - only return valid parameters
+        # Make sure gateway is included in params
+        api_params['gateway'] = gateway
+        
+        # Final validation - only return valid parameters for the gateway
         filtered_params = {
             k: v for k, v in api_params.items()
-            if k in valid_params and v is not None
+            if k in base_params and v is not None
         }
         
-        logging.debug(f"Final API params after filtering: {filtered_params}")
+        logging.debug(f"Final API params after filtering for {gateway}: {filtered_params}")
         return filtered_params
 
 class ToolManager:
@@ -139,12 +190,12 @@ class ToolManager:
 
 class ResponseHandler:
     """Manages LLM response processing"""
-    def __init__(self, client, messages=None):
+    def __init__(self, client=None, messages=None):
         """
         Initializes the ResponseHandler.
 
         Args:
-            client: Client to interact with the LLM.
+            client: Optional OpenAI client instance
             messages: Optional list of messages for context
         """
         logging.info("Initializing ResponseHandler")
@@ -188,9 +239,19 @@ class ResponseHandler:
             if 'tools' in params:
                 headers["Helicone-Property-Tools"] = ",".join(str(t) for t in params['tools'])
             
+            # Get gateway configuration if specified
+            gateway = params.pop('gateway', 'openrouter')  # Remove gateway param before API call
+            base_url, api_key = LLMParams.get_gateway_credentials(gateway)
+            
+            # Create a new client with the gateway configuration
+            client = openai.OpenAI(
+                base_url=base_url,
+                api_key=api_key
+            )
+            
             # Make the API request
             log_llm_request(params)
-            response = self.client.chat.completions.create(
+            response = client.chat.completions.create(
                 **params,
                 extra_headers=headers
             )
@@ -231,19 +292,24 @@ class ResponseHandler:
             if 'tools' in params:
                 headers["Helicone-Property-Tools"] = ",".join(str(t) for t in params['tools'])
             
-            # Log complete request parameters
-            print("\n==================================================")
-            print("LLM REQUEST:")
-            print("==================================================")
-            print(json.dumps(params, indent=2))
-            print("==================================================\n")
-            log_llm_request(params)
+            # Get gateway configuration if specified
+            gateway = params.pop('gateway', 'openrouter')  # Remove gateway param before API call
+            base_url, api_key = LLMParams.get_gateway_credentials(gateway)
+            
+            # Create a new client with the gateway configuration
+            client = openai.OpenAI(
+                base_url=base_url,
+                api_key=api_key,
+                default_headers={
+                    **headers,
+                    "HTTP-Referer": "https://github.com/chrisb34/hubgpt",  # Required for OpenRouter
+                    "X-Title": "HubGPT"  # Optional but recommended
+                }
+            )
             
             # Make the streaming request
-            self._current_stream = self.client.chat.completions.create(
-                **params,
-                extra_headers=headers
-            )
+            log_llm_request(params)
+            self._current_stream = client.chat.completions.create(**params)
             logging.debug("Streaming response created successfully")
             return self._current_stream
             

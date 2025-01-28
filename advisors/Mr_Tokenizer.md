@@ -1,11 +1,9 @@
 ---
-model: google/gemini-2.0-flash-thinking-exp:free
-temperature: 1.0
-max_output_tokens: 8092
-top_p: 1
-frequency_penalty: 0
-presence_penalty: 0
+gateway: google
+max_output_tokens: 1000
+model: gemini-1.5-pro
 stream: true
+temperature: 1.0
 ---
 
 # ABOUT YOU

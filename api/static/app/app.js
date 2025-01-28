@@ -150,6 +150,152 @@ class App {
                 }, 5000);
             });
         });
+
+        // Success toast handling
+        store.subscribe('ui.successes', (successes) => {
+            const toastContainer = document.getElementById('success-toast');
+            if (!toastContainer) return;
+
+            toastContainer.innerHTML = '';
+            successes.forEach(success => {
+                const toast = document.createElement('div');
+                toast.className = 'bg-green-500 text-white px-4 py-2 rounded shadow-lg mb-2 flex items-center justify-between';
+                toast.innerHTML = `
+                    <span>${success.message}</span>
+                    <button class="ml-4 text-sm opacity-70 hover:opacity-100">&times;</button>
+                `;
+
+                toast.querySelector('button').onclick = () => {
+                    store.dispatch('ui/clearSuccess', success.id);
+                };
+
+                toastContainer.appendChild(toast);
+
+                // Auto-dismiss after 3 seconds
+                setTimeout(() => {
+                    store.dispatch('ui/clearSuccess', success.id);
+                }, 3000);
+            });
+        });
+
+        // Settings sidebar toggle
+        const settingsToggle = document.getElementById('settings-toggle');
+        const settingsSidebar = document.getElementById('settings-sidebar');
+        const closeSettings = document.getElementById('close-settings');
+
+        if (settingsToggle) {
+            settingsToggle.addEventListener('click', async () => {
+                if (settingsSidebar) {
+                    settingsSidebar.classList.remove('translate-x-full');
+                    // Reload advisors when opening settings
+                    await this.loadAdvisors();
+                }
+            });
+        }
+
+        if (closeSettings) {
+            closeSettings.addEventListener('click', () => {
+                if (settingsSidebar) {
+                    settingsSidebar.classList.add('translate-x-full');
+                    // Clear form when closing
+                    const advisorEditForm = document.getElementById('advisor-edit-form');
+                    const advisorEditSelect = document.getElementById('advisor-edit-select');
+                    if (advisorEditForm && advisorEditSelect) {
+                        advisorEditForm.classList.add('hidden');
+                        advisorEditSelect.value = '';
+                    }
+                }
+            });
+        }
+
+        // Advisor editing
+        const advisorEditSelect = document.getElementById('advisor-edit-select');
+        const advisorEditForm = document.getElementById('advisor-edit-form');
+        const createNewAdvisorBtn = document.getElementById('create-new-advisor');
+
+        advisorEditSelect?.addEventListener('change', async () => {
+            const advisorId = advisorEditSelect.value;
+            if (!advisorId) {
+                advisorEditForm?.classList.add('hidden');
+                return;
+            }
+            
+            advisorEditForm?.classList.remove('hidden');
+            if (advisorId === 'new') {
+                this.clearAdvisorForm();
+            } else {
+                await this.loadAdvisorForEditing(advisorId);
+            }
+        });
+
+        advisorEditForm?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            
+            // Safely get form values with null checks
+            const name = formData.get('advisor-name');
+            const model = formData.get('advisor-model');
+            const temperature = formData.get('advisor-temperature');
+            const gateway = formData.get('advisor-gateway');
+            const tools = formData.get('advisor-tools');
+            const systemPrompt = formData.get('advisor-prompt');
+
+            // Validate required fields
+            if (!name) {
+                store.dispatch('ui/addError', {
+                    id: Date.now(),
+                    message: 'Advisor name is required'
+                });
+                return;
+            }
+
+            if (!model) {
+                store.dispatch('ui/addError', {
+                    id: Date.now(),
+                    message: 'Model is required'
+                });
+                return;
+            }
+
+            if (!systemPrompt) {
+                store.dispatch('ui/addError', {
+                    id: Date.now(),
+                    message: 'System prompt is required'
+                });
+                return;
+            }
+
+            const advisorData = {
+                name: name.trim(),
+                model: model.trim(),
+                temperature: parseFloat(temperature || '0.7'),
+                gateway: gateway ? gateway.trim() : 'openrouter',
+                tools: tools ? tools.trim() : '',
+                system_prompt: systemPrompt.trim()
+            };
+
+            try {
+                await this.saveAdvisor(advisorData);
+                store.dispatch('ui/addSuccess', {
+                    id: Date.now(),
+                    message: 'Advisor saved successfully'
+                });
+                await this.loadAdvisors();
+                
+                // Close the sidebar after successful save
+                settingsSidebar?.classList.add('translate-x-full');
+            } catch (error) {
+                store.dispatch('ui/addError', {
+                    id: Date.now(),
+                    message: `Failed to save advisor: ${error.message}`
+                });
+            }
+        });
+
+        createNewAdvisorBtn?.addEventListener('click', () => {
+            advisorEditSelect.value = 'new';
+            this.clearAdvisorForm();
+        });
     }
 
     async initializeApp() {
@@ -281,15 +427,32 @@ class App {
 
     async loadChat(chatId) {
         try {
-            const chat = await api.getChat(chatId);
+            // First try to load from current chats
+            let chat = await api.getChat(chatId).catch(() => null);
+            
+            // If not found in current chats, try archived chats
+            if (!chat) {
+                const archivedChats = await api.getArchivedChats();
+                const archivedChatId = archivedChats.find(c => c.startsWith(chatId));
+                if (archivedChatId) {
+                    chat = await api.getArchivedChat(archivedChatId);
+                }
+            }
+
+            if (!chat) {
+                throw new Error('Chat not found');
+            }
+
             store.setState('chat.currentId', chat.id);
             store.setState('chat.messages', chat.messages || []);
+            
+            // Update UI
             this.renderMessages();
+            this.scrollToBottom();
         } catch (error) {
-            console.error('Error loading chat:', error);
             store.dispatch('ui/addError', {
                 id: Date.now(),
-                message: 'Failed to load chat'
+                message: `Failed to load chat: ${error.message}`
             });
         }
     }
@@ -298,16 +461,25 @@ class App {
         const container = document.getElementById('messages-container');
         if (!container) return;
 
-        container.innerHTML = '';
         const messages = store.getState('chat.messages');
-
-        messages.forEach(message => {
-            const bubble = document.createElement('chat-bubble');
-            bubble.setAttribute('role', message.role);
-            bubble.setAttribute('timestamp', this.formatDate(message.timestamp));
-            bubble.content = message.content;
-            container.appendChild(bubble);
-        });
+        
+        // If container is empty or number of bubbles doesn't match messages, do a full render
+        if (container.children.length !== messages.length) {
+            container.innerHTML = '';
+            messages.forEach(message => {
+                const bubble = document.createElement('chat-bubble');
+                bubble.setAttribute('role', message.role);
+                bubble.setAttribute('timestamp', this.formatDate(message.timestamp));
+                bubble.content = message.content;
+                container.appendChild(bubble);
+            });
+        } else {
+            // Otherwise just update the last message's content
+            const lastBubble = container.lastElementChild;
+            if (lastBubble) {
+                lastBubble.content = messages[messages.length - 1].content;
+            }
+        }
 
         container.scrollTop = container.scrollHeight;
     }
@@ -343,98 +515,76 @@ class App {
     }
 
     async sendMessage() {
-        const input = document.getElementById('message-input');
-        const message = input?.value.trim();
-        
-        if (!message || !store.getState('chat.currentId')) return;
+        const messageInput = document.getElementById('message-input');
+        const message = messageInput.value.trim();
+        if (!message) return;
 
-        // Clear input and disable
-        input.value = '';
-        store.dispatch('chat/setStreaming', true);
-
-        // Add user message to store and UI
-        const userMessage = {
-            role: 'user',
-            content: message,
-            timestamp: new Date().toISOString()
-        };
-        store.dispatch('chat/addMessage', userMessage);
-        
-        // Create and append user message bubble
-        const userBubble = document.createElement('chat-bubble');
-        userBubble.setAttribute('role', 'user');
-        userBubble.content = message;
-        document.getElementById('messages-container')?.appendChild(userBubble);
-
-        // Create assistant message placeholder
-        const assistantBubble = document.createElement('chat-bubble');
-        assistantBubble.setAttribute('role', 'assistant');
-        assistantBubble.setAttribute('status', 'streaming');
-        document.getElementById('messages-container')?.appendChild(assistantBubble);
-
-        // Scroll to bottom after adding messages
-        const container = document.getElementById('messages-container');
-        if (container) {
-            container.scrollTop = container.scrollHeight;
+        const chatId = store.getState('chat.currentId');
+        const advisor = store.getState('advisors.selected');
+        if (!chatId || !advisor) {
+            store.dispatch('ui/addError', {
+                id: Date.now(),
+                message: 'No active chat or advisor selected'
+            });
+            return;
         }
 
+        // Get advisor data to check for gateway configuration
+        const advisorData = await api.getAdvisor(advisor);
+        const gateway = advisorData.gateway || 'openrouter';  // Default to openrouter if not specified
+
+        messageInput.value = '';
+        messageInput.style.height = 'auto';
+
+        // Add user message to UI immediately
+        const userMessage = { role: 'user', content: message };
+        store.dispatch('chat/addMessage', userMessage);
+        this.renderMessages();
+
         try {
-            // Send message and handle streaming response
-            const chatId = store.getState('chat.currentId');
-            const response = await api.sendMessage(chatId, message);
+            // Send message with gateway configuration
+            const response = await api.sendMessage(chatId, message, gateway);
+            
+            if (response.ok) {
+                const reader = response.body.getReader();
+                this.currentReader = reader;
+                
+                let assistantMessage = { role: 'assistant', content: '' };
+                store.dispatch('chat/addMessage', assistantMessage);
+                this.renderMessages(); // Initial render of empty assistant message
 
-            // Handle streaming response
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-            let buffer = '';
-            let fullResponse = '';
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
 
-            while (true) {
-                const { value, done } = await reader.read();
-                if (done) break;
+                    const text = new TextDecoder().decode(value);
+                    const lines = text.split('\n');
 
-                buffer += decoder.decode(value, { stream: true });
-                const lines = buffer.split('\n');
-                buffer = lines.pop() || '';
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const data = line.slice(6);
+                            if (data === '[DONE]') continue;
 
-                for (const line of lines) {
-                    if (line.startsWith('data: ')) {
-                        try {
-                            const data = JSON.parse(line.slice(6));
-                            if (data.message?.content) {
-                                const chunk = data.message.content;
-                                fullResponse += chunk;
-                                assistantBubble.content = fullResponse;
-                                // Scroll to bottom as new content arrives
-                                container?.scrollTo({
-                                    top: container.scrollHeight,
-                                    behavior: 'smooth'
-                                });
+                            try {
+                                const parsed = JSON.parse(data);
+                                if (parsed.message && parsed.message.content) {
+                                    assistantMessage.content += parsed.message.content;
+                                    this.renderMessages();
+                                }
+                            } catch (e) {
+                                console.error('Error parsing SSE data:', e);
                             }
-                        } catch (error) {
-                            console.error('Error parsing chunk:', error);
                         }
                     }
                 }
             }
-
-            // Update final message
-            assistantBubble.removeAttribute('status');
-            store.dispatch('chat/addMessage', {
-                role: 'assistant',
-                content: fullResponse,
-                timestamp: new Date().toISOString()
-            });
-
         } catch (error) {
             store.dispatch('ui/addError', {
                 id: Date.now(),
-                message: `Failed to send message: ${error.message}`
+                message: 'Failed to send message'
             });
-            assistantBubble.remove();
         } finally {
-            store.dispatch('chat/setStreaming', false);
-            input?.focus();
+            this.currentReader = null;
         }
     }
 
@@ -464,6 +614,137 @@ class App {
         // Clear any stored credentials
         localStorage.removeItem('auth');
         store.dispatch('auth/logout');
+    }
+
+    async loadAdvisors() {
+        try {
+            const advisors = await api.listAdvisors();
+            store.setState('advisors.list', advisors);
+            
+            // Update both advisor selectors
+            this.renderAdvisorSelectors(advisors);
+        } catch (error) {
+            store.dispatch('ui/addError', {
+                id: Date.now(),
+                message: 'Failed to load advisors'
+            });
+        }
+    }
+
+    renderAdvisorSelectors(advisors) {
+        // Main advisor selector
+        const advisorSelect = document.getElementById('advisor-select');
+        if (advisorSelect) {
+            advisorSelect.innerHTML = `
+                <option value="">Select an advisor</option>
+                ${advisors.map(advisor => `
+                    <option value="${advisor.name}">${advisor.name}</option>
+                `).join('')}
+            `;
+        }
+
+        // Edit advisor selector
+        const advisorEditSelect = document.getElementById('advisor-edit-select');
+        if (advisorEditSelect) {
+            advisorEditSelect.innerHTML = `
+                <option value="">Select an advisor to edit</option>
+                <option value="new">Create New Advisor</option>
+                ${advisors.map(advisor => `
+                    <option value="${advisor.name}">${advisor.name}</option>
+                `).join('')}
+            `;
+        }
+    }
+
+    async loadAdvisorForEditing(advisorId) {
+        if (advisorId === 'new') {
+            this.clearAdvisorForm();
+            return;
+        }
+
+        try {
+            const advisor = await api.getAdvisor(advisorId);
+            console.log('Loaded advisor:', advisor);  // Debug log
+            
+            if (!advisor) {
+                throw new Error('Invalid advisor data received');
+            }
+
+            // Set form values directly from the advisor object
+            document.getElementById('advisor-name').value = advisor.name || '';
+            document.getElementById('advisor-model').value = advisor.model || '';
+            document.getElementById('advisor-temperature').value = advisor.temperature || 0.7;
+            document.getElementById('advisor-gateway').value = advisor.gateway || '';
+            document.getElementById('advisor-tools').value = Array.isArray(advisor.tools) ? advisor.tools.join(', ') : '';
+            
+            // Get the system prompt - everything after the YAML front matter
+            let systemPrompt = '';
+            if (advisor.messages && advisor.messages.length > 0) {
+                systemPrompt = advisor.messages[0].content;
+            }
+            document.getElementById('advisor-prompt').value = systemPrompt;
+
+            // Show the form
+            document.getElementById('advisor-edit-form').classList.remove('hidden');
+        } catch (error) {
+            console.error('Error loading advisor:', error);  // Debug log
+            store.dispatch('ui/addError', {
+                id: Date.now(),
+                message: `Failed to load advisor: ${error.message}`
+            });
+            // Hide the form on error
+            document.getElementById('advisor-edit-form').classList.add('hidden');
+        }
+    }
+
+    clearAdvisorForm() {
+        document.getElementById('advisor-name').value = '';
+        document.getElementById('advisor-model').value = 'gpt-4';
+        document.getElementById('advisor-temperature').value = '0.7';
+        document.getElementById('advisor-gateway').value = '';
+        document.getElementById('advisor-tools').value = '';
+        document.getElementById('advisor-prompt').value = '';
+    }
+
+    async saveAdvisor(advisorData) {
+        if (!advisorData.name) {
+            throw new Error('Advisor name is required');
+        }
+
+        // Create the advisor data structure
+        const data = {
+            name: advisorData.name,
+            model: advisorData.model,
+            temperature: parseFloat(advisorData.temperature),
+            gateway: advisorData.gateway || 'openrouter',
+            stream: true
+        };
+
+        // Add tools if specified
+        if (advisorData.tools && advisorData.tools.length > 0) {
+            const toolsArray = advisorData.tools.split(',').map(t => t.trim()).filter(Boolean);
+            if (toolsArray.length > 0) {
+                data.tools = toolsArray;
+            }
+        }
+
+        // Add the system prompt as the first message
+        if (advisorData.system_prompt) {
+            data.messages = [{
+                role: 'system',
+                content: advisorData.system_prompt
+            }];
+        }
+
+        const advisorId = advisorData.name;
+        return api.updateAdvisor(advisorId, data);
+    }
+
+    scrollToBottom() {
+        const container = document.getElementById('messages-container');
+        if (container) {
+            container.scrollTop = container.scrollHeight;
+        }
     }
 }
 
