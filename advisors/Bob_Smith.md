@@ -1,5 +1,5 @@
 ---
-model: deepseek/deepseek-chat
+model: openai/gpt-4o-mini
 temperature: 1
 max_output_tokens: 8092
 stream: true

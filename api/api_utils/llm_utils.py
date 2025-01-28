@@ -54,7 +54,7 @@ class LLMParams:
             'frequency_penalty', 'presence_penalty', 'stream',
             'response_format', 'tools', 'tool_choice', 'messages',
             # OpenRouter specific params
-            'transforms', 'route'
+            'transforms', 'provider'
         }
         
         # Start with default params
@@ -63,7 +63,17 @@ class LLMParams:
         # Add valid overrides
         for key, value in overrides.items():
             if key in valid_params:
-                api_params[key] = value
+                # Handle provider parameter specially to ensure correct structure
+                if key == 'provider' and isinstance(value, dict):
+                    provider_config = {}
+                    if 'order' in value:
+                        provider_config['order'] = value['order']
+                    if 'ignore' in value:
+                        provider_config['ignore'] = value['ignore']
+                    if provider_config:
+                        api_params['provider'] = provider_config
+                else:
+                    api_params[key] = value
         
         # Add messages
         api_params['messages'] = messages
@@ -84,7 +94,7 @@ class LLMParams:
         # Final validation - only return valid parameters
         filtered_params = {
             k: v for k, v in api_params.items()
-            if k in valid_params
+            if k in valid_params and v is not None
         }
         
         logging.debug(f"Final API params after filtering: {filtered_params}")

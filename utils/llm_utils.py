@@ -49,15 +49,40 @@ class LLMParams:
         Returns:
             Dict: Final API parameters.
         """
+        # Define valid OpenAI/OpenRouter API parameters
+        valid_params = {
+            'model', 'temperature', 'max_tokens', 'top_p', 
+            'frequency_penalty', 'presence_penalty', 'stream',
+            'response_format', 'tools', 'tool_choice', 'messages',
+            'provider'  # Add provider to valid params
+        }
+        
+        # Start with default params
         api_params = {**default_params}
+        
+        # Add valid overrides
         for key, value in overrides.items():
             if key not in ['spinner_placeholder', 'status_placeholder']:
-                api_params[key] = value
+                if key == 'provider' and isinstance(value, dict):
+                    # Handle provider configuration
+                    provider_config = {}
+                    if 'order' in value:
+                        provider_config['order'] = value['order']
+                    if 'ignore' in value:
+                        provider_config['ignore'] = value['ignore']
+                    if provider_config:
+                        api_params['provider'] = provider_config
+                else:
+                    api_params[key] = value
         
+        # Add messages
         api_params['messages'] = messages
+        
+        # Add tools if provided
         if tools:
             api_params['tools'] = tools
-            api_params['tool_choice'] = 'auto'
+            api_params['tool_choice'] = overrides.get('tool_choice', 'auto')
+            logging.info(f"Added tools to API params: {json.dumps(tools, indent=2)}")
         
         # Handle response format if specified
         if 'response_format' in overrides:
@@ -65,7 +90,14 @@ class LLMParams:
                 'type': overrides['response_format']
             }
         
-        return api_params
+        # Final validation - only return valid parameters
+        filtered_params = {
+            k: v for k, v in api_params.items()
+            if k in valid_params and v is not None
+        }
+        
+        logging.debug(f"Final API params after filtering: {filtered_params}")
+        return filtered_params
 
 class ToolManager:
     """Handles tool resolution and execution"""

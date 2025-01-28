@@ -318,7 +318,7 @@ Supported image formats: `image/png`, `image/jpeg`, `image/webp`.
 
 ### **Stream Cancellation**
 
-Use Python’s `signal` module for stream control and cancellation:
+Use Python's `signal` module for stream control and cancellation:
 
 ```python
 import signal
@@ -550,3 +550,62 @@ print(f"Completion cost: ${costs['completion_cost']}/1k tokens")
 5. **Error Handling**: Implement proper error handling for API requests
 
 Note: Different models may tokenize text differently, affecting token counts and costs. The API provides costs per 1,000 tokens based on each model's tokenizer.
+
+## **Provider Routing with OpenRouter**
+
+OpenRouter allows you to control which providers handle your requests using the `provider` parameter. This is useful for:
+- Prioritizing specific providers
+- Excluding certain providers
+- Controlling fallback behavior
+
+### **Basic Provider Routing**
+
+```python
+completion = client.chat.completions.create(
+    model="mistralai/mixtral-8x7b-instruct",
+    messages=[
+        {"role": "user", "content": "Hello"}
+    ],
+    provider={
+        "order": ["OpenAI", "Anthropic"],  # Try these providers in order
+        "ignore": ["Google"]  # Never use these providers
+    }
+)
+```
+
+### **Provider Routing Options**
+
+The `provider` parameter supports several configuration options:
+
+1. **Ordered Provider List**:
+```python
+provider={
+    "order": ["OpenAI", "Anthropic", "Together"]
+}
+```
+
+2. **Ignored Providers**:
+```python
+provider={
+    "ignore": ["Google", "Azure"]
+}
+```
+
+3. **Combining Options**:
+```python
+provider={
+    "order": ["OpenAI", "Anthropic"],
+    "ignore": ["Google"],
+}
+```
+
+### **Provider Names**
+
+Common provider names include:
+- OpenAI
+- Anthropic
+- Google
+- Together
+- DeepSeek
+
+Check OpenRouter's documentation for the complete, up-to-date list of providers.

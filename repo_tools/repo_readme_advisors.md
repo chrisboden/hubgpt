@@ -2,8 +2,32 @@
 
 An "Advisor" is created by adding a prompt template (JSON file) to the `advisors` directory. Each prompt template consists of:
 
-1. **LLM API Parameters**: These control aspects such as temperature, model, etc., and are defined in the template rather than in the main code. This allows for individual control at the advisor level.
-Here's an updated version of the documentation section, including the new `<$datetime$>` tag:
+1. **LLM API Parameters**: These control aspects such as temperature, model, etc., and are defined in the template rather than in the main code. This allows for individual control at the advisor level. You can also control which providers handle your requests using the `provider` parameter in your template.
+
+Example template with provider routing:
+```yaml
+---
+model: mistralai/mixtral-8x7b-instruct
+temperature: 1
+max_output_tokens: 8092
+stream: true
+provider:
+  order:
+    - openai     # Try OpenAI first
+    - anthropic  # Then try Anthropic
+  ignore:
+    - google    # Never use Google
+tools:
+  - get_current_weather
+---
+```
+
+The `provider` parameter supports:
+- `order`: List of preferred providers to try in sequence
+- `ignore`: List of providers to never use
+
+Common provider names include: OpenAI, Anthropic, Google, Together, Mistral, DeepInfra, Fireworks, Azure, Groq.
+If no provider preferences are specified, OpenRouter will automatically route to the best available provider.
 
 2. **System Instruction**: Defines the role of the advisor. You can include text files in the system prompt using the `<$file.txt$>` tag notation. For instance, to include an `aboutme.txt` file located in the `/me` directory, you would write `<$files/me/aboutme.txt$>`. Or if you had a document called `transcript.json` in JSON format in the `/content/raw` directory, you could include that with `<$files/raw/transcript.json$>`. 
 

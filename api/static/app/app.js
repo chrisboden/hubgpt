@@ -352,19 +352,31 @@ class App {
         input.value = '';
         store.dispatch('chat/setStreaming', true);
 
-        // Add user message
+        // Add user message to store and UI
         const userMessage = {
             role: 'user',
             content: message,
             timestamp: new Date().toISOString()
         };
         store.dispatch('chat/addMessage', userMessage);
+        
+        // Create and append user message bubble
+        const userBubble = document.createElement('chat-bubble');
+        userBubble.setAttribute('role', 'user');
+        userBubble.content = message;
+        document.getElementById('messages-container')?.appendChild(userBubble);
 
         // Create assistant message placeholder
         const assistantBubble = document.createElement('chat-bubble');
         assistantBubble.setAttribute('role', 'assistant');
         assistantBubble.setAttribute('status', 'streaming');
         document.getElementById('messages-container')?.appendChild(assistantBubble);
+
+        // Scroll to bottom after adding messages
+        const container = document.getElementById('messages-container');
+        if (container) {
+            container.scrollTop = container.scrollHeight;
+        }
 
         try {
             // Send message and handle streaming response
@@ -393,6 +405,11 @@ class App {
                                 const chunk = data.message.content;
                                 fullResponse += chunk;
                                 assistantBubble.content = fullResponse;
+                                // Scroll to bottom as new content arrives
+                                container?.scrollTo({
+                                    top: container.scrollHeight,
+                                    behavior: 'smooth'
+                                });
                             }
                         } catch (error) {
                             console.error('Error parsing chunk:', error);
