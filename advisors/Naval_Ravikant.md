@@ -1,8 +1,9 @@
 ---
-model: google/gemini-flash-1.5-8b
-temperature: 1
+gateway: google
 max_output_tokens: 8092
+model: gemini-2.0-flash-exp
 stream: true
+temperature: 1.0
 ---
 
 NOTE: Today's date is <$datetime:%Y-%m-%d$>

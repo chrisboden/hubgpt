@@ -389,4 +389,25 @@ async def create_new_chat(advisor_id: str):
         
     except Exception as e:
         logger.error(f"Error creating new chat: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/chat/{conversation_id}")
+async def delete_conversation(conversation_id: str):
+    """Delete a conversation"""
+    try:
+        # First check if this is a current chat
+        current_path = f"advisors/chats/{conversation_id}.json"
+        archive_path = f"advisors/archive/{conversation_id}.json"
+        
+        if os.path.exists(current_path):
+            os.remove(current_path)
+            return {"status": "deleted", "path": current_path}
+        elif os.path.exists(archive_path):
+            os.remove(archive_path)
+            return {"status": "deleted", "path": archive_path}
+        else:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+            
+    except Exception as e:
+        logger.error(f"Error deleting conversation: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e)) 

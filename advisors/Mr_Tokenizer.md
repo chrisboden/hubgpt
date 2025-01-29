@@ -1,7 +1,7 @@
 ---
 gateway: google
-max_output_tokens: 1000
-model: gemini-1.5-pro
+model: gemini-2.0-flash-thinking-exp
+max_output_tokens: 8092
 stream: true
 temperature: 1.0
 ---

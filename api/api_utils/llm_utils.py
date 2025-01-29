@@ -139,6 +139,15 @@ class LLMParams:
                 'type': overrides['response_format']
             }
         
+        # Handle model names for different gateways
+        if gateway == 'google':
+            # For Gemini, ensure model name starts with 'gemini-'
+            model = api_params.get('model', '')
+            if not model:  # Only set default if no model specified
+                api_params['model'] = 'gemini-1.5-flash'  # Default to flash model if not specified
+            elif not model.startswith('gemini-'):
+                logging.warning(f"Using non-Gemini model name with Google gateway: {model}")
+        
         # Make sure gateway is included in params
         api_params['gateway'] = gateway
         
