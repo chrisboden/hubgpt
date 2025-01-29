@@ -59,12 +59,30 @@ app.add_middleware(
 
 # Get the directory containing this file
 current_dir = Path(__file__).parent.absolute()
+root_dir = current_dir.parent
 
-# Mount the test harness static files
+# Ensure static directories exist
+static_dir = root_dir / "static"
+static_dir.mkdir(exist_ok=True)
+(static_dir / "app").mkdir(exist_ok=True)
+(static_dir / "app" / "lib").mkdir(exist_ok=True)
+
+# Copy static files if they don't exist in the target location
+if not (static_dir / "app" / "lib" / "api-client.js").exists():
+    import shutil
+    # Copy app files
+    if (current_dir / "static" / "app").exists():
+        shutil.copytree(
+            current_dir / "static" / "app",
+            static_dir / "app",
+            dirs_exist_ok=True
+        )
+
+# Mount static files
+app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+# Mount API files
 app.mount("/api", StaticFiles(directory=str(current_dir)), name="api")
-
-# Mount the app static files
-app.mount("/static", StaticFiles(directory=str(current_dir / "static")), name="static")
 
 # Include routers
 app.include_router(advisors.router, tags=["advisors"], dependencies=[Depends(verify_auth)])
