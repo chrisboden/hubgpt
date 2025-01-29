@@ -59,11 +59,12 @@ app.add_middleware(
 
 # Get the directory containing this file
 current_dir = Path(__file__).parent.absolute()
-static_dir = current_dir / "static"
-static_dir.mkdir(exist_ok=True)
 
-# Mount static files using absolute path
-app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+# Mount the test harness static files
+app.mount("/api", StaticFiles(directory=str(current_dir)), name="api")
+
+# Mount the app static files
+app.mount("/static", StaticFiles(directory=str(current_dir / "static")), name="static")
 
 # Include routers
 app.include_router(advisors.router, tags=["advisors"], dependencies=[Depends(verify_auth)])
@@ -78,9 +79,9 @@ async def read_root():
         index_path = current_dir / "index.html"
         if not index_path.exists():
             # Try the static directory as fallback
-            index_path = static_dir / "index.html"
+            index_path = current_dir / "static" / "index.html"
             if not index_path.exists():
-                logger.error(f"index.html not found in either {current_dir} or {static_dir}")
+                logger.error(f"index.html not found in either {current_dir} or {current_dir / 'static'}")
                 return HTMLResponse(
                     content="<h1>Error: index.html not found</h1>",
                     status_code=404
