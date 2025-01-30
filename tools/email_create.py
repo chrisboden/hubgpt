@@ -46,7 +46,7 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-template="""
+template = """
 <!DOCTYPE html>
 <html xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
 
@@ -152,37 +152,29 @@ template="""
  .pc-project-container {width: 100% !important;}
  .pc-sm-hide, .pc-w620-gridCollapsed-1 > tbody > tr > .pc-sm-hide {display: none !important;}
  .pc-sm-bg-img-hide {background-image: none !important;}
- .pc-w620-padding-20-0-0-0 {padding: 20px 0px 0px 0px !important;}
- .pc-w620-fontSize-32px {font-size: 32px !important;}
- .pc-w620-padding-30-40-30-40 {padding: 30px 40px 30px 40px !important;}
- table.pc-w620-spacing-0-0-0-0 {margin: 0px 0px 0px 0px !important;}
- td.pc-w620-spacing-0-0-0-0,th.pc-w620-spacing-0-0-0-0{margin: 0 !important;padding: 0px 0px 0px 0px !important;}
- .pc-w620-itemsSpacings-20-0 {padding-left: 10px !important;padding-right: 10px !important;padding-top: 0px !important;padding-bottom: 0px !important;}
- table.pc-w620-spacing-0-30-0-0 {margin: 0px 30px 0px 0px !important;}
- td.pc-w620-spacing-0-30-0-0,th.pc-w620-spacing-0-30-0-0{margin: 0 !important;padding: 0px 30px 0px 0px !important;}
- .pc-w620-padding-0-0-0-0 {padding: 0px 0px 0px 0px !important;}
- .pc-w620-padding-40-30-30-30 {padding: 40px 30px 30px 30px !important;}
  
- .pc-w620-gridCollapsed-1 > tbody,.pc-w620-gridCollapsed-1 > tbody > tr,.pc-w620-gridCollapsed-1 > tr {display: inline-block !important;}
- .pc-w620-gridCollapsed-1.pc-width-fill > tbody,.pc-w620-gridCollapsed-1.pc-width-fill > tbody > tr,.pc-w620-gridCollapsed-1.pc-width-fill > tr {width: 100% !important;}
- .pc-w620-gridCollapsed-1.pc-w620-width-fill > tbody,.pc-w620-gridCollapsed-1.pc-w620-width-fill > tbody > tr,.pc-w620-gridCollapsed-1.pc-w620-width-fill > tr {width: 100% !important;}
- .pc-w620-gridCollapsed-1 > tbody > tr > td,.pc-w620-gridCollapsed-1 > tr > td {display: block !important;width: auto !important;padding-left: 0 !important;padding-right: 0 !important;margin-left: 0 !important;}
- .pc-w620-gridCollapsed-1.pc-width-fill > tbody > tr > td,.pc-w620-gridCollapsed-1.pc-width-fill > tr > td {width: 100% !important;}
- .pc-w620-gridCollapsed-1.pc-w620-width-fill > tbody > tr > td,.pc-w620-gridCollapsed-1.pc-w620-width-fill > tr > td {width: 100% !important;}
- .pc-w620-gridCollapsed-1 > tbody > .pc-grid-tr-first > .pc-grid-td-first,pc-w620-gridCollapsed-1 > .pc-grid-tr-first > .pc-grid-td-first {padding-top: 0 !important;}
- .pc-w620-gridCollapsed-1 > tbody > .pc-grid-tr-last > .pc-grid-td-last,pc-w620-gridCollapsed-1 > .pc-grid-tr-last > .pc-grid-td-last {padding-bottom: 0 !important;}
- 
- .pc-w620-gridCollapsed-0 > tbody > .pc-grid-tr-first > td,.pc-w620-gridCollapsed-0 > .pc-grid-tr-first > td {padding-top: 0 !important;}
- .pc-w620-gridCollapsed-0 > tbody > .pc-grid-tr-last > td,.pc-w620-gridCollapsed-0 > .pc-grid-tr-last > td {padding-bottom: 0 !important;}
- .pc-w620-gridCollapsed-0 > tbody > tr > .pc-grid-td-first,.pc-w620-gridCollapsed-0 > tr > .pc-grid-td-first {padding-left: 0 !important;}
- .pc-w620-gridCollapsed-0 > tbody > tr > .pc-grid-td-last,.pc-w620-gridCollapsed-0 > tr > .pc-grid-td-last {padding-right: 0 !important;}
- 
- .pc-w620-tableCollapsed-1 > tbody,.pc-w620-tableCollapsed-1 > tbody > tr,.pc-w620-tableCollapsed-1 > tr {display: block !important;}
- .pc-w620-tableCollapsed-1.pc-width-fill > tbody,.pc-w620-tableCollapsed-1.pc-width-fill > tbody > tr,.pc-w620-tableCollapsed-1.pc-width-fill > tr {width: 100% !important;}
- .pc-w620-tableCollapsed-1.pc-w620-width-fill > tbody,.pc-w620-tableCollapsed-1.pc-w620-width-fill > tbody > tr,.pc-w620-tableCollapsed-1.pc-w620-width-fill > tr {width: 100% !important;}
- .pc-w620-tableCollapsed-1 > tbody > tr > td,.pc-w620-tableCollapsed-1 > tr > td {display: block !important;width: auto !important;}
- .pc-w620-tableCollapsed-1.pc-width-fill > tbody > tr > td,.pc-w620-tableCollapsed-1.pc-width-fill > tr > td {width: 100% !important;box-sizing: border-box !important;}
- .pc-w620-tableCollapsed-1.pc-w620-width-fill > tbody > tr > td,.pc-w620-tableCollapsed-1.pc-w620-width-fill > tr > td {width: 100% !important;box-sizing: border-box !important;}
+ /* New mobile-specific styles */
+ .mobile-stack {
+     display: block !important;
+     width: 100% !important;
+ }
+ .para {
+     font-size:19px
+ }
+ .mobile-stack td {
+     display: block !important;
+     width: 100% !important;
+     padding: 10px 20px !important;
+     text-align: center !important;
+ }
+ .mobile-img {
+     width: 80% !important;
+     max-width: 300px !important;
+     margin: 0 auto !important;
+ }
+ .mobile-padding {
+     padding: 20px 15px !important;
+ }
  }
  </style>
  <!--[if mso]>
@@ -203,7 +195,28 @@ template="""
 </head>
 
 <body class="body pc-font-alt" style="width: 100% !important; min-height: 100% !important; margin: 0 !important; padding: 0 !important; line-height: 1.5; color: #2D3A41; mso-line-height-rule: exactly; -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; font-variant-ligatures: normal; text-rendering: optimizeLegibility; -moz-osx-font-smoothing: grayscale; background-color: #F9F6F2 !important;" bgcolor="#F9F6F2">
+
  <table class="pc-project-body" style="table-layout: fixed; min-width: 600px; background-color: #F9F6F2 !important;" bgcolor="#F9F6F2" width="100%" border="0" cellspacing="0" cellpadding="0" role="presentation">
+   <tr style="background-color: #0f1328;">
+   <td align="center" valign="top">
+    <table class="pc-project-container" align="center" width="600" style="width: 600px; max-width: 600px; background-color: #0f1328;" border="0" cellpadding="0" cellspacing="0" role="presentation">
+     <tr>
+      <td class="mobile-padding" style="padding: 40px 20px;">
+       <table width="100%" border="0" cellspacing="0" cellpadding="0" role="presentation" class="mobile-stack">
+        <tr>
+         <td align="right" style="padding-right: 5px;" class="mobile-stack">
+          <img src="https://www.peregianhub.com.au/img/email/whale.png" width="250" alt="Whale" style="display: block; border: 0; max-width: 100%; height: auto;" class="mobile-img" />
+         </td>
+         <td align="left" style="padding-left: 5px;" class="mobile-stack">
+          <img src="https://www.peregianhub.com.au/img/email/tokenizer.png" width="250" alt="Tokenizer" style="display: block; border: 0; max-width: 100%; height: auto;" class="mobile-img" />
+         </td>
+        </tr>
+       </table>
+      </td>
+     </tr>
+    </table>
+   </td>
+  </tr>
   <tr>
    <td align="center" valign="top">
     <table class="pc-project-container" align="center" width="600" style="width: 600px; max-width: 600px; background-color: #F9F6F2;" border="0" cellpadding="0" cellspacing="0" role="presentation">
@@ -238,7 +251,7 @@ template="""
                 <table border="0" cellpadding="0" cellspacing="0" role="presentation" width="100%" style="border-collapse: separate; border-spacing: 0; margin-right: auto; margin-left: auto;">
                  <tr>
                   <td valign="top" align="left">
-                   <div class="pc-font-alt" style="line-height: 180%; letter-spacing: 0px; font-family: 'GFS Didot', Georgia, Times New Roman, Times, serif; font-size: 16px; font-weight: normal; font-variant-ligatures: normal; color: #322e27; text-align: left; text-align-last: left;">
+                   <div class="pc-font-alt" style="line-height: 180%; letter-spacing: 0px; font-family: 'GFS Didot', Georgia, Times New Roman, Times, serif; font-size: 17px; font-weight: normal; font-variant-ligatures: normal; color: #322e27; text-align: left; text-align-last: left;">
                     {{BODY}}
                     <div><span>&#xFEFF;</span>
                     </div>
@@ -312,7 +325,7 @@ template="""
                   <td align="center" style="padding: 0px 0px 23px 0px;">
                    <table class="pc-width-hug pc-w620-gridCollapsed-0" align="center" border="0" cellpadding="0" cellspacing="0" role="presentation">
                     <tr class="pc-grid-tr-first pc-grid-tr-last">
-                     <td class="pc-grid-td-first pc-w620-itemsSpacings-20-0" valign="top" style="padding-top: 0px; padding-right: 15px; padding-bottom: 0px; padding-left: 0px;">
+                     <td class="pc-grid-td-first pc-w620-itemsSpacings-20-0" valign="top" style="padding-top: 0px; padding-right: 15px; padding-bottom: 0px; padding-left: 15px;">
                       <table style="border-collapse: separate; border-spacing: 0;" border="0" cellpadding="0" cellspacing="0" role="presentation">
                        <tr>
                         <td align="left" valign="top">
@@ -358,7 +371,7 @@ template="""
                        </tr>
                       </table>
                      </td>
-                     <td class="pc-w620-itemsSpacings-20-0" valign="top" style="padding-top: 0px; padding-right: 15px; padding-bottom: 0px; padding-left: 15px;">
+                     <td class="pc-w620-itemsSpacings-20-0" valign="top" style="padding-top: 0px; padding-right: 15px; padding-bottom: 0px; padding-left: 15px;padding-right: 15px;">
                       <table style="border-collapse: separate; border-spacing: 0;" border="0" cellpadding="0" cellspacing="0" role="presentation">
                        <tr>
                         <td align="left" valign="top">
@@ -430,48 +443,51 @@ template="""
 
 def format_body_content(content):
     """Format plain text content into template-compatible div spans"""
-    paragraphs = content.split('\n\n')  # Split on double newlines for paragraphs
+    paragraphs = content.split(
+        '\n\n')  # Split on double newlines for paragraphs
     formatted_paragraphs = []
-    
+
     for para in paragraphs:
         if para.strip():  # Only process non-empty paragraphs
-            formatted = f'<div><span style="font-family: \'GFS Didot\', Georgia, Times New Roman, Times, serif;font-weight: 400;font-style: normal;margin-bottom:1em">{para}</span></div>'
+            formatted = f'<div class="para"><span style = "font-family: \'GFS Didot\', Georgia, Times New Roman, Times, serif;font-size:17px; font-weight: 400;font-style: normal;margin-bottom:1em"> {para}</span><br><br></div>'
             formatted_paragraphs.append(formatted)
-    
+
     return '\n'.join(formatted_paragraphs)
+
 
 def apply_template(subject: str, body_content: str) -> str:
     """
     Apply the Hub's HTML template to the email content.
-    
+
     Args:
         subject: Email subject to include in the template
         body_content: Main content to format and include in the template
-    
+
     Returns:
         str: Complete HTML email with content properly formatted
     """
     # First format the body content into proper div spans
     formatted_body = format_body_content(body_content)
-    
+
     # Replace the placeholders
     html = template.replace('{{SUBJECT}}', subject)
     html = html.replace('{{BODY}}', formatted_body)
-    
+
     return html
 
+
 def execute(
-    to: Optional[List[str]], 
-    subject: str, 
+    to: Optional[List[str]],
+    subject: str,
     html_body: str,
     body: Optional[str] = None,
-    cc: Optional[List[str]] = None, 
-    bcc: Optional[List[str]] = None, 
+    cc: Optional[List[str]] = None,
+    bcc: Optional[List[str]] = None,
     from_email: Optional[str] = 'chris.boden@noosa.qld.gov.au'
 ):
     """
     Execute the email sending operation with the Hub's template.
-    
+
     Args:
         to: List of recipient email addresses
         subject: Email subject line
@@ -480,20 +496,22 @@ def execute(
         cc: Optional list of CC recipients
         bcc: Optional list of BCC recipients
         from_email: Optional sender email address (defaults to Hub's address)
-    
+
     Returns:
         str: Success or error message
-        
+
     Raises:
         ValueError: If ZAPIER_EMAIL_WEBHOOK_URL is not set
         Exception: If email sending fails
     """
     # Get Zapier webhook URL from environment variable
     webhook_url = os.getenv('ZAPIER_EMAIL_WEBHOOK_URL')
-    print(f"Using webhook URL: {webhook_url[:20]}...") # Only show start of URL for security
-    
+    # Only show start of URL for security
+    print(f"Using webhook URL: {webhook_url[:20]}...")
+
     if not webhook_url:
-        raise ValueError("ZAPIER_EMAIL_WEBHOOK_URL is not set in environment variables")
+        raise ValueError(
+            "ZAPIER_EMAIL_WEBHOOK_URL is not set in environment variables")
 
     # Apply the template to the HTML body
     print("Applying template to HTML body...")
@@ -535,27 +553,28 @@ def execute(
     try:
         print("Sending request to Zapier webhook...")
         response = requests.post(
-            webhook_url, 
+            webhook_url,
             json=payload,
             headers={'Content-Type': 'application/json'}
         )
-        
+
         print(f"Response status code: {response.status_code}")
         print(f"Response content: {response.text}")
-        
+
         # Check response
         if response.status_code == 200:
             return f"Successfully sent email: {subject}"
         else:
             return f"Failed to send email: {response.status_code} - {response.text}"
-    
+
     except Exception as e:
         print(f"Exception while sending email: {str(e)}")
         return f"Error sending email: {str(e)}"
 
+
 def send_email(
-    to: Union[str, List[str]], 
-    subject: str, 
+    to: Union[str, List[str]],
+    subject: str,
     content: str,
     cc: Optional[Union[str, List[str]]] = None,
     bcc: Optional[Union[str, List[str]]] = None,
@@ -563,10 +582,10 @@ def send_email(
 ):
     """
     Simplified function for sending an email with the Hub's template.
-    
+
     This is the recommended way to send emails as it handles common cases
     and provides a simpler interface than the execute() function.
-    
+
     Args:
         to: Single email address or list of recipient addresses
         subject: Email subject line
@@ -574,10 +593,10 @@ def send_email(
         cc: Optional single email or list of CC recipients
         bcc: Optional single email or list of BCC recipients
         from_email: Optional sender email address
-    
+
     Returns:
         str: Success or error message
-        
+
     Example:
         result = send_email(
             to="john@example.com",
@@ -587,14 +606,14 @@ def send_email(
         print(result)  # "Successfully sent email: Hello"
     """
     print("Starting send_email function...")
-    
+
     # Convert single email strings to lists
     to_list = [to] if isinstance(to, str) else to
     cc_list = [cc] if cc and isinstance(cc, str) else cc
     bcc_list = [bcc] if bcc and isinstance(bcc, str) else bcc
-    
+
     print(f"Recipients - To: {to_list}, CC: {cc_list}, BCC: {bcc_list}")
-    
+
     try:
         result = execute(
             to=to_list,
@@ -610,6 +629,7 @@ def send_email(
         error_msg = f"Error in send_email: {str(e)}"
         print(error_msg)
         return error_msg
+
 
 # Update Tool metadata for LLM integration
 TOOL_METADATA = {

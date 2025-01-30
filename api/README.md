@@ -187,6 +187,59 @@ The included test harness (`index.html`) provides a simple interface for testing
    - Client-side message formatting
    - Cancellation button during streaming
 
+## Testing
+
+The API includes a comprehensive test suite using pytest. Tests cover all major functionality including advisor management, chat operations, and file handling.
+
+### Running Tests
+
+```bash
+pytest tests/test_api.py -v
+```
+
+### Test Coverage
+
+1. **Advisor Management Tests**:
+   - Creating new advisors
+   - Retrieving advisor details
+   - Updating advisor configurations
+   - Listing all advisors
+   - Error handling for non-existent advisors
+
+2. **Chat Operation Tests**:
+   - Creating new chat sessions
+   - Adding messages and receiving responses
+   - Testing streaming responses
+   - Managing conversation history
+   - Deleting conversations
+   - Testing chat archival
+
+3. **File Operation Tests**:
+   - Creating and managing directories
+   - Creating, updating, and deleting files
+   - File renaming operations
+   - Error handling for non-existent files
+
+4. **Authentication Tests**:
+   - Basic auth validation
+   - Protected endpoint access
+   - Invalid credential handling
+
+### Test Setup
+
+Tests use fixtures to:
+- Set up clean test environments
+- Create temporary advisors and chats
+- Clean up test files after execution
+- Provide authenticated test clients
+
+### Best Practices
+
+1. Run tests before deploying changes
+2. Add tests for new features
+3. Use the provided fixtures for consistent testing
+4. Clean up test files after test execution
+
 ## Development
 
 ### Adding New Features

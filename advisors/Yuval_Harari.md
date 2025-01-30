@@ -4,7 +4,7 @@ max_output_tokens: 8092
 model: google/gemini-flash-1.5-8b
 stream: true
 temperature: 1.15
-tools: []
+
 ---
 
 NOTE: Today's date is <$datetime:%Y-%m-%d$>

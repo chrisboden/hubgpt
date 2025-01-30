@@ -5,9 +5,10 @@ import sys
 import importlib
 import logging
 import json
-import streamlit as st
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from inspect import signature
+
+logger = logging.getLogger(__name__)
 
 # Global dictionaries to store registered tools and their metadata
 # TOOL_REGISTRY maps tool names to their executable functions
@@ -15,132 +16,87 @@ from inspect import signature
 TOOL_REGISTRY: Dict[str, Any] = {}
 TOOL_METADATA_REGISTRY: Dict[str, Any] = {}
 
-def load_tools(tools_dir: str):
+def load_tools(tools_dir: str) -> None:
     """
-    Dynamically load and register tool modules from a specified directory.
-    
-    This function performs several critical tasks:
-    - Validates the existence of the tools directory
-    - Adds the directory to Python's module search path
-    - Discovers and imports Python files as potential tools
-    - Registers tools with executable functions
-    - Captures and logs any loading errors
-    
-    Key Considerations:
-    - Skips files starting with '__' (like __init__.py)
-    - Requires each tool module to have an 'execute' function
-    - Optionally supports 'TOOL_METADATA' for additional tool information
+    Load all tools from the specified directory.
     
     Args:
-        tools_dir (str): Path to the directory containing tool modules
+        tools_dir (str): Directory containing tool modules
     """
     global TOOL_REGISTRY, TOOL_METADATA_REGISTRY
     
-    # Validate tools directory existence
-    if not os.path.exists(tools_dir):
-        st.error(f"Tools directory '{tools_dir}' not found.")
-        logging.error(f"Tools directory '{tools_dir}' not found.")
-        st.stop()
+    # Get the absolute path of the tools directory
+    if not os.path.isabs(tools_dir):
+        tools_dir = os.path.abspath(tools_dir)
+    
+    # Add tools directory to Python path if not already there
+    if tools_dir not in sys.path:
+        sys.path.append(tools_dir)
+    
+    try:
+        # Iterate through Python files in the tools directory
+        for filename in os.listdir(tools_dir):
+            if filename.endswith('.py') and not filename.startswith('_'):
+                module_name = filename[:-3]  # Remove .py extension
+                try:
+                    # Import the module
+                    module = importlib.import_module(module_name)
+                    
+                    # Register the tool if it has the required attributes
+                    if hasattr(module, 'execute') and hasattr(module, 'TOOL_METADATA'):
+                        TOOL_REGISTRY[module_name] = module.execute
+                        TOOL_METADATA_REGISTRY[module_name] = module.TOOL_METADATA
+                        logger.info(f"Successfully loaded tool: {module_name}")
+                    else:
+                        logger.warning(f"Skipping {module_name}: missing required attributes")
+                        
+                except Exception as e:
+                    logger.error(f"Error loading tool {module_name}: {str(e)}")
+                    
+    except Exception as e:
+        logger.error(f"Error loading tools from directory {tools_dir}: {str(e)}")
+        raise
 
-    # Add tools directory to Python's module search path
-    sys.path.insert(0, tools_dir)  
-
-    # Iterate through Python files in the tools directory
-    for filename in os.listdir(tools_dir):
-        if filename.endswith('.py') and not filename.startswith('__'):
-            module_name = os.path.splitext(filename)[0]
-            try:
-                # Dynamically import the module
-                module = importlib.import_module(module_name)
-                
-                # Register tool's execute function if available
-                if hasattr(module, 'execute') and callable(getattr(module, 'execute')):
-                    TOOL_REGISTRY[module_name] = module.execute
-                else:
-                    logging.warning(f"Module '{module_name}' does not have an 'execute' function. Skipping.")
-                    continue
-
-                # Register tool metadata if available
-                if hasattr(module, 'TOOL_METADATA'):
-                    TOOL_METADATA_REGISTRY[module_name] = module.TOOL_METADATA
-                else:
-                    logging.warning(f"Module '{module_name}' does not have 'TOOL_METADATA'. Skipping metadata.")
-            except Exception as e:
-                # Comprehensive error logging for module import failures
-                logging.error(f"Error loading module '{module_name}': {e}")
-
-
-def execute_tool(tool_name: str, args: Dict[str, Any], llm_client=None) -> Dict[str, Any]:
+def execute_tool(tool_name: str, args: Dict[str, Any], llm_client: Optional[Any] = None) -> Dict[str, Any]:
     """
-    Execute a specified tool with given arguments and standardize its response.
-    
-    This function handles complex tool execution scenarios:
-    - Validates tool availability
-    - Supports optional LLM client injection
-    - Handles various response formats (JSON, string)
-    - Provides robust error handling and logging
-    
-    Key Features:
-    - Dynamically determines tool function signature
-    - Injects LLM client if the tool's function supports it
-    - Attempts to parse responses as JSON
-    - Returns a standardized response dictionary
-    - Supports follow_on_instructions parameter for chaining tool calls
-    - Returns both tool result and any follow-on instructions for further processing
+    Execute a registered tool with the provided arguments.
     
     Args:
         tool_name (str): Name of the tool to execute
-        args (Dict[str, Any]): Arguments for the tool
-        llm_client (optional): Language model client for advanced tools
-    
+        args (Dict[str, Any]): Arguments to pass to the tool
+        llm_client (Optional[Any]): LLM client instance if needed
+        
     Returns:
-        Dict[str, Any]: Standardized tool execution result
+        Dict[str, Any]: Result from the tool execution
+        
+    Raises:
+        KeyError: If tool_name is not found in registry
+        ValueError: If invalid arguments are provided
     """
-    # Check if the specified tool is available in the registry
     if tool_name not in TOOL_REGISTRY:
-        st.error(f"Tool '{tool_name}' is not available.")
-        logging.error(f"Tool '{tool_name}' is not available.")
-        return {}
-
+        error_msg = f"Tool '{tool_name}' not found in registry"
+        logger.error(error_msg)
+        raise KeyError(error_msg)
+    
+    tool_func = TOOL_REGISTRY[tool_name]
+    
     try:
-        logging.info(f"Executing tool '{tool_name}' with arguments: {args}")
+        # Get the function signature
+        sig = signature(tool_func)
         
-        # Extract follow_on_instructions if present
-        follow_on_instructions = args.pop("follow_on_instructions", [])
+        # Prepare arguments
+        valid_args = {}
+        for param_name in sig.parameters:
+            if param_name == 'llm_client':
+                valid_args['llm_client'] = llm_client
+            elif param_name in args:
+                valid_args[param_name] = args[param_name]
         
-        tool_func = TOOL_REGISTRY[tool_name]
-        tool_metadata = TOOL_METADATA_REGISTRY.get(tool_name, {})
-        tool_signature = signature(tool_func)
+        # Execute the tool
+        result = tool_func(**valid_args)
+        return {"result": result} if result is not None else {}
         
-        # Execute tool
-        if llm_client and 'llm_client' in tool_signature.parameters:
-            response = tool_func(llm_client=llm_client, **args)
-        else:
-            response = tool_func(**args)
-
-        # Handle string responses
-        if isinstance(response, str):
-            if "```json" in response:
-                response = response.split("```json")[1]
-                if "```" in response:
-                    response = response.split("```")[0]
-            response = response.strip()
-            
-            try:
-                response = json.loads(response)
-            except json.JSONDecodeError:
-                response = {"result": response}
-
-        # Add follow-on instructions to response if present
-        if follow_on_instructions:
-            response["follow_on_instructions"] = follow_on_instructions
-
-        return {
-            **response,
-            "direct_stream": tool_metadata.get("direct_stream", False)
-        }
-
     except Exception as e:
-        st.error(f"Error executing tool '{tool_name}': {e}")
-        logging.error(f"Error executing tool '{tool_name}': {e}")
-        return {}
+        error_msg = f"Error executing tool '{tool_name}': {str(e)}"
+        logger.error(error_msg)
+        raise ValueError(error_msg)

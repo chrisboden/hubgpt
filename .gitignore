@@ -214,9 +214,12 @@ logs/advisorchat.log
 
 scrape.md
 /generated_artifacts
-/tests
 
+# Ignore all test files except api/tests/test_api.py
 *test*
+!api/tests/
+!api/tests/test_api.py
+
 *demo*
 /temp/*
 *temp*
