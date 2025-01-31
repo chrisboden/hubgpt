@@ -178,6 +178,7 @@ cython_debug/
 /data/*
 
 # Create empty .gitkeep files in these directories to preserve them
+
 !/advisors/chats/.gitkeep
 !/advisors/ideas/.gitkeep
 !/advisors/archive/.gitkeep
@@ -234,3 +235,4 @@ teams.py
 .webui_secret_key
 .DS_Store
 tools/linkedin_bio_writer.py
+api/advisors/archive/*.json
