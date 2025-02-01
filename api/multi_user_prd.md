@@ -29,8 +29,7 @@ This document outlines the plan to migrate the HubGPT API from a single-user to 
 **Status**: Complete
 
 #### Changes
-1. Database Setup
-```sql
+1. Database Setup```sql
 CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     username TEXT UNIQUE NOT NULL,
@@ -46,8 +45,7 @@ CREATE TABLE auth_sessions (
     token TEXT UNIQUE NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     expires_at TIMESTAMP NOT NULL
-);
-```
+);```
 
 #### Compatibility Layer
 - ✅ Add JWT auth alongside basic auth
@@ -141,9 +139,9 @@ CREATE TABLE tool_calls (
 );
 ```
 
-### Phase 4: Sharing & Collaboration 🔄
+### Phase 4: Basic Sharing Features ✅
 **Goal**: Enable secure resource sharing between users
-**Status**: In Progress
+**Status**: Complete
 
 #### Features
 1. File Sharing ✅
@@ -153,19 +151,130 @@ CREATE TABLE tool_calls (
    - [x] Share listing
    - [x] Access control enforcement
 
-2. Resource Sharing 🔄
+2. Resource Sharing ✅
    - [x] Advisor sharing
-   - [ ] Chat sharing
-   - [ ] Tool sharing
-   - [ ] Workspace sharing
+   - [x] Basic file sharing
+   - [x] Permission management
 
-3. Collaboration Tools ⏳
+### Phase 5: Message Snippets 🔄
+**Goal**: Enable users to save and manage interesting AI responses as reusable snippets, with native Markdown support
+**Status**: In Progress
+
+#### Database Schema
+```sql
+CREATE TABLE snippets (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES users(id),
+    source_type TEXT NOT NULL,  -- e.g., 'advisor', 'notepad', 'team'
+    source_name TEXT NOT NULL,  -- specific source identifier
+    content TEXT NOT NULL,      -- stored as Markdown
+    content_html TEXT,          -- cached HTML rendering of Markdown content
+    title TEXT,                 -- optional title extracted from first heading
+    tags TEXT[],               -- array of tags extracted from content
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    metadata JSONB DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX idx_snippets_tags ON snippets USING gin(tags);
+CREATE INDEX idx_snippets_title ON snippets USING btree(title);
+```
+
+#### Features
+1. Core Features ⏳
+   - [ ] Save AI responses as Markdown snippets
+   - [ ] Automatic title extraction from first H1/H2 heading
+   - [ ] Automatic tag extraction from content
+   - [ ] HTML rendering cache for faster display
+   - [ ] Organize snippets by source and tags
+   - [ ] Full-text search across content
+   - [ ] Share snippets with other users
+   - [ ] Export snippets in MD/HTML/PDF formats
+
+2. API Endpoints
+```http
+GET /api/v1/snippets
+Description: List all snippets for current user
+Query Parameters:
+  - source_type: Filter by source type
+  - source_name: Filter by source name
+  - tags: Filter by tags (comma-separated)
+  - q: Full-text search query
+Response: List[SnippetResponse]
+
+GET /api/v1/snippets/{snippet_id}
+Description: Get specific snippet
+Query Parameters:
+  - format: Response format (md|html|text), defaults to md
+Response: SnippetResponse
+
+POST /api/v1/snippets
+Description: Create new snippet
+Body: {
+    "content": string,        # Markdown content
+    "source_type": string,
+    "source_name": string,
+    "tags": string[] | null,  # Optional manual tags
+    "metadata": object        # Optional additional metadata
+}
+Response: SnippetResponse
+
+DELETE /api/v1/snippets/{snippet_id}
+Description: Delete snippet
+Response: Success message
+
+GET /api/v1/snippets/export
+Description: Export snippets in bulk
+Query Parameters:
+  - format: Export format (md|html|pdf)
+  - ids: Comma-separated snippet IDs (optional)
+Response: File download
+```
+
+3. Test Harness Updates
+   - [ ] Add snippet management UI with Markdown preview
+   - [ ] Add save button to AI messages
+   - [ ] Add snippets listing view with tag filtering
+   - [ ] Add snippet search with syntax highlighting
+   - [ ] Add snippet export functionality
+   - [ ] Add snippet deletion capability
+   - [ ] Add tag management interface
+
+4. Migration Requirements
+   - [ ] Import existing snippets from JSON files
+   - [ ] Parse and validate Markdown content
+   - [ ] Generate HTML cache for existing content
+   - [ ] Extract titles and tags from existing content
+   - [ ] Maintain backward compatibility
+   - [ ] Update frontend components
+
+5. Markdown Processing
+   - [ ] Title extraction from H1/H2 headers
+   - [ ] Tag extraction from content (#tags)
+   - [ ] HTML rendering with syntax highlighting
+   - [ ] Table of contents generation
+   - [ ] Link validation
+   - [ ] Image handling
+
+### Phase 6: Advanced Sharing & Collaboration ⏳
+**Goal**: Implement advanced collaboration features
+**Status**: Pending
+
+#### Features
+1. Advanced Sharing
+   - [ ] Chat sharing and export
+   - [ ] Tool sharing and permissions
+   - [ ] Workspace sharing
+   - [ ] Snippet sharing
+
+2. Collaboration Tools
    - [ ] Shared workspaces
    - [ ] Team management
    - [ ] Access control lists
    - [ ] Activity tracking
+   - [ ] Real-time collaboration
 
-### Phase 5: Advanced Features ⏳
+### Phase 7: Advanced Features ⏳
 **Goal**: Add enterprise-grade features and optimizations
 **Status**: Pending
 
@@ -190,11 +299,13 @@ CREATE TABLE tool_calls (
 
 ## Next Steps
 
-1. Complete chat sharing implementation
-2. Add team workspace features
-3. Implement usage analytics
-4. Add enterprise features
-5. Optimize storage and performance
+1. Implement snippets system
+2. Add snippet management UI
+3. Complete advanced sharing features
+4. Add team workspace features
+5. Implement usage analytics
+6. Add enterprise features
+7. Optimize storage and performance
 
 ## Success Metrics
 
@@ -204,9 +315,11 @@ CREATE TABLE tool_calls (
 - Successful data isolation between users
 - Improved performance with database backend
 - Maintained feature parity throughout migration
+- Basic sharing functionality
 
 🔄 **In Progress**
-- Complete resource sharing implementation
+- Snippets system implementation
+- Advanced resource sharing
 - Team workspace functionality
 - Usage analytics and monitoring
 
@@ -221,3 +334,4 @@ The test harness at `/` (index.html) provides comprehensive testing capabilities
 5. Sharing features
 
 For automated testing, see the test suite in `api/tests/`. 
+

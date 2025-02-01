@@ -23,6 +23,7 @@ class User(Base):
     files = relationship("UserFile", back_populates="user", cascade="all, delete-orphan")
     sessions = relationship("AuthSession", back_populates="user", cascade="all, delete-orphan")
     conversations = relationship("Conversation", back_populates="user", cascade="all, delete-orphan")
+    snippets = relationship("Snippet", back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<User(id={self.id}, username={self.username})>"

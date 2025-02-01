@@ -235,40 +235,40 @@
         <!-- Chat Interface -->
         <div class="bg-white rounded-lg shadow p-6 mb-8">
             <h2 class="text-xl font-semibold mb-4">Chat Interface</h2>
-        <div class="grid grid-cols-4 gap-4">
-            <!-- Sidebar -->
+            <div class="grid grid-cols-4 gap-4">
+                <!-- Sidebar -->
                 <div class="col-span-1">
                     <h3 class="text-lg font-semibold mb-2">Select Advisor</h3>
                     <select id="chatAdvisorSelect" class="w-full p-2 border rounded mb-4">
-                    <option value="">Select an advisor...</option>
-                </select>
-                
+                        <option value="">Select an advisor...</option>
+                    </select>
+                    
                     <div class="flex justify-between items-center mb-2">
                         <h3 class="text-lg font-semibold">Previous Chats</h3>
                         <button id="newChatBtn" class="text-sm bg-green-500 text-white px-2 py-1 rounded hover:bg-green-600">
                             New Chat
                         </button>
                     </div>
-                <ul id="previousChats" class="space-y-2">
-                    <!-- Previous chats will be listed here -->
-                </ul>
-            </div>
+                    <ul id="previousChats" class="space-y-2">
+                        <!-- Previous chats will be listed here -->
+                    </ul>
+                </div>
 
-            <!-- Main Chat Area -->
+                <!-- Main Chat Area -->
                 <div class="col-span-3">
-                <div id="chatHistory" class="h-[500px] overflow-y-auto mb-4 p-4 border rounded">
-                    <!-- Chat messages will appear here -->
-                </div>
-                
-                <div class="flex gap-2">
-                    <input type="text" id="messageInput" class="flex-1 p-2 border rounded" placeholder="Type your message...">
-                    <button id="sendButton" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
-                        Send
-                    </button>
-                    <button id="cancelButton" class="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600" style="display: none;">
-                        Cancel
-                    </button>
-                </div>
+                    <div id="chatHistory" class="h-[500px] overflow-y-auto mb-4 p-4 border rounded">
+                        <!-- Chat messages will appear here -->
+                    </div>
+                    
+                    <div class="flex gap-2">
+                        <input type="text" id="messageInput" class="flex-1 p-2 border rounded" placeholder="Type your message...">
+                        <button id="sendButton" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
+                            Send
+                        </button>
+                        <button id="cancelButton" class="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600" style="display: none;">
+                            Cancel
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -380,6 +380,43 @@
                                     <label for="isPublic">Public</label>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main App -->
+        <div id="app" class="hidden">
+            <div class="flex h-screen">
+                <!-- Left Sidebar -->
+                <div class="w-80 border-r border-border bg-muted/10 p-4 flex flex-col">
+                    <!-- Advisor Selection -->
+                    <div class="mb-6">
+                        <div class="flex justify-between items-center mb-4">
+                            <h2 class="text-lg font-semibold">Advisors</h2>
+                        </div>
+                        <select id="advisor-select" class="w-full p-2 border rounded bg-background">
+                            <option value="">Select an advisor...</option>
+                        </select>
+                    </div>
+
+                    <!-- Snippets Section -->
+                    <div class="mb-6">
+                        <div class="flex justify-between items-center mb-4">
+                            <h2 class="text-lg font-semibold">Snippets</h2>
+                            <button id="new-snippet-btn" class="px-2 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600">
+                                New
+                            </button>
+                        </div>
+                        <div class="flex mb-2">
+                            <input type="text" id="snippet-search" placeholder="Search snippets..." class="w-full p-2 border rounded bg-background">
+                        </div>
+                        <div id="snippet-tags" class="flex flex-wrap gap-1 mb-2">
+                            <!-- Tags will be added here dynamically -->
+                        </div>
+                        <div id="snippet-list" class="overflow-y-auto max-h-48 border rounded bg-background">
+                            <!-- Snippets will be added here dynamically -->
                         </div>
                     </div>
                 </div>
@@ -1471,15 +1508,15 @@
             }
         });
 
-            document.getElementById('sendButton').addEventListener('click', () => {
-                const input = document.getElementById('messageInput');
-                const message = input.value.trim();
+        document.getElementById('sendButton').addEventListener('click', () => {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
             if (message) {
-                    sendMessage(message);
-                    input.value = '';
-                }
-            });
-            
+                sendMessage(message);
+                input.value = '';
+            }
+        });
+        
         // Add event listener for cancel button
         document.getElementById('cancelButton').addEventListener('click', cancelStream);
         
@@ -2016,6 +2053,255 @@
                 alert('Failed to create file: ' + error.message);
             }
         }
+
+        // Snippet Management
+        let currentSnippetId = null;
+        let snippetTags = new Set();
+
+        async function loadSnippets(filters = {}) {
+            try {
+                let url = `${API_BASE}/snippets`;
+                const params = new URLSearchParams();
+                if (filters.source_type) params.append('source_type', filters.source_type);
+                if (filters.source_name) params.append('source_name', filters.source_name);
+                if (filters.tags) params.append('tags', filters.tags);
+                if (filters.q) params.append('q', filters.q);
+                if (params.toString()) url += `?${params.toString()}`;
+
+                const response = await fetch(url, {
+                    headers: { Authorization: `Bearer ${authToken}` }
+                });
+                const snippets = await response.json();
+                displaySnippets(snippets);
+                updateTagsList(snippets);
+            } catch (error) {
+                console.error('Error loading snippets:', error);
+            }
+        }
+
+        function displaySnippets(snippets) {
+            const list = document.getElementById('snippet-list');
+            list.innerHTML = '';
+            snippets.forEach(snippet => {
+                const div = document.createElement('div');
+                div.className = 'p-2 hover:bg-gray-100 cursor-pointer flex justify-between items-center';
+                div.innerHTML = `
+                    <div>
+                        <div class="font-medium">${snippet.title || 'Untitled'}</div>
+                        <div class="text-sm text-gray-500">${snippet.source_type} - ${snippet.source_name}</div>
+                    </div>
+                    <button class="text-red-500 hover:text-red-700" onclick="deleteSnippet('${snippet.id}')">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                `;
+                div.onclick = (e) => {
+                    if (e.target.closest('button')) return;
+                    editSnippet(snippet.id);
+                };
+                list.appendChild(div);
+            });
+        }
+
+        function updateTagsList(snippets) {
+            snippetTags.clear();
+            snippets.forEach(snippet => {
+                if (snippet.tags) snippet.tags.forEach(tag => snippetTags.add(tag));
+            });
+
+            const tagsContainer = document.getElementById('snippet-tags');
+            tagsContainer.innerHTML = '';
+            snippetTags.forEach(tag => {
+                const span = document.createElement('span');
+                span.className = 'px-2 py-1 bg-blue-100 text-blue-800 rounded text-sm cursor-pointer hover:bg-blue-200';
+                span.textContent = tag;
+                span.onclick = () => filterByTag(tag);
+                tagsContainer.appendChild(span);
+            });
+        }
+
+        async function editSnippet(id) {
+            try {
+                const response = await fetch(`${API_BASE}/snippets/${id}`, {
+                    headers: { Authorization: `Bearer ${authToken}` }
+                });
+                const snippet = await response.json();
+                
+                currentSnippetId = snippet.id;
+                document.getElementById('snippet-source-type').value = snippet.source_type;
+                document.getElementById('snippet-source-name').value = snippet.source_name;
+                document.getElementById('snippet-content').value = snippet.content;
+                document.getElementById('snippet-tags-input').value = snippet.tags?.join(', ') || '';
+                
+                document.getElementById('snippet-modal').classList.remove('hidden');
+            } catch (error) {
+                console.error('Error loading snippet:', error);
+            }
+        }
+
+        async function saveSnippet(event) {
+            event.preventDefault();
+            const data = {
+                source_type: document.getElementById('snippet-source-type').value,
+                source_name: document.getElementById('snippet-source-name').value,
+                content: document.getElementById('snippet-content').value,
+                tags: document.getElementById('snippet-tags-input').value
+                    .split(',')
+                    .map(tag => tag.trim())
+                    .filter(tag => tag)
+            };
+
+            try {
+                const method = currentSnippetId ? 'PUT' : 'POST';
+                const url = currentSnippetId ? 
+                    `${API_BASE}/snippets/${currentSnippetId}` : 
+                    `${API_BASE}/snippets`;
+
+                const response = await fetch(url, {
+                    method,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Failed to save snippet');
+                }
+
+                closeSnippetModal();
+                loadSnippets();
+            } catch (error) {
+                console.error('Error saving snippet:', error);
+                alert('Failed to save snippet: ' + error.message);
+            }
+        }
+
+        async function deleteSnippet(id) {
+            if (!confirm('Are you sure you want to delete this snippet?')) return;
+
+            try {
+                const response = await fetch(`${API_BASE}/snippets/${id}`, {
+                    method: 'DELETE',
+                    headers: { Authorization: `Bearer ${authToken}` }
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Failed to delete snippet');
+                }
+
+                loadSnippets();
+            } catch (error) {
+                console.error('Error deleting snippet:', error);
+                alert('Failed to delete snippet: ' + error.message);
+            }
+        }
+
+        function closeSnippetModal() {
+            document.getElementById('snippet-modal').classList.add('hidden');
+            document.getElementById('snippet-form').reset();
+            currentSnippetId = null;
+        }
+
+        function closePreviewModal() {
+            document.getElementById('preview-modal').classList.add('hidden');
+        }
+
+        function previewSnippet() {
+            const content = document.getElementById('snippet-content').value;
+            const previewContent = document.getElementById('preview-content');
+            previewContent.innerHTML = marked.parse(content);
+            document.getElementById('preview-modal').classList.remove('hidden');
+        }
+
+        function filterByTag(tag) {
+            loadSnippets({ tags: tag });
+        }
+
+        // Event Listeners for Snippets
+        document.getElementById('new-snippet-btn').addEventListener('click', () => {
+            currentSnippetId = null;
+            document.getElementById('snippet-modal').classList.remove('hidden');
+        });
+
+        document.getElementById('close-snippet-modal').addEventListener('click', closeSnippetModal);
+        document.getElementById('close-preview-modal').addEventListener('click', closePreviewModal);
+        document.getElementById('preview-snippet').addEventListener('click', previewSnippet);
+        document.getElementById('snippet-form').addEventListener('submit', saveSnippet);
+        document.getElementById('snippet-search').addEventListener('input', (e) => {
+            loadSnippets({ q: e.target.value });
+        });
+
+        // Load snippets on startup
+        loadSnippets();
     </script>
+
+    <!-- Snippet Editor Modal -->
+    <div id="snippet-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center">
+        <div class="bg-white rounded-lg p-6 w-3/4 max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-semibold">Edit Snippet</h2>
+                <button id="close-snippet-modal" class="text-gray-500 hover:text-gray-700">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+            <form id="snippet-form" class="space-y-4">
+                <input type="hidden" id="snippet-id">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Source Type</label>
+                        <select id="snippet-source-type" class="mt-1 block w-full p-2 border rounded" required>
+                            <option value="advisor">Advisor</option>
+                            <option value="notepad">Notepad</option>
+                            <option value="team">Team</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Source Name</label>
+                        <input type="text" id="snippet-source-name" class="mt-1 block w-full p-2 border rounded" required>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Content (Markdown)</label>
+                    <textarea id="snippet-content" class="mt-1 block w-full p-2 border rounded h-64 font-mono" required></textarea>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Tags (comma-separated)</label>
+                    <input type="text" id="snippet-tags-input" class="mt-1 block w-full p-2 border rounded">
+                </div>
+                <div class="flex justify-end space-x-2">
+                    <button type="button" id="preview-snippet" class="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600">
+                        Preview
+                    </button>
+                    <button type="submit" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
+                        Save
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Snippet Preview Modal -->
+    <div id="preview-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center">
+        <div class="bg-white rounded-lg p-6 w-3/4 max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-semibold">Preview</h2>
+                <button id="close-preview-modal" class="text-gray-500 hover:text-gray-700">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+            <div id="preview-content" class="prose max-w-none markdown-content">
+                <!-- Preview content will be inserted here -->
+            </div>
+        </div>
+    </div>
 </body>
 </html>

@@ -9,7 +9,7 @@ import logging
 import secrets
 from sqlalchemy.orm import Session
 
-from .routers import auth, advisors, chat, files
+from .routers import auth, advisors, chat, files, snippets
 from .database import engine, Base, get_db
 from .models.users import User
 from .services.auth_service import get_current_user, get_current_user_or_default, create_default_user, create_user
@@ -72,6 +72,7 @@ app.include_router(auth.router, prefix=f"{config.API_PREFIX}/auth", tags=["auth"
 app.include_router(advisors.router, prefix=f"{config.API_PREFIX}/advisors", tags=["advisors"])
 app.include_router(chat.router, prefix=f"{config.API_PREFIX}/chat", tags=["chat"])
 app.include_router(files.router, prefix=f"{config.API_PREFIX}/files", tags=["files"])
+app.include_router(snippets.router, tags=["snippets"])
 
 # Serve static files
 static_dir = Path(__file__).parent
