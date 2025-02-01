@@ -22,6 +22,8 @@ from ..models.chat import (
     Conversation,
     ToolCall
 )
+from ..models.users import User
+from ..services.auth_service import get_current_user_from_request
 from ..api_utils.chat_utils import (
     load_chat_history,
     save_chat_history,
@@ -165,7 +167,8 @@ async def add_message(
     conversation_id: str,
     request: ChatRequest,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_from_request)
 ):
     """Add a message to a conversation and get response"""
     try:
@@ -195,7 +198,7 @@ async def add_message(
         
         # Load advisor data
         try:
-            advisor_data = load_advisor_data(conversation.advisor_id)
+            advisor_data = load_advisor_data(conversation.advisor_id, user=current_user)
             logger.info(f"Loaded advisor data for {conversation.advisor_id}")
         except Exception as e:
             logger.error(f"Error loading advisor data: {str(e)}")
@@ -475,4 +478,41 @@ async def delete_conversation(conversation_id: str):
             
     except Exception as e:
         logger.error(f"Error deleting conversation: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/messages/{conversation_id}", response_model=List[ChatMessage])
+async def get_messages(conversation_id: str, db: Session = Depends(get_db)):
+    """Get messages for a conversation"""
+    try:
+        # Get messages for conversation
+        messages = db.query(Message).filter(
+            Message.conversation_id == conversation_id
+        ).order_by(Message.sequence).all()
+        
+        # Convert to ChatMessage format
+        chat_messages = []
+        for msg in messages:
+            tool_calls = None
+            if msg.tool_calls:
+                tool_calls = [
+                    {
+                        "id": tc.tool_call_id,
+                        "type": tc.type,
+                        "function": {
+                            "name": tc.function_name,
+                            "arguments": tc.function_arguments
+                        }
+                    } for tc in msg.tool_calls
+                ]
+            
+            chat_messages.append(ChatMessage(
+                role=msg.role,
+                content=msg.content or "",
+                tool_calls=tool_calls
+            ))
+            
+        return chat_messages
+        
+    except Exception as e:
+        logger.error(f"Error getting messages: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e)) 

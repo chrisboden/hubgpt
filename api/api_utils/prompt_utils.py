@@ -6,15 +6,22 @@ import glob
 import json
 from datetime import datetime
 import frontmatter
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 from .. import config
 from pathlib import Path
 import logging
 from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models.advisors import AdvisorModel
+from ..models.users import User
+from .user_file_utils import get_user_file_content
+from fastapi import HTTPException
 
 logger = logging.getLogger(__name__)
+
+def get_workspace_root():
+    """Get the workspace root directory."""
+    return os.getcwd()
 
 def get_full_path(file_path):
     """
@@ -106,32 +113,126 @@ def get_current_datetime(match):
         # Return an error message if the format string is invalid
         return f"[ERROR: Invalid datetime format: {format_string}]"
 
-def process_inclusions(content, depth, file_delimiter=None):
-    """
-    Process file and directory inclusions in text content.
+def process_file_tag(match: re.Match, user: Optional[User] = None, db: Optional[Session] = None) -> str:
+    """Process a file inclusion tag, handling both legacy file paths and user-specific files."""
+    file_path = match.group(1)
+    logger.info(f"Processing file inclusion: path={file_path}, user={user.id if user else None}")
     
-    Handles multiple types of inclusions:
-    - Datetime generation
-    - Directory content inclusion
-    - Individual file inclusion
+    try:
+        # First try user-specific file access
+        if user and db:
+            logger.info("Attempting user-specific file access")
+            try:
+                content = get_user_file_content(file_path, user, db)
+                logger.info(f"Successfully read user file: length={len(content)}")
+                return content
+            except Exception as e:
+                logger.warning(f"User file access failed: {str(e)}")
+                # Fall through to legacy path handling
+        
+        # Legacy path handling
+        logger.info("Attempting legacy file access")
+        abs_path = os.path.join(get_workspace_root(), file_path)
+        if not os.path.exists(abs_path):
+            logger.error(f"File not found: path={abs_path}")
+            return f"[Error: File not found: {file_path}]"
+            
+        with open(abs_path, 'r') as f:
+            content = f.read().strip()
+            logger.info(f"Successfully read legacy file: length={len(content)}")
+            return content
+            
+    except Exception as e:
+        logger.error(f"Error reading file: {str(e)}")
+        return f"[Error reading file {file_path}: {str(e)}]"
+
+def process_dir_tag(match: str, user: Optional[User] = None, db: Optional[Session] = None) -> str:
+    """Process a directory inclusion tag, handling user-specific paths"""
+    # Extract directory pattern from tag
+    dir_pattern = match.group(1)
     
-    Args:
-        content (str): Text content to process
-        depth (int): Maximum recursion depth
-        file_delimiter (str, optional): Delimiter for multiple file contents
+    if not user or not db:
+        # If no user context, use legacy directory handling
+        try:
+            base_dir = Path("files")
+            if not Path(dir_pattern).is_absolute():
+                pattern_path = base_dir / dir_pattern
+            else:
+                pattern_path = Path(dir_pattern)
+                
+            # Get all matching files
+            matching_files = []
+            for file_path in Path(pattern_path.parent).glob(pattern_path.name):
+                if file_path.is_file():
+                    matching_files.append(file_path)
+                    
+            if not matching_files:
+                return f"[No files found matching pattern {dir_pattern}]"
+                
+            # Combine contents of all matching files
+            contents = []
+            for file_path in sorted(matching_files):
+                try:
+                    contents.append(f"=== {file_path.name} ===\n{file_path.read_text()}")
+                except Exception as e:
+                    contents.append(f"[Error reading {file_path.name}: {str(e)}]")
+                    
+            return "\n\n".join(contents)
+            
+        except Exception as e:
+            return f"[Error processing directory {dir_pattern}: {str(e)}]"
+            
+    try:
+        # Query database for matching files
+        from ..models.user_files import UserFile
+        files = db.query(UserFile).filter(
+            UserFile.user_id == user.id,
+            UserFile.file_path.like(dir_pattern.replace('*', '%'))
+        ).all()
+        
+        if not files:
+            return f"[No files found matching pattern {dir_pattern}]"
+            
+        # Combine contents of all matching files
+        contents = []
+        for file in sorted(files, key=lambda f: f.file_path):
+            try:
+                content = get_user_file_content(db, user.id, file.file_path, check_access=True)
+                contents.append(f"=== {file.file_path} ===\n{content}")
+            except Exception as e:
+                contents.append(f"[Error reading {file.file_path}: {str(e)}]")
+                
+        return "\n\n".join(contents)
+        
+    except Exception as e:
+        return f"[Error processing directory {dir_pattern}: {str(e)}]"
+
+def process_inclusions(content: str, user: Optional[User] = None, db: Optional[Session] = None) -> str:
+    """Process all file and directory inclusion tags in content"""
+    # Process datetime inclusions
+    content = re.sub(
+        r'<\$datetime(?:\:(.*?))?\$>',
+        get_current_datetime,
+        content
+    )
     
-    Returns:
-        str: Processed content with inclusions resolved
-    """
-    # Replace datetime placeholders with the current datetime
-    content = re.sub(r'<\$datetime:(.*?)\$>', get_current_datetime, content)
-    # Replace directory inclusion placeholders with the directory content
-    content = re.sub(r'<\$dir:(.*?)\$>', lambda m: include_directory_content(m, depth, file_delimiter), content)
-    # Replace file inclusion placeholders with the file content
-    content = re.sub(r'<\$(.*?)\$>', lambda m: include_file_content(m, depth), content)
+    # Process file inclusions
+    content = re.sub(
+        r'<\$file:(.*?)\$>',
+        lambda m: process_file_tag(m, user, db),
+        content
+    )
+    
+    # Process directory inclusions
+    content = re.sub(
+        r'<\$dir:(.*?)\$>',
+        lambda m: process_dir_tag(m, user, db),
+        content
+    )
+    
     return content
 
-def parse_markdown_messages(content: str) -> List[Dict[str, Any]]:
+def parse_markdown_messages(content: str, user: Optional[User] = None, db: Optional[Session] = None) -> List[Dict[str, Any]]:
     """
     Parse markdown content into a structured list of messages.
     
@@ -143,6 +244,8 @@ def parse_markdown_messages(content: str) -> List[Dict[str, Any]]:
     
     Args:
         content (str): Markdown content to parse
+        user (Optional[User]): User context for file access
+        db (Optional[Session]): Database session
     
     Returns:
         List[Dict[str, Any]]: Parsed messages with roles and content
@@ -156,7 +259,7 @@ def parse_markdown_messages(content: str) -> List[Dict[str, Any]]:
     if message_blocks[0].strip():
         messages.append({
             "role": "system",
-            "content": process_inclusions(message_blocks[0].strip(), depth=5)
+            "content": process_inclusions(message_blocks[0].strip(), user, db)
         })
         message_blocks = message_blocks[1:]
     
@@ -189,55 +292,75 @@ def parse_markdown_messages(content: str) -> List[Dict[str, Any]]:
             content = content[metadata_match.end():].strip()
         
         # Process any file inclusions in the content
-        message["content"] = process_inclusions(content, depth=5)
+        message["content"] = process_inclusions(content, user, db)
         messages.append(message)
     
     return messages
 
-def load_advisor_data(advisor_id: str) -> dict:
-    """Load advisor data from database and process any tags in messages"""
-    try:
-        # Get database session
+def load_advisor_data(advisor_id: str, user: Optional[User] = None, db: Optional[Session] = None) -> dict:
+    """
+    Load advisor data from the database and process any inclusions in the messages.
+    
+    Args:
+        advisor_id (str): The ID of the advisor to load
+        user (Optional[User]): User context for file access
+        db (Optional[Session]): Database session
+        
+    Returns:
+        dict: The processed advisor data
+        
+    Raises:
+        HTTPException: If advisor not found or error processing data
+    """
+    logger.info(f"Loading advisor data: advisor_id={advisor_id}, user={user.id if user else None}")
+    
+    # Get database session if not provided
+    if not db:
         db = next(get_db())
         
-        # Query advisor
-        advisor = db.query(AdvisorModel).filter(
-            AdvisorModel.name == advisor_id
-        ).first()
+    # Load advisor from database
+    advisor = db.query(AdvisorModel).filter(AdvisorModel.id == advisor_id).first()
+    if not advisor:
+        logger.error(f"Advisor not found: advisor_id={advisor_id}")
+        raise HTTPException(status_code=404, detail="Advisor not found")
         
-        if not advisor:
-            raise FileNotFoundError(f"Advisor {advisor_id} not found")
-            
-        # Process messages to handle any tags
-        processed_messages = []
-        for message in advisor.messages:
+    logger.info(f"Found advisor: name={advisor.name}")
+        
+    # Convert to dict for modification
+    advisor_data = {
+        "id": advisor.id,
+        "name": advisor.name,
+        "description": advisor.description,
+        "model": advisor.model,
+        "temperature": advisor.temperature,
+        "max_tokens": advisor.max_tokens,
+        "stream": advisor.stream,
+        "gateway": advisor.gateway,
+        "tools": advisor.tools or [],
+        "top_p": advisor.top_p,
+        "frequency_penalty": advisor.frequency_penalty,
+        "presence_penalty": advisor.presence_penalty,
+        "messages": []
+    }
+    
+    # Process inclusions in each message with database session
+    for message in advisor.messages:
+        logger.info(f"Processing message: role={message['role']}")
+        try:
+            processed_content = process_inclusions(message["content"], user=user, db=db)
+            logger.info(f"Successfully processed message content: length={len(processed_content)}")
             processed_message = {
                 "role": message["role"],
-                "content": process_inclusions(message["content"], depth=5)
+                "content": processed_content
             }
             if "name" in message:
                 processed_message["name"] = message["name"]
-            processed_messages.append(processed_message)
-            
-        # Convert to dict
-        return {
-            "name": advisor.name,
-            "description": advisor.description,
-            "model": advisor.model,
-            "temperature": advisor.temperature,
-            "max_tokens": advisor.max_tokens,
-            "stream": advisor.stream,
-            "messages": processed_messages,
-            "gateway": advisor.gateway,
-            "tools": advisor.tools,
-            "top_p": advisor.top_p,
-            "frequency_penalty": advisor.frequency_penalty,
-            "presence_penalty": advisor.presence_penalty
-        }
-            
-    except Exception as e:
-        logger.error(f"Error loading advisor data: {str(e)}")
-        raise
+            advisor_data["messages"].append(processed_message)
+        except Exception as e:
+            logger.error(f"Error processing message inclusions: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error processing message inclusions: {str(e)}")
+        
+    return advisor_data
 
 def load_prompt(advisor_data: Dict[str, Any], conversation_history: List[Dict[str, str]], 
                max_depth: int = 5, file_delimiter: str = None) -> List[Dict[str, str]]:

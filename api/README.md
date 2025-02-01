@@ -37,12 +37,28 @@ CREATE TABLE advisors (
     temperature FLOAT,
     max_tokens INTEGER,
     stream BOOLEAN,
-    messages JSON,
+    messages JSON NOT NULL,  -- Required array of system messages
     gateway VARCHAR,
     tools JSON,
     created_at DATETIME,
     updated_at DATETIME
 );
+```
+
+Important Notes:
+- The `messages` field is required and must be a JSON array of message objects
+- Each message object must have `role` and `content` fields
+- At least one system message is required
+- Example message format:
+```json
+{
+    "messages": [
+        {
+            "role": "system",
+            "content": "You are a helpful assistant..."
+        }
+    ]
+}
 ```
 
 3. **conversations**
@@ -125,31 +141,26 @@ Response: UserResponse object
 ```http
 GET /advisors
 Description: List all available advisors
-Response: List of AdvisorSummary objects
-
-POST /advisors
-Description: Create new advisor
-Body: {
-    "name": string,
-    "description": string,
-    "model": string,
-    "temperature": float,
-    "max_tokens": integer,
-    "stream": boolean,
-    "messages": array,
-    "gateway": string,
-    "tools": array
-}
-Response: Advisor object
+Response: List of advisor objects with full details including IDs
+Example Response:
+[
+    {
+        "id": "db2d282a-abae-4fcd-b900-eb0b43f743ee",
+        "name": "default",
+        "model": "gpt-4o-mini",
+        ...
+    }
+]
 
 GET /advisors/{advisor_id}
-Description: Get advisor details
-Response: Advisor object
+Description: Get advisor details by ID (not name)
+Response: Full advisor object
+Example: GET /advisors/db2d282a-abae-4fcd-b900-eb0b43f743ee
 
 PUT /advisors/{advisor_id}
-Description: Update advisor
-Body: Same as POST /advisors
-Response: Updated Advisor object
+Description: Update advisor by ID
+Body: AdvisorUpdate object
+Note: Name cannot be changed after creation
 
 DELETE /advisors/{advisor_id}
 Description: Delete advisor
@@ -160,16 +171,18 @@ Response: Success message
 
 ```http
 GET /chat/advisor/{advisor_id}/history
-Description: List conversations for advisor
-Response: List of ConversationMetadata objects
+Description: List all conversations for an advisor
+Response: List of conversation metadata
+Example: GET /chat/advisor/db2d282a-abae-4fcd-b900-eb0b43f743ee/history
 
 GET /chat/advisor/{advisor_id}/latest
 Description: Get or create latest conversation
 Response: ConversationHistory object
 
 POST /chat/advisor/{advisor_id}/new
-Description: Create new conversation
-Response: ConversationHistory object
+Description: Create new conversation with advisor
+Response: Conversation object with ID
+Example: POST /chat/advisor/db2d282a-abae-4fcd-b900-eb0b43f743ee/new
 
 POST /chat/{conversation_id}/message
 Description: Send message to conversation
@@ -290,6 +303,71 @@ Configure the model and parameters in the advisor definition:
     "tools": ["use_reasoning", "get_weather"]
 }
 ```
+
+## File Inclusion System
+
+The API includes a powerful file inclusion system that allows dynamic content injection into advisor messages. This is handled by the `prompt_utils.py` module.
+
+### Tag Formats
+
+1. **File Inclusion**: `<$file:path/to/file$>`
+   - Example: `<$file:files/me/aboutme.md$>`
+   - Paths are relative to workspace root
+   - Supports both shared and user-specific files
+   - Shared files are in `files/` directory
+   - User files are in `storage/users/{user_id}/files/`
+
+2. **Directory Inclusion**: `<$dir:path/to/directory/*.ext$>`
+   - Example: `<$dir:files/knowledge/*.txt$>`
+   - Includes all matching files in alphabetical order
+   - Content is combined with file headers
+
+3. **DateTime**: `<$datetime[:format]$>`
+   - Example: `<$datetime:%Y-%m-%d$>`
+   - Default format: "%Y-%m-%d %H:%M:%S"
+   - Supports any valid Python datetime format
+
+### Example Advisor Message
+
+```json
+{
+  "messages": [
+    {
+      "role": "system",
+      "content": "Hi! I'm an AI assistant. Today is <$datetime$>.\n\nAbout me:\n<$file:files/me/aboutme.md$>\n\nKnowledge base:\n<$dir:files/knowledge/*.md$>"
+    }
+  ]
+}
+```
+
+### Common Issues
+
+1. **File Not Found Errors**:
+   - Check that file paths are relative to workspace root
+   - Verify file exists in correct location
+   - Use `files/` prefix for shared files
+   - Check file permissions
+
+2. **Tag Processing Issues**:
+   - Ensure correct tag format with both opening and closing markers
+   - File paths should include `file:` prefix
+   - Directory paths should include `dir:` prefix
+   - DateTime format should be valid Python strftime format
+
+3. **Database Storage**:
+   - Tags must be properly escaped in JSON
+   - Use proper JSON functions when updating via SQLite
+   - Example SQL for updating advisor message:
+   ```sql
+   UPDATE advisors 
+   SET messages = json_array(
+     json_object(
+       'role', 'system',
+       'content', 'Message with <$file:files/me/aboutme.md$>'
+     )
+   )
+   WHERE name = 'advisor_name';
+   ```
 
 ## Current Status
 
@@ -498,3 +576,199 @@ For questions or issues, please contact the team lead or refer to the PRD docume
    - Add docstrings to new functions
    - Document environment variables
    - Update README if needed
+
+### Key Concepts
+
+#### Advisor Management
+Advisors are the core entities in HubGPT. Each advisor has:
+- A unique ID (UUID)
+- A unique name
+- Model configuration
+- System messages
+- Tool settings
+
+```sql
+-- Example advisor record
+{
+    "id": "db2d282a-abae-4fcd-b900-eb0b43f743ee",
+    "name": "default",
+    "model": "gpt-4o-mini",
+    "temperature": 0.7,
+    "max_tokens": 1000,
+    "stream": true,
+    "messages": [{"role": "system", "content": "You are a helpful assistant..."}],
+    "tools": ["use_reasoning", "search_web"],
+    "gateway": "openrouter"
+}
+```
+
+#### Chat Management
+Chats (conversations) are always associated with:
+- An advisor (via advisor_id)
+- A user (via user_id)
+- A sequence of messages
+
+### API Endpoints
+
+#### Chat Management
+```http
+GET /chat/advisor/{advisor_id}/conversation/{conversation_id}/messages
+Description: Get messages for a specific conversation
+Response: List of messages in sequence
+Example: GET /chat/advisor/db2d282a-abae-4fcd-b900-eb0b43f743ee/conversation/123e4567-e89b-12d3-a456-426614174000/messages
+```
+
+### Important Notes
+
+1. **ID vs Name Usage**
+   - Advisors are always referenced by their UUID in API calls
+   - Names are unique but are used only for display/creation
+   - All endpoints expecting an advisor reference use the ID
+
+2. **Data Structures**
+   - Advisor objects always include their full configuration
+   - Messages array in advisor config contains system prompts
+   - Tools are stored as string arrays
+   - All timestamps are in ISO format
+
+3. **Common Gotchas**
+   - Using advisor names instead of IDs in endpoints will fail
+   - Trying to modify advisor names after creation will fail
+   - Chat endpoints require both advisor_id and conversation_id
+   - Missing system messages in advisor creation will fail
+
+4. **Authentication**
+   - Both JWT and Basic Auth are supported
+   - JWT: `Authorization: Bearer <token>`
+   - Basic: `Authorization: Basic <base64(username:password)>`
+   - Default admin credentials: admin/admin
+
+### Example Usage
+
+```javascript
+// Get advisor by ID
+const response = await fetch('/advisors/db2d282a-abae-4fcd-b900-eb0b43f743ee');
+const advisor = await response.json();
+// {
+//     "id": "db2d282a-abae-4fcd-b900-eb0b43f743ee",
+//     "name": "default",
+//     "model": "gpt-4o-mini",
+//     ...
+// }
+
+// Update advisor
+await fetch('/advisors/db2d282a-abae-4fcd-b900-eb0b43f743ee', {
+    method: 'PUT',
+    body: JSON.stringify({
+        model: "gpt-4",
+        temperature: 0.8,
+        messages: [{"role": "system", "content": "New system message"}]
+    })
+});
+
+// Get chat history
+const chats = await fetch('/chat/advisor/db2d282a-abae-4fcd-b900-eb0b43f743ee/history');
+// [
+//     {
+//         "id": "123e4567-e89b-12d3-a456-426614174000",
+//         "created_at": "2024-02-01T12:00:00Z",
+//         "message_count": 10
+//     }
+// ]
+```
+
+# HubGPT API Documentation
+
+## Overview
+The HubGPT API provides endpoints for managing advisors, conversations, and file storage. This document outlines the key endpoints and their usage.
+
+## Authentication
+The API supports two authentication methods:
+1. JWT Token (preferred): Send Bearer token in Authorization header
+2. Basic Auth (fallback): Use username/password credentials
+
+## Key Endpoints
+
+### Advisors
+- `GET /advisors/`: List all advisors
+- `GET /advisors/{advisor_id}`: Get advisor details by ID
+- `POST /advisors/`: Create new advisor
+- `PUT /advisors/{advisor_id}`: Update advisor by ID
+- `DELETE /advisors/{advisor_id}`: Delete advisor
+
+Note: Advisors are referenced by their UUID, not by name. The advisor ID should be used in all API calls.
+
+### Chat
+- `GET /chat/advisor/{advisor_id}/history`: Get conversation history for an advisor
+- `POST /chat/advisor/{advisor_id}/new`: Create a new conversation
+- `GET /chat/messages/{conversation_id}`: Get messages for a specific conversation
+- `POST /chat/{conversation_id}/message`: Send a message in a conversation
+- `POST /chat/{conversation_id}/cancel`: Cancel ongoing message generation
+
+### Files
+- `GET /files/`: List all files
+- `POST /files/{path}`: Create file or directory
+- `GET /files/{path}`: Get file content
+- `PUT /files/{path}`: Update file
+- `DELETE /files/{path}`: Delete file
+- `PATCH /files/{path}`: Rename file
+- `GET /files/{path}/shares`: List file shares
+- `POST /files/{path}/share`: Share file with user
+- `DELETE /files/{path}/share/{user_id}`: Remove file share
+
+## Database Schema
+
+### Users Table
+- id (UUID): Primary key
+- username (String): Unique username
+- email (String): User email
+- hashed_password (String): Encrypted password
+- is_active (Boolean): Account status
+
+### Advisors Table
+- id (UUID): Primary key
+- name (String): Unique advisor name
+- model (String): LLM model identifier
+- gateway (String): API gateway (openrouter, google, openai, etc.)
+- temperature (Float): Model temperature
+- max_tokens (Integer): Maximum response tokens
+- stream (Boolean): Enable streaming responses
+- messages (JSON): System messages and context
+- tools (JSON): Available tools configuration
+
+### Conversations Table
+- id (UUID): Primary key
+- advisor_id (UUID): Reference to advisor
+- user_id (UUID): Reference to user
+- created_at (Timestamp): Creation time
+- updated_at (Timestamp): Last update time
+
+### Messages Table
+- id (UUID): Primary key
+- conversation_id (UUID): Reference to conversation
+- role (String): Message role (user/assistant)
+- content (Text): Message content
+- created_at (Timestamp): Message timestamp
+
+## Common Issues and Solutions
+
+1. Advisor Updates (404 Error):
+   - Use advisor's UUID instead of name in API calls
+   - Endpoint should be `/advisors/{advisor_id}` not `/advisors/{name}`
+
+2. Chat History Loading (404 Error):
+   - Use `/chat/messages/{conversation_id}` to fetch messages
+   - Conversation ID is required, not just advisor ID
+
+3. Authentication:
+   - JWT token is preferred but may expire
+   - System falls back to basic auth if JWT fails
+   - Register endpoint returns 400 if user exists (expected behavior)
+
+## Best Practices
+
+1. Always use UUIDs for referencing resources (advisors, conversations, etc.)
+2. Handle both streaming and non-streaming responses in chat
+3. Implement proper error handling for API responses
+4. Store and manage authentication tokens appropriately
+5. Use appropriate content types for requests (application/json)

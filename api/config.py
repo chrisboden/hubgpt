@@ -53,16 +53,8 @@ JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 # Database Settings
-DB_TYPE = os.getenv("DB_TYPE", "sqlite")  # "sqlite" or "postgres"
-
-if DB_TYPE == "postgres":
-    DATABASE_URL = os.getenv(
-        "DATABASE_URL",
-        "postgresql://postgres:postgres@localhost:5432/hubgpt"
-    )
-else:
-    # SQLite database will be created in the data directory
-    DATABASE_URL = f"sqlite:///{DATA_DIR}/hubgpt.db"
+DB_TYPE = "sqlite"
+DATABASE_URL = f"sqlite:////{BASE_DIR.parent}/hubgpt.db"
 
 # Logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")

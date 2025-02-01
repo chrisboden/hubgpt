@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from .routers import auth, advisors, chat, files
 from .database import engine, Base, get_db
 from .models.users import User
-from .services.auth_service import get_current_user, get_current_user_or_default, create_default_user
+from .services.auth_service import get_current_user, get_current_user_or_default, create_default_user, create_user
 from . import config
 
 # Configure logging
@@ -52,6 +52,17 @@ async def startup_event():
         db = next(get_db())
         create_default_user(db)
         logger.info("Default user created successfully")
+        
+        # Create admin user if it doesn't exist
+        admin_user = db.query(User).filter(User.username == config.API_USERNAME).first()
+        if not admin_user:
+            create_user(
+                db=db,
+                username=config.API_USERNAME,
+                email="team@peregianhub.com.au",  # Use this email for admin
+                password=config.API_PASSWORD
+            )
+            logger.info("Admin user created successfully")
     except Exception as e:
         logger.error(f"Error during startup: {str(e)}")
         raise e

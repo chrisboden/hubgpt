@@ -64,18 +64,18 @@
     </style>
 </head>
 <body class="bg-gray-100">
-    <!-- Login Form -->
-    <div id="loginForm" class="fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center">
-        <div class="bg-white p-8 rounded-lg shadow-lg w-96">
+    <!-- Login Form (initially visible) -->
+    <div id="loginContainer" class="min-h-screen flex items-center justify-center bg-gray-100">
+        <div class="bg-white p-8 rounded-lg shadow-md w-96">
             <h2 class="text-2xl font-bold mb-6">Login Required</h2>
-            <form id="authForm" class="space-y-4">
+            <form id="loginForm" class="space-y-4">
                 <div>
                     <label class="block text-sm font-medium mb-1">Username</label>
                     <input type="text" id="username" class="w-full p-2 border rounded" required>
                 </div>
                 <div>
                     <label class="block text-sm font-medium mb-1">Password</label>
-                    <input type="password" id="password" class="w-full p-2 border rounded" required>
+                    <input type="password" id="password" class="w-full p-2 border rounded" required autocomplete="current-password">
                 </div>
                 <div id="loginError" class="text-red-500 text-sm hidden"></div>
                 <button type="submit" class="w-full bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600">
@@ -128,23 +128,26 @@
                         <input type="text" name="name" class="w-full p-2 border rounded" required>
                     </div>
                     <div>
+                        <label class="block text-sm font-medium mb-1">Gateway</label>
+                        <select name="gateway" class="w-full p-2 border rounded" required>
+                            <option value="openrouter">OpenRouter</option>
+                            <option value="google">Google</option>
+                            <option value="openai">OpenAI</option>
+                            <option value="groq">Groq</option>
+                            <option value="deepseek">DeepSeek</option>
+                        </select>
+                    </div>
+                    <div>
                         <label class="block text-sm font-medium mb-1">Model</label>
-                        <input type="text" name="model" class="w-full p-2 border rounded" required>
+                        <input type="text" name="model" class="w-full p-2 border rounded" placeholder="e.g. gpt-4o-mini, gemini-pro" required>
                     </div>
                     <div>
                         <label class="block text-sm font-medium mb-1">Temperature (0.0 - 2.0)</label>
-                        <input type="number" name="temperature" step="any" min="0" max="2" value="1.0" class="w-full p-2 border rounded" required>
+                        <input type="number" name="temperature" step="0.1" min="0" max="2" value="1.0" class="w-full p-2 border rounded" required>
                     </div>
                     <div>
                         <label class="block text-sm font-medium mb-1">Max Tokens</label>
-                        <input type="number" name="max_tokens" class="w-full p-2 border rounded" value="1000">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium mb-1">Format</label>
-                        <select name="format" class="w-full p-2 border rounded">
-                            <option value="json">JSON</option>
-                            <option value="md">Markdown</option>
-                        </select>
+                        <input type="number" name="max_tokens" value="1000" class="w-full p-2 border rounded" required>
                     </div>
                     <div>
                         <label class="block text-sm font-medium mb-1">Stream</label>
@@ -153,17 +156,17 @@
                             <option value="false">No</option>
                         </select>
                     </div>
-                    <div class="mb-4">
-                        <label class="block text-gray-700 text-sm font-bold mb-2" for="gateway">
-                            Gateway
-                        </label>
-                        <select id="gateway" name="gateway" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
-                            <option value="openrouter">OpenRouter</option>
-                            <option value="google">Google</option>
-                            <option value="openai">OpenAI</option>
-                            <option value="groq">Groq</option>
-                            <option value="deepseek">DeepSeek</option>
-                        </select>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Top P</label>
+                        <input type="number" name="top_p" step="0.1" min="0" max="1" class="w-full p-2 border rounded">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Frequency Penalty</label>
+                        <input type="number" name="frequency_penalty" step="0.1" min="-2" max="2" class="w-full p-2 border rounded">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Presence Penalty</label>
+                        <input type="number" name="presence_penalty" step="0.1" min="-2" max="2" class="w-full p-2 border rounded">
                     </div>
                 </div>
                 <div>
@@ -263,6 +266,14 @@
                                 <option value="directory">Directory</option>
                             </select>
                             <textarea id="newContent" class="w-full p-2 border rounded" placeholder="File content (for files only)" rows="3"></textarea>
+                            <div class="flex items-center mb-2">
+                                <input type="checkbox" id="newIsPublic" class="mr-2">
+                                <label for="newIsPublic">Make Public</label>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium mb-1">Metadata (JSON)</label>
+                                <textarea id="newMetadata" class="w-full p-2 border rounded" placeholder="{}" rows="2"></textarea>
+                            </div>
                             <button id="createNew" class="w-full bg-blue-500 text-white py-2 rounded hover:bg-blue-600">
                                 Create
                             </button>
@@ -272,21 +283,76 @@
                 
                 <!-- File Content -->
                 <div class="col-span-2">
-                    <div class="mb-4 flex justify-between items-center">
+                    <div class="mb-4">
                         <h3 id="currentFile" class="text-lg font-semibold">No file selected</h3>
-                        <div class="space-x-2">
-                            <button id="saveFile" class="text-sm bg-blue-500 text-white px-4 py-1 rounded hover:bg-blue-600" style="display: none;">
-                                Save
-                            </button>
-                            <button id="renameFile" class="text-sm bg-yellow-500 text-white px-4 py-1 rounded hover:bg-yellow-600" style="display: none;">
-                                Rename
-                            </button>
-                            <button id="deleteFile" class="text-sm bg-red-500 text-white px-4 py-1 rounded hover:bg-red-600" style="display: none;">
-                                Delete
-                            </button>
+                        <div class="flex justify-between items-center mt-2">
+                            <div class="space-x-2">
+                                <button id="saveFile" class="text-sm bg-blue-500 text-white px-4 py-1 rounded hover:bg-blue-600" style="display: none;">
+                                    Save
+                                </button>
+                                <button id="renameFile" class="text-sm bg-yellow-500 text-white px-4 py-1 rounded hover:bg-yellow-600" style="display: none;">
+                                    Rename
+                                </button>
+                                <button id="deleteFile" class="text-sm bg-red-500 text-white px-4 py-1 rounded hover:bg-red-600" style="display: none;">
+                                    Delete
+                                </button>
+                            </div>
+                            <div class="space-x-2">
+                                <button id="shareFile" class="text-sm bg-purple-500 text-white px-4 py-1 rounded hover:bg-purple-600" style="display: none;">
+                                    Share
+                                </button>
+                                <div class="inline-flex items-center">
+                                    <input type="checkbox" id="isPublic" class="mr-2">
+                                    <label for="isPublic">Public</label>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                    <textarea id="fileContent" class="w-full h-[400px] p-4 border rounded font-mono" placeholder="Select a file to view/edit content"></textarea>
+                    <div class="grid grid-cols-3 gap-4">
+                        <div class="col-span-2">
+                            <textarea id="fileContent" class="w-full h-[400px] p-4 border rounded font-mono" placeholder="Select a file to view/edit content"></textarea>
+                        </div>
+                        <div class="col-span-1">
+                            <div class="mb-4">
+                                <h4 class="font-semibold mb-2">File Metadata</h4>
+                                <textarea id="fileMetadata" class="w-full h-[150px] p-2 border rounded font-mono" placeholder="{}"></textarea>
+                            </div>
+                            <div>
+                                <h4 class="font-semibold mb-2">Shared With</h4>
+                                <div id="fileShares" class="space-y-2">
+                                    <!-- Shares will be listed here -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Share File Modal -->
+    <div id="shareModal" class="fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center hidden">
+        <div class="bg-white p-8 rounded-lg shadow-lg w-96">
+            <h2 class="text-2xl font-bold mb-6">Share File</h2>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium mb-1">User ID</label>
+                    <input type="text" id="shareUserId" class="w-full p-2 border rounded">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1">Permissions</label>
+                    <select id="sharePermissions" class="w-full p-2 border rounded">
+                        <option value="read">Read</option>
+                        <option value="write">Write</option>
+                    </select>
+                </div>
+                <div class="flex justify-end space-x-2">
+                    <button id="cancelShare" class="bg-gray-500 text-white py-2 px-4 rounded hover:bg-gray-600">
+                        Cancel
+                    </button>
+                    <button id="confirmShare" class="bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600">
+                        Share
+                    </button>
                 </div>
             </div>
         </div>
@@ -294,20 +360,50 @@
 
     <script>
         // Dynamically set API base URL based on current location
-        const API_BASE = window.location.origin;
+        const API_BASE = `${window.location.protocol}//${window.location.hostname}:8000`;
         let isEditMode = false;
         let currentAdvisorName = null;
+        let currentAdvisorId = null;
         let currentConversationId = null;
         let currentReader = null;
         let currentController = null;
         let authToken = null;
 
+        // Add auth header to all fetch requests
+        const originalFetch = window.fetch;
+        window.fetch = function() {
+            const args = Array.from(arguments);
+            if (!args[1]) {
+                args[1] = {};
+            }
+            if (!args[1].headers) {
+                args[1].headers = {};
+            }
+            
+            // Add JWT token if available
+            if (authToken) {
+                args[1].headers.Authorization = `Bearer ${authToken}`;
+            }
+            
+            // Add basic auth as fallback
+            if (!args[1].headers.Authorization || args[1].headers.Authorization === 'Bearer undefined') {
+                args[1].headers.Authorization = 'Basic ' + btoa('admin:admin');
+            }
+            
+            return originalFetch.apply(this, args);
+        };
+
         // Auth functions
         async function login(username, password) {
             try {
+                // Show loading state
+                const loginError = document.getElementById('loginError');
+                loginError.textContent = 'Logging in...';
+                loginError.classList.remove('hidden');
+
                 // First try to register the user
                 try {
-                    await fetch(`${API_BASE}/auth/register`, {
+                    const registerResponse = await fetch(`${API_BASE}/auth/register`, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json'
@@ -318,12 +414,15 @@
                             email: `${username}@example.com`
                         })
                     });
+                    
+                    if (!registerResponse.ok && registerResponse.status !== 400) {
+                        throw new Error(`Registration failed: ${registerResponse.status}`);
+                    }
                 } catch (error) {
-                    // Ignore registration errors - user might already exist
                     console.log('Registration error (user might already exist):', error);
                 }
 
-                // Then login to get JWT token
+                // Then try to login
                 const loginResponse = await fetch(`${API_BASE}/auth/login`, {
                     method: 'POST',
                     headers: {
@@ -336,47 +435,70 @@
                 });
 
                 if (!loginResponse.ok) {
-                    throw new Error('Invalid credentials');
+                    throw new Error(`Login failed: ${loginResponse.status}`);
                 }
 
-                const { access_token } = await loginResponse.json();
-                
-                // Store JWT token
-                authToken = access_token;
-                
+                const data = await loginResponse.json();
+                authToken = data.access_token;
+
+                // Set the auth token in localStorage for persistence
+                localStorage.setItem('authToken', authToken);
+
                 // Hide login form and show main content
-                document.getElementById('loginForm').classList.add('hidden');
+                document.getElementById('loginContainer').classList.add('hidden');
                 document.getElementById('mainContent').classList.remove('hidden');
-                
-                // Initialize app
-                loadAdvisors();
+                loginError.classList.add('hidden');
+
+                // Load initial data after setting auth token
+                await Promise.all([
+                    loadAdvisors(),
+                    refreshFileTree()
+                ]);
             } catch (error) {
-                document.getElementById('loginError').textContent = error.message;
-                document.getElementById('loginError').classList.remove('hidden');
+                console.error('Auth error:', error);
+                const loginError = document.getElementById('loginError');
+                loginError.textContent = `Authentication failed: ${error.message}`;
+                loginError.classList.remove('hidden');
             }
         }
 
-        // Add auth header to all fetch requests
-        const originalFetch = window.fetch;
-        window.fetch = function() {
-            if (authToken && !arguments[1]?.headers?.Authorization) {
-                if (!arguments[1]) {
-                    arguments[1] = {};
-                }
-                if (!arguments[1].headers) {
-                    arguments[1].headers = {};
-                }
-                arguments[1].headers.Authorization = `Bearer ${authToken}`;
-            }
-            return originalFetch.apply(this, arguments);
-        };
+        // Initialize event listeners only after DOM is loaded
+        document.addEventListener('DOMContentLoaded', () => {
+            // Add event listeners
+            document.getElementById('loginForm')?.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const username = document.getElementById('username').value;
+                const password = document.getElementById('password').value;
+                await login(username, password);
+            });
 
-        // Login form handler
-        document.getElementById('authForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const username = document.getElementById('username').value;
-            const password = document.getElementById('password').value;
-            await login(username, password);
+            document.getElementById('healthCheck')?.addEventListener('click', async () => {
+                try {
+                    const response = await fetch(`${API_BASE}/health`);
+                    const data = await response.json();
+                    document.getElementById('healthResult').textContent = JSON.stringify(data, null, 2);
+                } catch (error) {
+                    document.getElementById('healthResult').textContent = `Error: ${error.message}`;
+                }
+            });
+
+            // Only add these listeners - don't call the functions yet
+            document.getElementById('refreshFiles')?.addEventListener('click', refreshFileTree);
+            document.getElementById('createNew')?.addEventListener('click', createNew);
+            document.getElementById('saveFile')?.addEventListener('click', saveFile);
+            document.getElementById('renameFile')?.addEventListener('click', renameFile);
+            document.getElementById('deleteFile')?.addEventListener('click', deleteFile);
+            document.getElementById('shareFile')?.addEventListener('click', shareFile);
+            document.getElementById('confirmShare')?.addEventListener('click', confirmShare);
+            document.getElementById('cancelShare')?.addEventListener('click', () => {
+                document.getElementById('shareModal').classList.add('hidden');
+            });
+
+            // Show/hide content textarea based on type selection
+            document.getElementById('newType')?.addEventListener('change', (e) => {
+                document.getElementById('newContent').style.display = 
+                    e.target.value === 'file' ? 'block' : 'none';
+            });
         });
 
         // Health check functionality
@@ -406,12 +528,15 @@
             createResult.classList.add('hidden');
             isEditMode = false;
             currentAdvisorName = null;
+            currentAdvisorId = null;
 
             // Reset to default values
             form.temperature.value = '1.0';
             form.max_tokens.value = '1000';
             form.stream.value = 'true';
-            form.format.value = 'json';
+            form.top_p.value = '0.8';
+            form.frequency_penalty.value = '0.0';
+            form.presence_penalty.value = '0.0';
             form.tools.value = '';
         }
 
@@ -425,12 +550,21 @@
         // Function to load advisors
         async function loadAdvisors() {
             try {
-                const response = await fetch(`${API_BASE}/advisors`, {
+                const response = await fetch(`${API_BASE}/advisors/`, {
                     headers: {
                         Authorization: `Bearer ${authToken}`
                     }
                 });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
                 const advisors = await response.json();
+                console.log('Loaded advisors:', advisors);
+                
+                // Clear any previous error message
+                document.getElementById('advisorsList').innerHTML = '';
                 
                 // Update the advisor select dropdown
                 const selectElement = document.getElementById('advisorSelect');
@@ -438,21 +572,26 @@
                 
                 advisors.forEach(advisor => {
                     const option = document.createElement('option');
-                    option.value = advisor.name;
-                    option.textContent = `${advisor.name} (${advisor.model})`;
+                    option.value = advisor.id;  // Use ID as the value
+                    option.textContent = `${advisor.name} (${advisor.model || 'default'})`;
+                    option.dataset.name = advisor.name;  // Store name as data attribute
                     selectElement.appendChild(option);
                 });
 
-                // Also update the chat advisor select
+                // Also update the chat advisor select if it exists
                 const chatSelect = document.getElementById('chatAdvisorSelect');
-                chatSelect.innerHTML = '<option value="">Select an advisor...</option>';
-                advisors.forEach(advisor => {
-                    const option = document.createElement('option');
-                    option.value = advisor.name;
-                    option.textContent = advisor.name;
-                    chatSelect.appendChild(option);
-                });
+                if (chatSelect) {
+                    chatSelect.innerHTML = '<option value="">Select an advisor...</option>';
+                    advisors.forEach(advisor => {
+                        const option = document.createElement('option');
+                        option.value = advisor.id;  // Use ID for chat advisor too
+                        option.textContent = advisor.name;
+                        option.dataset.name = advisor.name;  // Store name as data attribute
+                        chatSelect.appendChild(option);
+                    });
+                }
             } catch (error) {
+                console.error('Error loading advisors:', error);
                 document.getElementById('advisorsList').innerHTML = `
                     <div class="p-4 bg-red-100 text-red-700 rounded">
                         Error: ${error.message}
@@ -473,24 +612,26 @@
             
             try {
                 const formData = new FormData(form);
+                const name = formData.get('name')?.trim();
+                
+                // Validate required fields
+                if (!isEditMode && !name) {
+                    throw new Error('Name is required');
+                }
                 
                 // Start with only the required fields
                 const data = {
-                    name: isEditMode ? currentAdvisorName : formData.get('name')?.trim() || '',
+                    name: isEditMode ? currentAdvisorName : name,
+                    model: formData.get('model')?.trim() || 'gpt-4o-mini',
                     messages: [
                         {
                             role: 'system',
-                            content: formData.get('system_message')?.trim() || ''
+                            content: formData.get('system_message')?.trim() || 'You are a helpful assistant.'
                         }
                     ]
                 };
 
-                // Only add fields that were explicitly set in the form
-                const model = formData.get('model')?.trim();
-                if (model) {
-                    data.model = model;
-                }
-
+                // Add other fields if they have values
                 const temperature = formData.get('temperature');
                 if (temperature !== null && temperature !== '') {
                     data.temperature = parseFloat(temperature);
@@ -506,14 +647,24 @@
                     data.stream = stream === 'true';
                 }
 
+                const top_p = formData.get('top_p');
+                if (top_p !== null && top_p !== '') {
+                    data.top_p = parseFloat(top_p);
+                }
+
+                const frequency_penalty = formData.get('frequency_penalty');
+                if (frequency_penalty !== null && frequency_penalty !== '') {
+                    data.frequency_penalty = parseFloat(frequency_penalty);
+                }
+
+                const presence_penalty = formData.get('presence_penalty');
+                if (presence_penalty !== null && presence_penalty !== '') {
+                    data.presence_penalty = parseFloat(presence_penalty);
+                }
+
                 const gateway = formData.get('gateway')?.trim();
                 if (gateway) {
                     data.gateway = gateway;
-                }
-
-                const format = formData.get('format')?.trim();
-                if (format) {
-                    data.format = format;
                 }
 
                 const tools = parseTools(formData.get('tools'));
@@ -521,22 +672,11 @@
                     data.tools = tools;
                 }
 
-                // Validate required data
-                if (!data.messages[0].content) {
-                    throw new Error('System message is required');
-                }
-                if (data.temperature !== undefined && (isNaN(data.temperature) || data.temperature < 0 || data.temperature > 2)) {
-                    throw new Error('Temperature must be between 0 and 2');
-                }
-                if (data.max_tokens !== undefined && (isNaN(data.max_tokens) || data.max_tokens < 1)) {
-                    throw new Error('Max tokens must be greater than 0');
-                }
-
-                console.log('Submitting advisor data:', data);  // Debug log
+                console.log('Submitting advisor data:', data);
 
                 const url = isEditMode ? 
-                    `${API_BASE}/advisors/${currentAdvisorName}` : 
-                    `${API_BASE}/advisors`;
+                    `${API_BASE}/advisors/${currentAdvisorId}` :
+                    `${API_BASE}/advisors/`;
                 
                 const response = await fetch(url, {
                     method: isEditMode ? 'PUT' : 'POST',
@@ -549,14 +689,7 @@
                 
                 if (!response.ok) {
                     const errorData = await response.json();
-                    if (errorData.detail && typeof errorData.detail === 'object') {
-                        const errors = Array.isArray(errorData.detail) ? 
-                            errorData.detail.map(err => `${err.loc.join('.')}: ${err.msg}`).join('\n') :
-                            JSON.stringify(errorData.detail, null, 2);
-                        throw new Error(`Validation errors:\n${errors}`);
-                    } else {
-                        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
-                    }
+                    throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
                 }
                 
                 const result = await response.json();
@@ -564,14 +697,18 @@
                 createResult.classList.add('text-green-600');
                 createResult.classList.remove('text-red-600');
                 
+                // Reset form and refresh advisors list
                 if (isEditMode) {
                     resetToCreateMode();
                 } else {
                     form.reset();
-                    // Only set default values for fields that should have them
+                    // Set default values
                     form.temperature.value = '1.0';
                     form.max_tokens.value = '1000';
                     form.stream.value = 'true';
+                    form.top_p.value = '0.8';
+                    form.frequency_penalty.value = '0.0';
+                    form.presence_penalty.value = '0.0';
                     form.gateway.value = 'openrouter';
                 }
                 
@@ -601,9 +738,11 @@
 
         document.getElementById('editAdvisor').addEventListener('click', () => {
             const selectedAdvisor = document.getElementById('advisorSelect').value;
-            if (selectedAdvisor) {
-                loadAdvisorForEdit(selectedAdvisor);
+            if (!selectedAdvisor) {
+                alert('Please select an advisor first');
+                return;
             }
+            loadAdvisorForEdit(selectedAdvisor);
         });
 
         // Load advisor details
@@ -622,64 +761,94 @@
         }
 
         // Load advisor for editing
-        async function loadAdvisorForEdit(advisorName) {
+        async function loadAdvisorForEdit(advisorId) {
             try {
-                const response = await fetch(`${API_BASE}/advisors/${advisorName}`, {
+                // Log the advisor ID we're trying to load
+                console.log('Loading advisor:', advisorId);
+                
+                // Fetch advisor details from API using ID
+                const response = await fetch(`${API_BASE}/advisors/${advisorId}`, {
                     headers: {
                         Authorization: `Bearer ${authToken}`
                     }
                 });
-                const advisor = await response.json();
                 
-                document.getElementById('formTitle').textContent = `Edit Advisor: ${advisorName}`;
-                document.getElementById('submitButton').textContent = 'Save Changes';
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                // Parse advisor data
+                const advisor = await response.json();
+                console.log('Loaded advisor:', advisor);
+                
+                // Get form reference
+                const form = document.getElementById('createAdvisorForm');
+                
+                // Set form to edit mode and store both name and ID
+                isEditMode = true;
+                currentAdvisorName = advisor.name;
+                currentAdvisorId = advisorId;
+                
+                // Update form title and button
+                document.getElementById('formTitle').textContent = 'Edit Advisor';
+                document.getElementById('submitButton').textContent = 'Update Advisor';
                 document.getElementById('cancelEdit').classList.remove('hidden');
                 
-                isEditMode = true;
-                currentAdvisorName = advisorName;
+                // Populate form fields with advisor data
+                // Basic fields
+                form.name.value = advisor.name || '';
+                form.name.disabled = true;  // Name cannot be changed after creation
                 
-                const form = document.getElementById('createAdvisorForm');
-                form.name.value = advisor.name;
-                form.name.disabled = true;
-                form.model.value = advisor.model;
-                form.temperature.value = advisor.temperature;
-                form.max_tokens.value = advisor.max_tokens;
-                form.stream.value = advisor.stream.toString();
-                form.system_message.value = advisor.messages[0].content;
-                form.tools.value = advisor.tools ? advisor.tools.join(', ') : '';
-                form.gateway.value = advisor.gateway || 'openrouter';  // Set gateway value
+                // Model and gateway settings
+                form.gateway.value = advisor.gateway || 'openrouter';
+                // Model field is now a text input, just set its value directly
+                form.model.value = advisor.model || '';  // This will now work correctly
                 
-                // Update model options based on gateway
-                const gateway = form.gateway.value;
-                const modelSelect = form.model;
-                modelSelect.innerHTML = '';
+                // LLM parameters
+                form.temperature.value = advisor.temperature !== undefined ? advisor.temperature : 1.0;
+                form.max_tokens.value = advisor.max_tokens || 1000;
+                form.stream.value = advisor.stream === false ? 'false' : 'true';
+                form.top_p.value = advisor.top_p !== undefined ? advisor.top_p : 0.8;
+                form.frequency_penalty.value = advisor.frequency_penalty || 0;
+                form.presence_penalty.value = advisor.presence_penalty || 0;
                 
-                switch(gateway) {
-                    case 'openrouter':
-                        addModels(['gpt-4o-mini', 'gpt-4o', 'claude-3-opus']);
-                        break;
-                    case 'google':
-                        addModels(['gemini-1.5-flash-8b', 'gemini-1.5-pro']);
-                        break;
-                    case 'openai':
-                        addModels(['gpt-4-turbo-preview', 'gpt-4']);
-                        break;
-                    case 'groq':
-                        addModels(['mixtral-8x7b', 'llama2-70b']);
-                        break;
-                    case 'deepseek':
-                        addModels(['deepseek-coder', 'deepseek-chat']);
-                        break;
+                // System message and tools
+                // Extract system message from messages array
+                const systemMessage = advisor.messages?.find(m => m.role === 'system')?.content || '';
+                form.system_message.value = systemMessage;
+                
+                // Join tools array into comma-separated string
+                form.tools.value = Array.isArray(advisor.tools) ? advisor.tools.join(',') : '';
+                
+                // Show the form section
+                document.getElementById('createResult').classList.add('hidden');
+                form.scrollIntoView({ behavior: 'smooth' });
+            } catch (error) {
+                console.error('Error loading advisor for edit:', error);
+                alert(`Failed to load advisor: ${error.message}`);
+            }
+        }
+
+        // Load chat history
+        async function loadChatHistory(chatId) {
+            try {
+                const response = await fetch(`${API_BASE}/chat/messages/${chatId}`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
                 }
                 
-                // Set the model after populating options
-                form.model.value = advisor.model;
+                const messages = await response.json();
+                displayChatHistory(messages);
                 
-                form.scrollIntoView({ behavior: 'smooth' });
-                
-                document.getElementById('createResult').classList.add('hidden');
             } catch (error) {
-                document.getElementById('advisorJson').textContent = `Error: ${error.message}`;
+                console.error('Error loading chat history:', error);
+                showError('Failed to load chat history');
             }
         }
 
@@ -713,98 +882,16 @@
                 }
                 
                 chats.forEach(chat => {
-                    const li = document.createElement('li');
-                    li.className = 'flex justify-between items-center p-2 bg-gray-50 rounded hover:bg-gray-100 mb-2';
-                    
-                    const chatInfo = document.createElement('span');
-                    chatInfo.className = 'cursor-pointer flex-1';
-                    const date = new Date(chat.updated_at);
-                    chatInfo.textContent = `${date.toLocaleDateString()} (${chat.message_count} msgs)`;
-                    chatInfo.onclick = () => {
-                        console.log(`Loading chat: ${chat.id}`);
-                        loadChat(chat.id);
-                    };
-                    
-                    const deleteBtn = document.createElement('button');
-                    deleteBtn.className = 'ml-2 text-red-500 hover:text-red-700 font-bold';
-                    deleteBtn.textContent = '×';
-                    deleteBtn.onclick = (e) => {
-                        e.stopPropagation();
-                        if (confirm('Are you sure you want to delete this chat?')) {
-                            deleteChat(chat.id);
-                        }
-                    };
-                    
-                    li.appendChild(chatInfo);
-                    li.appendChild(deleteBtn);
-                    chatsList.appendChild(li);
+                    const chatItem = document.createElement('div');
+                    chatItem.className = 'p-2 hover:bg-gray-100 cursor-pointer';
+                    const date = new Date(chat.created_at).toLocaleDateString();
+                    chatItem.textContent = `Chat from ${date}`;
+                    chatItem.onclick = () => loadChatHistory(chat.id);
+                    chatsList.appendChild(chatItem);
                 });
             } catch (error) {
                 console.error('Error loading chats:', error);
-                chatsList.innerHTML = `<div class="text-red-500">Error loading chats: ${error.message}</div>`;
-            }
-        }
-
-        // Load a specific chat
-        async function loadChat(conversationId) {
-            try {
-                console.log(`Loading chat: ${conversationId}`);
-                // If ID has hex suffix (e.g. Yuval_Harari_45f999) it's archived, otherwise it's current
-                const isArchived = /_[a-f0-9]{6}$/.test(conversationId);
-                const endpoint = isArchived ? 
-                    `${API_BASE}/chat/${conversationId}` : 
-                    `${API_BASE}/chat/advisor/${conversationId}/latest`;
-                    
-                console.log(`Using endpoint: ${endpoint}`);
-                const response = await fetch(endpoint, {
-                    headers: {
-                        Authorization: `Bearer ${authToken}`
-                    }
-                });
-                if (!response.ok) {
-                    throw new Error(`Failed to load chat: ${response.status}`);
-                }
-                
-                const chat = await response.json();
-                console.log('Loaded chat:', chat);
-                // Set the conversation ID from the response
-                currentConversationId = chat.id;
-                console.log('Set current conversation ID:', currentConversationId);
-                displayChatHistory(chat.messages || []);
-            } catch (error) {
-                console.error('Error loading chat:', error);
-                document.getElementById('chatHistory').innerHTML = 
-                    `<div class="text-red-500 p-4">Error loading chat: ${error.message}</div>`;
-            }
-        }
-
-        // Delete a chat
-        async function deleteChat(conversationId) {
-            try {
-                console.log(`Deleting chat: ${conversationId}`);
-                const response = await fetch(`${API_BASE}/chat/${conversationId}`, {
-                    method: 'DELETE',
-                    headers: {
-                        Authorization: `Bearer ${authToken}`
-                    }
-                });
-                
-                if (!response.ok) {
-                    throw new Error(`Failed to delete chat: ${response.status}`);
-                }
-                
-                // Refresh the chats list
-                const advisorId = document.getElementById('chatAdvisorSelect').value;
-                await loadPreviousChats(advisorId);
-                
-                // Clear current chat if it was the one deleted
-                if (currentConversationId === conversationId) {
-                    currentConversationId = null;
-                    document.getElementById('chatHistory').innerHTML = '';
-                }
-            } catch (error) {
-                console.error('Error deleting chat:', error);
-                alert(`Failed to delete chat: ${error.message}`);
+                chatsList.innerHTML = '<div class="text-red-500">No chats available. Start a new conversation.</div>';
             }
         }
 
@@ -1029,34 +1116,39 @@
             }
             
             messages.forEach(message => {
-                const messageDiv = document.createElement('div');
-                messageDiv.className = `message mb-4 ${message.role === 'user' ? 'text-right' : ''}`;
-                messageDiv.dataset.role = message.role;
-                
-                const roleDiv = document.createElement('div');
-                roleDiv.className = 'text-sm text-gray-500';
-                roleDiv.textContent = message.role === 'user' ? 'You' : 'Advisor';
-                
-                const contentDiv = document.createElement('div');
-                contentDiv.className = `content inline-block p-2 rounded ${
-                    message.role === 'user' 
-                        ? 'bg-blue-500 text-white' 
-                        : 'bg-gray-200 text-gray-800 markdown-content'
-                }`;
-                
-                // Use markdown for assistant messages
-                if (message.role === 'assistant') {
-                    contentDiv.innerHTML = marked.parse(message.content);
-                } else {
-                    contentDiv.textContent = message.content;
-                }
-                
-                messageDiv.appendChild(roleDiv);
-                messageDiv.appendChild(contentDiv);
-                chatHistory.appendChild(messageDiv);
+                displayMessage(message.role, message.content);
             });
             
             chatHistory.scrollTop = chatHistory.scrollHeight;
+        }
+
+        function displayMessage(role, content) {
+            const chatHistory = document.getElementById('chatHistory');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message mb-4 ${role === 'user' ? 'text-right' : ''}`;
+            messageDiv.dataset.role = role;
+            
+            const roleDiv = document.createElement('div');
+            roleDiv.className = 'text-sm text-gray-500';
+            roleDiv.textContent = role === 'user' ? 'You' : 'Advisor';
+            
+            const contentDiv = document.createElement('div');
+            contentDiv.className = `content inline-block p-2 rounded ${
+                role === 'user' 
+                    ? 'bg-blue-500 text-white' 
+                    : 'bg-gray-200 text-gray-800 markdown-content'
+            }`;
+            
+            // Use markdown for assistant messages
+            if (role === 'assistant') {
+                contentDiv.innerHTML = marked.parse(content);
+            } else {
+                contentDiv.textContent = content;
+            }
+            
+            messageDiv.appendChild(roleDiv);
+            messageDiv.appendChild(contentDiv);
+            chatHistory.appendChild(messageDiv);
         }
 
         // Event Listeners
@@ -1104,18 +1196,21 @@
         // Add event listener for cancel button
         document.getElementById('cancelButton').addEventListener('click', cancelStream);
         
-        // Initial load of advisors
-        document.addEventListener('DOMContentLoaded', () => {
-            loadAdvisors();
-        });
-
         // File Management
         let currentPath = '';
         
         function buildFileTree(files) {
-            // Sort files: directories first, then files
-            files.sort((a, b) => {
-                if (a.is_dir !== b.is_dir) return b.is_dir - a.is_dir;
+            if (!files || !Array.isArray(files)) {
+                return '<div class="text-gray-500">No files found</div>';
+            }
+            
+            // Sort files
+            const sortedFiles = files.sort((a, b) => {
+                // Directories first
+                if (a.is_directory !== b.is_directory) {
+                    return a.is_directory ? -1 : 1;
+                }
+                // Then alphabetically
                 return a.path.localeCompare(b.path);
             });
 
@@ -1126,7 +1221,7 @@
             };
 
             // Build tree structure
-            for (const file of files) {
+            for (const file of sortedFiles) {
                 if (!file.path) continue; // Skip root
                 const parts = file.path.split('/');
                 let current = tree;
@@ -1139,7 +1234,7 @@
                         current.children[part] = {
                             name: part,
                             path: parts.slice(0, i + 1).join('/'),
-                            is_dir: isLast ? file.is_dir : true,
+                            is_dir: isLast ? file.is_directory : true,
                             children: {},
                             size: isLast ? file.size : null,
                             modified: isLast ? file.modified : null
@@ -1200,15 +1295,22 @@
                             Authorization: `Bearer ${authToken}`
                         }
                     });
-                    const content = await response.text();
-                    document.getElementById('fileContent').value = content;
+                    const data = await response.json();
+                    
+                    document.getElementById('fileContent').value = data.content;
+                    document.getElementById('fileMetadata').value = JSON.stringify(data.metadata || {}, null, 2);
+                    document.getElementById('isPublic').checked = data.is_public;
                     
                     // Show file action buttons
                     document.getElementById('saveFile').style.display = 'inline-block';
                     document.getElementById('renameFile').style.display = 'inline-block';
                     document.getElementById('deleteFile').style.display = 'inline-block';
+                    document.getElementById('shareFile').style.display = 'inline-block';
+                    
+                    // Load shares
+                    loadFileShares(path);
                 } catch (error) {
-                    console.error('Error fetching file content:', error);
+                    console.error('Error fetching file:', error);
                 }
             } else {
                 document.getElementById('fileContent').value = '';
@@ -1216,6 +1318,7 @@
                 document.getElementById('saveFile').style.display = 'none';
                 document.getElementById('renameFile').style.display = 'none';
                 document.getElementById('deleteFile').style.display = 'none';
+                document.getElementById('shareFile').style.display = 'none';
             }
         }
 
@@ -1223,6 +1326,18 @@
             const path = document.getElementById('newPath').value.trim();
             const type = document.getElementById('newType').value;
             const content = document.getElementById('newContent').value;
+            const isPublic = document.getElementById('newIsPublic').checked;
+            let metadata = {};
+            
+            try {
+                const metadataStr = document.getElementById('newMetadata').value.trim();
+                if (metadataStr) {
+                    metadata = JSON.parse(metadataStr);
+                }
+            } catch (error) {
+                alert('Invalid metadata JSON');
+                return;
+            }
             
             if (!path) {
                 alert('Please enter a path');
@@ -1236,7 +1351,11 @@
                         'Content-Type': 'application/json',
                         Authorization: `Bearer ${authToken}`
                     },
-                    body: type === 'file' ? JSON.stringify({ content }) : null
+                    body: JSON.stringify({
+                        content: type === 'file' ? content : null,
+                        is_public: isPublic,
+                        metadata: metadata
+                    })
                 });
                 
                 if (!response.ok) {
@@ -1247,6 +1366,8 @@
                 // Clear form and reload tree
                 document.getElementById('newPath').value = '';
                 document.getElementById('newContent').value = '';
+                document.getElementById('newMetadata').value = '';
+                document.getElementById('newIsPublic').checked = false;
                 refreshFileTree();
             } catch (error) {
                 console.error('Error creating:', error);
@@ -1258,6 +1379,19 @@
             if (!currentPath) return;
             
             const content = document.getElementById('fileContent').value;
+            const isPublic = document.getElementById('isPublic').checked;
+            let metadata = {};
+            
+            try {
+                const metadataStr = document.getElementById('fileMetadata').value.trim();
+                if (metadataStr) {
+                    metadata = JSON.parse(metadataStr);
+                }
+            } catch (error) {
+                alert('Invalid metadata JSON');
+                return;
+            }
+            
             try {
                 const response = await fetch(`${API_BASE}/files/${currentPath}`, {
                     method: 'PUT',
@@ -1265,7 +1399,11 @@
                         'Content-Type': 'application/json',
                         Authorization: `Bearer ${authToken}`
                     },
-                    body: JSON.stringify({ content })
+                    body: JSON.stringify({
+                        content,
+                        is_public: isPublic,
+                        metadata
+                    })
                 });
                 
                 if (!response.ok) {
@@ -1307,6 +1445,7 @@
                 document.getElementById('saveFile').style.display = 'none';
                 document.getElementById('renameFile').style.display = 'none';
                 document.getElementById('deleteFile').style.display = 'none';
+                document.getElementById('shareFile').style.display = 'none';
                 
                 refreshFileTree();
             } catch (error) {
@@ -1340,6 +1479,7 @@
                 document.getElementById('saveFile').style.display = 'none';
                 document.getElementById('renameFile').style.display = 'none';
                 document.getElementById('deleteFile').style.display = 'none';
+                document.getElementById('shareFile').style.display = 'none';
                 
                 refreshFileTree();
             } catch (error) {
@@ -1390,33 +1530,13 @@
         }
 
         // Add gateway change handler
-        document.getElementById('gateway').addEventListener('change', () => {
-            const gateway = document.getElementById('gateway').value;
-            const modelSelect = document.getElementById('model');
-            
-            // Update available models based on gateway
-            modelSelect.innerHTML = '';
-            
-            switch(gateway) {
-                case 'openrouter':
-                    addModels(['gpt-4o-mini', 'gpt-4o', 'claude-3-opus']);
-                    break;
-                case 'google':
-                    addModels(['gemini-1.5-flash-8b', 'gemini-1.5-pro']);
-                    break;
-                case 'openai':
-                    addModels(['gpt-4-turbo-preview', 'gpt-4']);
-                    break;
-                case 'groq':
-                    addModels(['mixtral-8x7b', 'llama2-70b']);
-                    break;
-                case 'deepseek':
-                    addModels(['deepseek-coder', 'deepseek-chat']);
-                    break;
-            }
-            
+        document.getElementById('gateway').addEventListener('change', function() {
+            const gateway = this.value;
             displayRequest();
         });
+
+        // Trigger initial model population
+        document.getElementById('gateway').dispatchEvent(new Event('change'));
 
         function addModels(models) {
             const modelSelect = document.getElementById('model');
@@ -1427,6 +1547,109 @@
                 modelSelect.appendChild(option);
             });
         }
+
+        async function loadFileShares(path) {
+            try {
+                const response = await fetch(`${API_BASE}/files/${path}/shares`, {
+                    headers: {
+                        Authorization: `Bearer ${authToken}`
+                    }
+                });
+                const shares = await response.json();
+                
+                const sharesDiv = document.getElementById('fileShares');
+                sharesDiv.innerHTML = '';
+                
+                shares.forEach(share => {
+                    const shareDiv = document.createElement('div');
+                    shareDiv.className = 'flex justify-between items-center p-2 bg-gray-50 rounded';
+                    
+                    const info = document.createElement('span');
+                    info.textContent = `${share.shared_with_id} (${share.permissions})`;
+                    
+                    const removeBtn = document.createElement('button');
+                    removeBtn.className = 'text-red-500 hover:text-red-700';
+                    removeBtn.textContent = '×';
+                    removeBtn.onclick = () => unshareFile(path, share.shared_with_id);
+                    
+                    shareDiv.appendChild(info);
+                    shareDiv.appendChild(removeBtn);
+                    sharesDiv.appendChild(shareDiv);
+                });
+            } catch (error) {
+                console.error('Error loading shares:', error);
+            }
+        }
+
+        async function shareFile() {
+            document.getElementById('shareModal').classList.remove('hidden');
+        }
+
+        async function confirmShare() {
+            const userId = document.getElementById('shareUserId').value.trim();
+            const permissions = document.getElementById('sharePermissions').value;
+            
+            if (!userId) {
+                alert('Please enter a user ID');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE}/files/${currentPath}/share`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify({
+                        shared_with_id: userId,
+                        permissions
+                    })
+                });
+                
+                if (!response.ok) {
+                    const error = await response.text();
+                    throw new Error(error);
+                }
+                
+                document.getElementById('shareModal').classList.add('hidden');
+                document.getElementById('shareUserId').value = '';
+                loadFileShares(currentPath);
+            } catch (error) {
+                console.error('Error sharing:', error);
+                alert(`Failed to share: ${error.message}`);
+            }
+        }
+
+        async function unshareFile(path, userId) {
+            if (!confirm('Are you sure you want to remove this share?')) return;
+            
+            try {
+                const response = await fetch(`${API_BASE}/files/${path}/share/${userId}`, {
+                    method: 'DELETE',
+                    headers: {
+                        Authorization: `Bearer ${authToken}`
+                    }
+                });
+                
+                if (!response.ok) {
+                    const error = await response.text();
+                    throw new Error(error);
+                }
+                
+                loadFileShares(path);
+            } catch (error) {
+                console.error('Error unsharing:', error);
+                alert(`Failed to unshare: ${error.message}`);
+            }
+        }
+
+        // Add event listeners for share modal
+        document.getElementById('shareFile').addEventListener('click', shareFile);
+        document.getElementById('confirmShare').addEventListener('click', confirmShare);
+        document.getElementById('cancelShare').addEventListener('click', () => {
+            document.getElementById('shareModal').classList.add('hidden');
+        });
     </script>
 </body>
 </html>

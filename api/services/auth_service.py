@@ -2,9 +2,10 @@ from datetime import datetime, timedelta
 from typing import Optional
 from uuid import UUID
 import jwt
+from jwt.exceptions import InvalidTokenError, DecodeError
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
-from fastapi import HTTPException, status, Depends
+from fastapi import HTTPException, status, Depends, Request
 import secrets
 
 from api.models.users import User, AuthSession, TokenData
@@ -98,11 +99,10 @@ async def get_current_user(token: str, db: Session) -> User:
                 detail="User not found"
             )
         return user
-        
-    except jwt.JWTError:
+    except (InvalidTokenError, DecodeError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials"
+            detail="Invalid authentication token"
         )
 
 async def get_current_user_or_default(token: str = None, db: Session = Depends(get_db)) -> User:
@@ -134,4 +134,20 @@ def create_default_user(db: Session) -> User:
         username="default",
         email="default@hubgpt.local",
         password=secrets.token_urlsafe(32)  # Generate a random password
-    ) 
+    )
+
+async def get_current_user_from_request(request: Request, db: Session = Depends(get_db)) -> User:
+    try:
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Not authenticated"
+            )
+        token = auth_header.split(" ")[1]
+        return await get_current_user(token, db)
+    except (InvalidTokenError, DecodeError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token"
+        ) 

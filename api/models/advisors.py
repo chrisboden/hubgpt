@@ -69,6 +69,10 @@ class AdvisorCreate(AdvisorBase):
 
 class Advisor(AdvisorBase):
     """Model for advisor responses"""
+    id: str
+    created_at: datetime
+    updated_at: datetime
+
     class Config:
         from_attributes = True
 

@@ -1,155 +1,188 @@
-from fastapi import APIRouter, HTTPException, Response
-from fastapi.responses import JSONResponse
-from pathlib import Path
-from datetime import datetime
-import shutil
-import os
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Request
+from sqlalchemy.orm import Session
+from typing import List, Optional
+import logging
+import json
 
-from ..models.files import FileInfo, FileList, FileContent, FileRename
+from ..database import get_db
+from ..models.users import User
+from ..models.user_files import UserFile, FileShare
+from ..api_utils.user_file_utils import save_user_file, get_user_file_content, delete_user_file
+from ..services.auth_service import get_current_user_from_request
+from ..api_utils.prompt_utils import process_inclusions
+from pydantic import BaseModel
 
 router = APIRouter(tags=["files"])
+logger = logging.getLogger(__name__)
 
-# Get base files directory from environment or use default
-FILES_DIR = Path(os.getenv("FILES_DIR", "files"))
+class FileResponse(BaseModel):
+    id: str
+    file_path: str
+    file_type: str
+    content_type: Optional[str]
+    size_bytes: int
+    is_public: bool
+    metadata: dict
+    created_at: str
+    updated_at: str
 
-def ensure_files_dir():
-    """Ensure the files directory exists"""
-    FILES_DIR.mkdir(parents=True, exist_ok=True)
+class FileShareResponse(BaseModel):
+    id: str
+    file_id: str
+    shared_with_id: str
+    permissions: str
+    created_at: str
 
-def get_file_info(path: Path) -> FileInfo:
-    """Get file information for a path"""
-    stat = path.stat()
-    # Handle root directory case
-    try:
-        rel_path = str(path.relative_to(FILES_DIR))
-        # If this is the root directory, use empty string as path
-        if rel_path == '.':
-            rel_path = ''
-    except ValueError:
-        # If path is the root directory itself
-        rel_path = ''
-    
-    return FileInfo(
-        name=path.name if path != FILES_DIR else '',
-        path=rel_path,
-        is_dir=path.is_dir(),
-        size=stat.st_size if not path.is_dir() else None,
-        modified=datetime.fromtimestamp(stat.st_mtime),
-        content_type="application/x-directory" if path.is_dir() else None
+@router.post("/files/{file_path:path}", response_model=FileResponse)
+async def upload_file(
+    file_path: str,
+    file: UploadFile = File(...),
+    file_type: str = None,
+    is_public: bool = False,
+    metadata: dict = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_from_request)
+):
+    """Upload a file to user's storage"""
+    if not file_type:
+        file_type = file_path.split('.')[-1] if '.' in file_path else 'txt'
+        
+    db_file = await save_user_file(
+        db=db,
+        user=current_user,
+        file=file,
+        file_path=file_path,
+        file_type=file_type,
+        content_type=file.content_type,
+        is_public=is_public,
+        metadata=metadata
     )
+    
+    return FileResponse.from_orm(db_file)
 
-@router.get("", response_model=FileList)
-async def list_files():
-    """List all files and folders in the files directory recursively"""
-    ensure_files_dir()
-    files = []
+@router.get("/files/{file_path:path}/content")
+async def get_file_content(
+    file_path: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_from_request)
+):
+    """Get file content"""
+    return get_user_file_content(db, current_user.id, file_path)
+
+@router.delete("/files/{file_path:path}")
+async def delete_file(
+    file_path: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_from_request)
+):
+    """Delete a file"""
+    if delete_user_file(db, current_user.id, file_path):
+        return {"status": "success"}
+    raise HTTPException(status_code=404, detail="File not found")
+
+@router.get("/files", response_model=List[FileResponse])
+async def list_files(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_from_request)
+):
+    """List user's files"""
+    files = db.query(UserFile).filter(
+        UserFile.user_id == current_user.id
+    ).all()
+    return [FileResponse.from_orm(f) for f in files]
+
+@router.post("/files/{file_path:path}/share")
+async def share_file(
+    file_path: str,
+    shared_with_id: str,
+    permissions: str = "read",
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_from_request)
+):
+    """Share a file with another user"""
+    # Get file record
+    file = db.query(UserFile).filter(
+        UserFile.user_id == current_user.id,
+        UserFile.file_path == file_path
+    ).first()
+    
+    if not file:
+        raise HTTPException(status_code=404, detail="File not found")
+        
+    # Check if user exists
+    shared_with = db.query(User).filter(User.id == shared_with_id).first()
+    if not shared_with:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    # Create share record
+    share = FileShare(
+        file_id=file.id,
+        shared_with_id=shared_with_id,
+        permissions=permissions
+    )
+    
+    db.add(share)
+    db.commit()
+    db.refresh(share)
+    
+    return FileShareResponse.from_orm(share)
+
+@router.delete("/files/{file_path:path}/share/{user_id}")
+async def unshare_file(
+    file_path: str,
+    user_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_from_request)
+):
+    """Remove file share"""
+    # Get file record
+    file = db.query(UserFile).filter(
+        UserFile.user_id == current_user.id,
+        UserFile.file_path == file_path
+    ).first()
+    
+    if not file:
+        raise HTTPException(status_code=404, detail="File not found")
+        
+    # Delete share record
+    share = db.query(FileShare).filter(
+        FileShare.file_id == file.id,
+        FileShare.shared_with_id == user_id
+    ).first()
+    
+    if share:
+        db.delete(share)
+        db.commit()
+        return {"status": "success"}
+        
+    raise HTTPException(status_code=404, detail="Share not found")
+
+@router.get("/")
+async def list_files(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_from_request)
+) -> List[dict]:
+    """List all files for the current user"""
     try:
-        # Add root directory
-        root_info = FileInfo(
-            name="",
-            path="",
-            is_dir=True,
-            size=None,
-            modified=datetime.fromtimestamp(FILES_DIR.stat().st_mtime),
-            content_type="application/x-directory"
-        )
-        files.append(root_info)
+        files = db.query(UserFile).filter(
+            UserFile.user_id == current_user.id
+        ).all()
         
-        # Recursively walk through all files and directories
-        for root, dirs, filenames in os.walk(FILES_DIR):
-            root_path = Path(root)
-            
-            # Add directories
-            for dir_name in dirs:
-                dir_path = root_path / dir_name
-                try:
-                    files.append(get_file_info(dir_path))
-                except Exception as e:
-                    continue  # Skip directories that can't be accessed
-            
-            # Add files
-            for filename in filenames:
-                file_path = root_path / filename
-                try:
-                    files.append(get_file_info(file_path))
-                except Exception as e:
-                    continue  # Skip files that can't be accessed
-                    
+        return [
+            {
+                "id": str(file.id),
+                "name": file.file_path,
+                "type": "file",
+                "content_type": file.content_type,
+                "is_public": file.is_public,
+                "created_at": file.created_at.isoformat(),
+                "updated_at": file.updated_at.isoformat() if file.updated_at else None,
+                "metadata": file.metadata
+            }
+            for file in files
+        ]
     except Exception as e:
-        # If there's an error, just return empty list with root
-        pass
-    
-    # Sort directories first, then files, both alphabetically
-    return FileList(files=sorted(files, key=lambda x: (not x.is_dir, x.path.lower() if x.path else "")))
-
-@router.get("/{path:path}")
-async def get_file(path: str):
-    """Get contents of a specific file"""
-    file_path = FILES_DIR / path
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="File not found")
-    if file_path.is_dir():
-        raise HTTPException(status_code=400, detail="Path is a directory")
-    return Response(content=file_path.read_text(), media_type="text/plain")
-
-@router.post("/{path:path}")
-async def create_file(path: str, content: FileContent = None):
-    """Create a new file or directory"""
-    ensure_files_dir()
-    file_path = FILES_DIR / path
-    
-    # Create all parent directories
-    file_path.parent.mkdir(parents=True, exist_ok=True)
-        
-    # Check if path already exists
-    if file_path.exists():
-        raise HTTPException(status_code=409, detail="Path already exists")
-    
-    # Create directory if content is None
-    if content is None:
-        file_path.mkdir(parents=True)
-        return JSONResponse(content={"message": "Directory created"})
-    
-    # Create file with content
-    file_path.write_text(content.content)
-    return JSONResponse(content={"message": "File created"})
-
-@router.put("/{path:path}")
-async def update_file(path: str, content: FileContent):
-    """Update an existing file's contents"""
-    file_path = FILES_DIR / path
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="File not found")
-    if file_path.is_dir():
-        raise HTTPException(status_code=400, detail="Cannot update directory content")
-    
-    file_path.write_text(content.content)
-    return JSONResponse(content={"message": "File updated"})
-
-@router.patch("/{path:path}")
-async def rename_file(path: str, rename: FileRename):
-    """Rename a file or directory"""
-    file_path = FILES_DIR / path
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="Path not found")
-        
-    new_path = file_path.parent / rename.new_name
-    if new_path.exists():
-        raise HTTPException(status_code=409, detail="New path already exists")
-        
-    file_path.rename(new_path)
-    return JSONResponse(content={"message": "Path renamed"})
-
-@router.delete("/{path:path}")
-async def delete_file(path: str):
-    """Delete a file or directory"""
-    file_path = FILES_DIR / path
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="Path not found")
-        
-    if file_path.is_dir():
-        shutil.rmtree(file_path)
-    else:
-        file_path.unlink()
-        
-    return JSONResponse(content={"message": "Path deleted"}) 
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error listing files: {str(e)}"
+        ) 

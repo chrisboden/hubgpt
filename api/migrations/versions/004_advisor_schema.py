@@ -47,7 +47,7 @@ def upgrade() -> None:
     )
     
     # Migrate existing advisors from files
-    advisors_dir = Path("advisors")
+    advisors_dir = Path("api/advisors")
     if advisors_dir.exists():
         # Process JSON files
         for file_path in advisors_dir.glob("*.json"):

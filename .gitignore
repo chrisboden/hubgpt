@@ -177,6 +177,7 @@ cython_debug/
 /me/*
 /notepads/*
 /data/*
+/storage/*
 
 # Create empty .gitkeep files in these directories to preserve them
 

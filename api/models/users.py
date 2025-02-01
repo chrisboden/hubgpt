@@ -1,8 +1,8 @@
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Dict, Any
 from uuid import UUID, uuid4
 from pydantic import BaseModel, EmailStr
-from sqlalchemy import Column, String, DateTime, JSON, ForeignKey
+from sqlalchemy import Column, String, DateTime, JSON, ForeignKey, func
 from sqlalchemy.orm import relationship
 
 from ..database import Base
@@ -16,12 +16,16 @@ class User(Base):
     username = Column(String, unique=True, nullable=False)
     email = Column(String, unique=True)
     hashed_password = Column(String, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    settings = Column(JSON, default=dict)
+    created_at = Column(DateTime, server_default=func.now())
+    settings = Column(JSON, server_default="{}")
 
     # Relationships
+    files = relationship("UserFile", back_populates="user", cascade="all, delete-orphan")
     sessions = relationship("AuthSession", back_populates="user", cascade="all, delete-orphan")
     conversations = relationship("Conversation", back_populates="user", cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f"<User(id={self.id}, username={self.username})>"
 
 class AuthSession(Base):
     __tablename__ = "auth_sessions"
@@ -40,17 +44,27 @@ class UserBase(BaseModel):
     username: str
     email: Optional[EmailStr] = None
 
-class UserCreate(UserBase):
+class UserCreate(BaseModel):
+    username: str
+    email: EmailStr
     password: str
+
+class UserUpdate(BaseModel):
+    username: Optional[str] = None
+    email: Optional[EmailStr] = None
+    password: Optional[str] = None
+    settings: Optional[Dict[str, Any]] = None
 
 class UserLogin(BaseModel):
     username: str
     password: str
 
-class UserResponse(UserBase):
+class UserResponse(BaseModel):
     id: UUID
+    username: str
+    email: Optional[str]
     created_at: datetime
-    settings: dict = {}
+    settings: Dict[str, Any]
 
     class Config:
         from_attributes = True
