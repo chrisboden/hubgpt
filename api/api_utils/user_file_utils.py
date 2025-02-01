@@ -22,13 +22,18 @@ def get_user_file_path(user_id: str, file_path: str, create_dirs: bool = False) 
     Returns:
         Path: Absolute path to the file
     """
+    logger.info(f"Getting user file path: user_id={user_id}, file_path={file_path}, create_dirs={create_dirs}")
+    
     # Handle shared files
     if file_path.startswith('shared/'):
         base_path = Path("storage") / file_path
+        logger.info(f"Using shared file path: {base_path}")
     else:
         base_path = Path("storage") / "users" / user_id / "files" / file_path
+        logger.info(f"Using user-specific file path: {base_path}")
         
     if create_dirs:
+        logger.info(f"Creating parent directories: {base_path.parent}")
         base_path.parent.mkdir(parents=True, exist_ok=True)
         
     return base_path
@@ -45,8 +50,11 @@ def check_file_access(db: Session, user_id: str, file_path: str) -> bool:
     Returns:
         bool: Whether user has access
     """
+    logger.info(f"Checking file access: user_id={user_id}, file_path={file_path}")
+    
     # Shared files are accessible to all
     if file_path.startswith('shared/'):
+        logger.info("File is in shared directory, access granted")
         return True
         
     # Query the file record
@@ -56,14 +64,17 @@ def check_file_access(db: Session, user_id: str, file_path: str) -> bool:
     ).first()
     
     if not file:
+        logger.warning(f"File record not found: user_id={user_id}, file_path={file_path}")
         return False
         
     # Owner has access
     if file.user_id == user_id:
+        logger.info("User is file owner, access granted")
         return True
         
     # Check if file is public
     if file.is_public:
+        logger.info("File is public, access granted")
         return True
         
     # Check if file is shared with user
@@ -72,7 +83,9 @@ def check_file_access(db: Session, user_id: str, file_path: str) -> bool:
         FileShare.shared_with_id == user_id
     ).first()
     
-    return share is not None
+    has_access = share is not None
+    logger.info(f"File share check result: {has_access}")
+    return has_access
 
 async def save_user_file(
     db: Session,

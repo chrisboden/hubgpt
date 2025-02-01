@@ -118,9 +118,9 @@ storage/
 ├── users/
 │   ├── {user_id}/
 │   │   ├── files/
-│   │   │   ├── content/       # Large content files
-│   │   │   ├── uploads/       # User uploaded files
-│   │   │   └── temp/         # Temporary processing files
+│   │   │   ├── content/       # User file content
+│   │   │   ├── uploads/       # Temporary upload storage
+│   │   │   └── temp/         # Processing files
 │   │   └── ...
 │   └── ...
 └── shared/                   # Shared resources
@@ -136,18 +136,21 @@ storage/
    - [x] Automatic directory creation
    - [x] File type detection
    - [x] Content type tracking
+   - [x] Public/private file support
 
 2. File Operations ✅
    - [x] File upload (multipart/form-data)
-   - [x] File download
-   - [x] File deletion
-   - [x] File listing
-   - [x] Content retrieval
+   - [x] File content retrieval
+   - [x] File renaming with path updates
+   - [x] File deletion with cleanup
+   - [x] Directory listing with tree structure
+   - [x] File sharing between users
 
 3. Access Control ✅
    - [x] Private by default
    - [x] Optional public flag
    - [x] Owner-based access
+   - [x] Share-based access
    - [x] Database-tracked permissions
 
 4. Error Handling ✅
@@ -169,34 +172,60 @@ Response: File content
 Auth: Bearer token required
 
 POST /api/v1/files/{file_path}
-Description: Upload file
+Description: Create or update file
 Body: multipart/form-data
 Fields:
   - file: File data
-  - file_type: string (optional)
   - is_public: boolean (optional)
-  - metadata: JSON object (optional)
+Response: FileResponse
+
+PATCH /api/v1/files/{file_path}
+Description: Rename file
+Body: JSON
+{
+    "new_name": string
+}
 Response: FileResponse
 
 DELETE /api/v1/files/{file_path}
 Description: Delete file
 Response: Success message
 Auth: Bearer token required
+
+POST /api/v1/files/{file_path}/share
+Description: Share file with another user
+Body: JSON
+{
+    "shared_with_id": string,
+    "permissions": {
+        "read": boolean,
+        "write": boolean
+    }
+}
+Response: FileShareResponse
+
+GET /api/v1/files/{file_path}/shares
+Description: List all shares for a file
+Response: List[FileShareResponse]
+
+DELETE /api/v1/files/{file_path}/share/{user_id}
+Description: Remove file share
+Response: Success message
 ```
 
-### Phase 3: Sharing & Collaboration 🔄
+### Phase 3: Sharing & Collaboration ✅
 **Goal**: Enable secure file and resource sharing between users
-**Status**: In Progress
+**Status**: Complete
 
 #### Features
-1. File Sharing 🔄
+1. File Sharing ✅
    - [x] Database schema for shares
    - [x] Basic share creation/deletion
-   - [ ] Share permissions management
-   - [ ] Share expiration
-   - [ ] Share notifications
+   - [x] Share permissions management
+   - [x] Share listing
+   - [x] Access control enforcement
 
-2. Resource Sharing ⏳
+2. Resource Sharing 🔄
    - [ ] Advisor sharing
    - [ ] Chat sharing
    - [ ] Tool sharing

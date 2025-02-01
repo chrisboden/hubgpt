@@ -1713,6 +1713,51 @@
                 alert('Failed to share file: ' + error.message);
             }
         }
+
+        async function createNew() {
+            const path = document.getElementById('newPath').value.trim();
+            const type = document.getElementById('newType').value;
+            const content = document.getElementById('newContent').value;
+            const isPublic = document.getElementById('newIsPublic').checked;
+            
+            if (!path) {
+                alert('Please enter a file path');
+                return;
+            }
+            
+            try {
+                const formData = new FormData();
+                const file = new File([content], path.split('/').pop(), {
+                    type: 'text/plain'
+                });
+                formData.append('file', file);
+                formData.append('is_public', isPublic);
+                
+                const response = await fetch(`${API_BASE}/files/${path}`, {
+                    method: 'POST',
+                    headers: {
+                        Authorization: `Bearer ${authToken}`
+                    },
+                    body: formData
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Failed to create file');
+                }
+                
+                // Clear form
+                document.getElementById('newPath').value = '';
+                document.getElementById('newContent').value = '';
+                document.getElementById('newIsPublic').checked = false;
+                
+                await refreshFileTree();
+                alert('File created successfully');
+            } catch (error) {
+                console.error('Error creating file:', error);
+                alert('Failed to create file: ' + error.message);
+            }
+        }
     </script>
 </body>
 </html>

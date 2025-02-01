@@ -123,7 +123,7 @@ def process_file_tag(match: re.Match, user: Optional[User] = None, db: Optional[
         if user and db:
             logger.info("Attempting user-specific file access")
             try:
-                content = get_user_file_content(file_path, user, db)
+                content = get_user_file_content(db, user.id, file_path)
                 logger.info(f"Successfully read user file: length={len(content)}")
                 return content
             except Exception as e:
@@ -347,8 +347,9 @@ def load_advisor_data(advisor_id: str, user: Optional[User] = None, db: Optional
     for message in advisor.messages:
         logger.info(f"Processing message: role={message['role']}")
         try:
+            logger.info(f"Original message content: {message['content']}")
             processed_content = process_inclusions(message["content"], user=user, db=db)
-            logger.info(f"Successfully processed message content: length={len(processed_content)}")
+            logger.info(f"Processed message content: {processed_content}")
             processed_message = {
                 "role": message["role"],
                 "content": processed_content

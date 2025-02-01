@@ -203,49 +203,88 @@ Response: Success message
 ```http
 GET /api/v1/files
 Description: List all files for the current user
-Response: List of FileResponse objects
-Example Response:
-[
-    {
-        "id": "c983bd7b-0539-4c36-9c68-f32d57fb0324",
-        "user_id": "fb706bca-aef9-4a03-9336-d4868e2d5e04",
-        "file_path": "test/testfile.txt",
-        "file_type": "txt",
-        "content_type": "text/plain",
-        "size_bytes": 28,
-        "is_public": false,
-        "metadata": {},
-        "created_at": "2025-02-01T11:06:55",
-        "updated_at": "2025-02-01T11:16:35"
-    }
-]
+Response: List[FileResponse]
 
 GET /api/v1/files/{file_path}/content
 Description: Get file contents
-Response: File content as text
-Auth Required: Yes (Bearer token)
-Access Control: Owner or shared access required
+Response: File content
+Auth: Bearer token required
 
 POST /api/v1/files/{file_path}
-Description: Upload file
-Body: multipart/form-data with file field
-Optional Parameters:
-  - file_type: string (defaults to file extension)
-  - is_public: boolean (defaults to false)
-  - metadata: JSON object
-Response: FileResponse object
-Example:
-curl -X POST \
-  -H "Authorization: Bearer <token>" \
-  -F "file=@local_file.txt" \
-  http://localhost:8000/api/v1/files/path/to/file.txt
+Description: Create or update file
+Body: multipart/form-data
+Fields:
+  - file: File data
+  - is_public: boolean (optional)
+Response: FileResponse
+
+PATCH /api/v1/files/{file_path}
+Description: Rename file
+Body: JSON
+{
+    "new_name": string
+}
+Response: FileResponse
 
 DELETE /api/v1/files/{file_path}
 Description: Delete file
-Response: {"status": "success"} or 404 if not found
-Auth Required: Yes (Bearer token)
-Access Control: Owner only
+Response: Success message
+Auth: Bearer token required
+
+POST /api/v1/files/{file_path}/share
+Description: Share file with another user
+Body: JSON
+{
+    "shared_with_id": string,
+    "permissions": {
+        "read": boolean,
+        "write": boolean
+    }
+}
+Response: FileShareResponse
+
+GET /api/v1/files/{file_path}/shares
+Description: List all shares for a file
+Response: List[FileShareResponse]
+
+DELETE /api/v1/files/{file_path}/share/{user_id}
+Description: Remove file share
+Response: Success message
 ```
+
+### File Management Features
+
+1. Core Features ✅
+   - [x] User-specific storage spaces with proper isolation
+   - [x] Database-backed file metadata tracking
+   - [x] File path sanitization and validation
+   - [x] Access control system
+   - [x] Automatic directory creation
+   - [x] File type detection
+   - [x] Content type tracking
+   - [x] Public/private file support
+
+2. File Operations ✅
+   - [x] File upload via multipart/form-data
+   - [x] File content retrieval
+   - [x] File renaming with path updates
+   - [x] File deletion with cleanup
+   - [x] Directory listing with tree structure
+   - [x] File sharing between users
+
+3. Access Control ✅
+   - [x] Private by default
+   - [x] Optional public flag
+   - [x] Owner-based access
+   - [x] Share-based access
+   - [x] Database-tracked permissions
+
+4. Error Handling ✅
+   - [x] Failed upload cleanup
+   - [x] Access validation
+   - [x] Path validation
+   - [x] Duplicate handling
+   - [x] Proper error messages
 
 ### File Storage Structure
 
@@ -256,39 +295,106 @@ storage/
 ├── users/
 │   ├── {user_id}/
 │   │   ├── files/
-│   │   │   ├── content/       # Large content files
-│   │   │   ├── uploads/       # User uploaded files
-│   │   │   └── temp/         # Temporary processing files
+│   │   │   ├── content/       # User file content
+│   │   │   ├── uploads/       # Temporary upload storage
+│   │   │   └── temp/         # Processing files
 │   │   └── ...
 │   └── ...
 └── shared/                   # Shared resources
     └── ...
 ```
 
-### File Management Features
+### Database Schema
 
-1. **User Isolation**
+```sql
+CREATE TABLE user_files (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES users(id),
+    file_path TEXT NOT NULL,
+    file_type TEXT NOT NULL,
+    content_type TEXT,
+    size_bytes BIGINT,
+    is_public BOOLEAN DEFAULT false,
+    file_metadata JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, file_path)
+);
+
+CREATE TABLE file_shares (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    file_id UUID REFERENCES user_files(id),
+    shared_with_id UUID REFERENCES users(id),
+    permissions JSONB NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### Example Usage
+
+```javascript
+// Create/update file
+const formData = new FormData();
+formData.append('file', new File(['content'], 'test.txt'));
+formData.append('is_public', false);
+
+await fetch('/api/v1/files/path/to/test.txt', {
+    method: 'POST',
+    headers: {
+        Authorization: `Bearer ${token}`
+    },
+    body: formData
+});
+
+// Rename file
+await fetch('/api/v1/files/path/to/test.txt', {
+    method: 'PATCH',
+    headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify({
+        new_name: 'new_test.txt'
+    })
+});
+
+// Share file
+await fetch('/api/v1/files/path/to/test.txt/share', {
+    method: 'POST',
+    headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify({
+        shared_with_id: 'user123',
+        permissions: {
+            read: true,
+            write: false
+        }
+    })
+});
+```
+
+### Security Considerations
+
+1. File Access Control
+   - Files are private by default
+   - Access requires authentication
+   - Path traversal prevention
+   - Content type validation
+   - Size limits enforcement
+
+2. User Isolation
    - Each user has their own storage space
    - Files are stored under user-specific directories
-   - Database tracks file metadata and permissions
+   - Database tracks ownership and permissions
+   - Share-based access control
 
-2. **Access Control**
-   - Files are private by default
-   - Optional public flag for global access
-   - File sharing between users (planned)
-   - Permission-based access control
-
-3. **Metadata Management**
-   - File type detection
-   - Content type tracking
-   - Custom metadata support
-   - Size and timestamp tracking
-
-4. **Error Handling**
-   - Proper cleanup on failed uploads
-   - Automatic directory creation
-   - Duplicate file handling
-   - Access control validation
+3. Error Handling
+   - Proper cleanup on failed operations
+   - Secure error messages
+   - Transaction support for database operations
+   - Automatic directory management
 
 ## Authentication
 
