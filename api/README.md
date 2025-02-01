@@ -2,6 +2,8 @@
 
 The HubGPT API is a FastAPI-based backend service that powers the HubGPT agent framework. It provides endpoints for managing AI advisors, conversations, and file operations with a focus on multi-user support and database persistence.
 
+NOTE: Test harness is at api/index.html
+
 ## System Architecture
 
 ### Core Components
@@ -199,39 +201,94 @@ Response: Success message
 ### Files
 
 ```http
-GET /files
-Description: List all files recursively
-Response: FileList object
+GET /api/v1/files
+Description: List all files for the current user
+Response: List of FileResponse objects
+Example Response:
+[
+    {
+        "id": "c983bd7b-0539-4c36-9c68-f32d57fb0324",
+        "user_id": "fb706bca-aef9-4a03-9336-d4868e2d5e04",
+        "file_path": "test/testfile.txt",
+        "file_type": "txt",
+        "content_type": "text/plain",
+        "size_bytes": 28,
+        "is_public": false,
+        "metadata": {},
+        "created_at": "2025-02-01T11:06:55",
+        "updated_at": "2025-02-01T11:16:35"
+    }
+]
 
-GET /files/{path}
+GET /api/v1/files/{file_path}/content
 Description: Get file contents
 Response: File content as text
+Auth Required: Yes (Bearer token)
+Access Control: Owner or shared access required
 
-POST /files/{path}
-Description: Create file or directory
-Body: {
-    "content": string  // Optional, if not provided creates directory
-}
-Response: Success message
+POST /api/v1/files/{file_path}
+Description: Upload file
+Body: multipart/form-data with file field
+Optional Parameters:
+  - file_type: string (defaults to file extension)
+  - is_public: boolean (defaults to false)
+  - metadata: JSON object
+Response: FileResponse object
+Example:
+curl -X POST \
+  -H "Authorization: Bearer <token>" \
+  -F "file=@local_file.txt" \
+  http://localhost:8000/api/v1/files/path/to/file.txt
 
-PUT /files/{path}
-Description: Update file contents
-Body: {
-    "content": string
-}
-Response: Success message
-
-PATCH /files/{path}
-Description: Rename file or directory
-Body: {
-    "new_name": string
-}
-Response: Success message
-
-DELETE /files/{path}
-Description: Delete file or directory
-Response: Success message
+DELETE /api/v1/files/{file_path}
+Description: Delete file
+Response: {"status": "success"} or 404 if not found
+Auth Required: Yes (Bearer token)
+Access Control: Owner only
 ```
+
+### File Storage Structure
+
+The system uses a structured storage system for user files:
+
+```
+storage/
+├── users/
+│   ├── {user_id}/
+│   │   ├── files/
+│   │   │   ├── content/       # Large content files
+│   │   │   ├── uploads/       # User uploaded files
+│   │   │   └── temp/         # Temporary processing files
+│   │   └── ...
+│   └── ...
+└── shared/                   # Shared resources
+    └── ...
+```
+
+### File Management Features
+
+1. **User Isolation**
+   - Each user has their own storage space
+   - Files are stored under user-specific directories
+   - Database tracks file metadata and permissions
+
+2. **Access Control**
+   - Files are private by default
+   - Optional public flag for global access
+   - File sharing between users (planned)
+   - Permission-based access control
+
+3. **Metadata Management**
+   - File type detection
+   - Content type tracking
+   - Custom metadata support
+   - Size and timestamp tracking
+
+4. **Error Handling**
+   - Proper cleanup on failed uploads
+   - Automatic directory creation
+   - Duplicate file handling
+   - Access control validation
 
 ## Authentication
 

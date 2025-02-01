@@ -106,8 +106,11 @@ async def save_user_file(
         
         # Save file content
         if isinstance(file, UploadFile):
+            content = await file.read()
             with abs_path.open('wb') as f:
-                shutil.copyfileobj(file.file, f)
+                f.write(content)
+            # Reset file position for potential reuse
+            await file.seek(0)
         elif isinstance(file, bytes):
             abs_path.write_bytes(file)
         else:

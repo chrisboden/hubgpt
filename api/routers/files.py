@@ -17,14 +17,30 @@ logger = logging.getLogger(__name__)
 
 class FileResponse(BaseModel):
     id: str
+    user_id: str
     file_path: str
     file_type: str
     content_type: Optional[str]
-    size_bytes: int
+    size_bytes: Optional[int]
     is_public: bool
-    metadata: dict
+    metadata: dict = {}
     created_at: str
     updated_at: str
+
+    class Config:
+        from_attributes = True
+
+    @classmethod
+    def from_orm(cls, obj):
+        # Convert metadata field name
+        if hasattr(obj, 'file_metadata'):
+            obj.metadata = obj.file_metadata
+        # Convert datetime fields to strings
+        if hasattr(obj, 'created_at'):
+            obj.created_at = obj.created_at.isoformat()
+        if hasattr(obj, 'updated_at'):
+            obj.updated_at = obj.updated_at.isoformat()
+        return super().from_orm(obj)
 
 class FileShareResponse(BaseModel):
     id: str
@@ -33,7 +49,7 @@ class FileShareResponse(BaseModel):
     permissions: str
     created_at: str
 
-@router.post("/files/{file_path:path}", response_model=FileResponse)
+@router.post("/{file_path:path}", response_model=FileResponse)
 async def upload_file(
     file_path: str,
     file: UploadFile = File(...),
@@ -44,23 +60,30 @@ async def upload_file(
     current_user: User = Depends(get_current_user_from_request)
 ):
     """Upload a file to user's storage"""
-    if not file_type:
-        file_type = file_path.split('.')[-1] if '.' in file_path else 'txt'
+    try:
+        if not file_type:
+            file_type = file_path.split('.')[-1] if '.' in file_path else 'txt'
+            
+        # Read file content
+        content = await file.read()
+            
+        db_file = await save_user_file(
+            db=db,
+            user=current_user,
+            file=content,
+            file_path=file_path,
+            file_type=file_type,
+            content_type=file.content_type,
+            is_public=is_public,
+            metadata=metadata
+        )
         
-    db_file = await save_user_file(
-        db=db,
-        user=current_user,
-        file=file,
-        file_path=file_path,
-        file_type=file_type,
-        content_type=file.content_type,
-        is_public=is_public,
-        metadata=metadata
-    )
-    
-    return FileResponse.from_orm(db_file)
+        return FileResponse.from_orm(db_file)
+    except Exception as e:
+        logger.error(f"Error uploading file: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/files/{file_path:path}/content")
+@router.get("/{file_path:path}/content")
 async def get_file_content(
     file_path: str,
     db: Session = Depends(get_db),
@@ -69,7 +92,7 @@ async def get_file_content(
     """Get file content"""
     return get_user_file_content(db, current_user.id, file_path)
 
-@router.delete("/files/{file_path:path}")
+@router.delete("/{file_path:path}")
 async def delete_file(
     file_path: str,
     db: Session = Depends(get_db),
@@ -80,7 +103,7 @@ async def delete_file(
         return {"status": "success"}
     raise HTTPException(status_code=404, detail="File not found")
 
-@router.get("/files", response_model=List[FileResponse])
+@router.get("/", response_model=List[FileResponse])
 async def list_files(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_from_request)

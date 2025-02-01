@@ -68,10 +68,10 @@ async def startup_event():
         raise e
 
 # Include routers
-app.include_router(auth.router, prefix="/auth", tags=["auth"])
-app.include_router(advisors.router, prefix="/advisors", tags=["advisors"])
-app.include_router(chat.router, prefix="/chat", tags=["chat"])
-app.include_router(files.router, prefix="/files", tags=["files"])
+app.include_router(auth.router, prefix=f"{config.API_PREFIX}/auth", tags=["auth"])
+app.include_router(advisors.router, prefix=f"{config.API_PREFIX}/advisors", tags=["advisors"])
+app.include_router(chat.router, prefix=f"{config.API_PREFIX}/chat", tags=["chat"])
+app.include_router(files.router, prefix=f"{config.API_PREFIX}/files", tags=["files"])
 
 # Serve static files
 static_dir = Path(__file__).parent

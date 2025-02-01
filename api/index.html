@@ -61,6 +61,46 @@
         .markdown-content th {
             background-color: #f5f5f5;
         }
+        /* File Tree Styles */
+        .file-tree {
+            font-family: monospace;
+            user-select: none;
+        }
+        
+        .file-tree-item {
+            padding: 4px 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            border-radius: 4px;
+        }
+        
+        .file-tree-item:hover {
+            background-color: #f3f4f6;
+        }
+        
+        .file-tree-item.selected {
+            background-color: #e5e7eb;
+        }
+        
+        .file-tree-item i {
+            margin-right: 8px;
+            width: 16px;
+            text-align: center;
+        }
+        
+        .file-tree-children {
+            margin-left: 24px;
+        }
+        
+        .file-tree-toggle {
+            width: 16px;
+            height: 16px;
+            margin-right: 4px;
+            text-align: center;
+            line-height: 16px;
+            cursor: pointer;
+        }
     </style>
 </head>
 <body class="bg-gray-100">
@@ -248,14 +288,24 @@
                 <div class="col-span-1 border-r pr-4">
                     <div class="flex justify-between items-center mb-4">
                         <h3 class="text-lg font-semibold">Files</h3>
-                        <button id="refreshFiles" class="text-sm bg-green-500 text-white px-2 py-1 rounded hover:bg-green-600">
+                        <button id="refreshFiles" class="text-sm bg-gray-500 text-white px-2 py-1 rounded hover:bg-gray-600">
                             Refresh
                         </button>
                     </div>
-                    <div id="fileTree" class="overflow-y-auto max-h-[400px]">
-                        <!-- File tree will be populated here -->
-                    </div>
                     
+                    <!-- File Tree Component -->
+                    <div class="file-tree-container overflow-y-auto max-h-[500px]">
+                        <div id="fileTree" class="file-tree"></div>
+                    </div>
+
+                    <!-- Context Menu -->
+                    <div id="contextMenu" class="hidden fixed bg-white shadow-lg border rounded-lg py-2 w-48">
+                        <button class="w-full text-left px-4 py-2 hover:bg-gray-100" data-action="rename">Rename</button>
+                        <button class="w-full text-left px-4 py-2 hover:bg-gray-100" data-action="delete">Delete</button>
+                        <button class="w-full text-left px-4 py-2 hover:bg-gray-100" data-action="share">Share</button>
+                        <button class="w-full text-left px-4 py-2 hover:bg-gray-100" data-action="download">Download</button>
+                    </div>
+
                     <!-- New File/Folder Form -->
                     <div class="mt-4 p-4 bg-gray-50 rounded">
                         <h4 class="font-semibold mb-2">Create New</h4>
@@ -270,57 +320,39 @@
                                 <input type="checkbox" id="newIsPublic" class="mr-2">
                                 <label for="newIsPublic">Make Public</label>
                             </div>
-                            <div>
-                                <label class="block text-sm font-medium mb-1">Metadata (JSON)</label>
-                                <textarea id="newMetadata" class="w-full p-2 border rounded" placeholder="{}" rows="2"></textarea>
-                            </div>
-                            <button id="createNew" class="w-full bg-blue-500 text-white py-2 rounded hover:bg-blue-600">
+                            <button onclick="createNew()" class="w-full bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-4 rounded">
                                 Create
                             </button>
                         </div>
                     </div>
                 </div>
                 
-                <!-- File Content -->
+                <!-- File Preview/Edit -->
                 <div class="col-span-2">
                     <div class="mb-4">
-                        <h3 id="currentFile" class="text-lg font-semibold">No file selected</h3>
-                        <div class="flex justify-between items-center mt-2">
+                        <h3 class="text-lg font-semibold" id="currentFile">No file selected</h3>
+                    </div>
+                    <div class="space-y-4">
+                        <textarea id="fileContent" class="w-full h-[400px] p-4 border rounded font-mono" placeholder="File content will appear here"></textarea>
+                        <div class="flex justify-between">
                             <div class="space-x-2">
-                                <button id="saveFile" class="text-sm bg-blue-500 text-white px-4 py-1 rounded hover:bg-blue-600" style="display: none;">
+                                <button id="saveFile" class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded" style="display: none;">
                                     Save
                                 </button>
-                                <button id="renameFile" class="text-sm bg-yellow-500 text-white px-4 py-1 rounded hover:bg-yellow-600" style="display: none;">
+                                <button id="renameFile" class="bg-yellow-500 hover:bg-yellow-600 text-white font-semibold py-2 px-4 rounded" style="display: none;">
                                     Rename
                                 </button>
-                                <button id="deleteFile" class="text-sm bg-red-500 text-white px-4 py-1 rounded hover:bg-red-600" style="display: none;">
+                                <button id="deleteFile" class="bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded" style="display: none;">
                                     Delete
                                 </button>
                             </div>
                             <div class="space-x-2">
-                                <button id="shareFile" class="text-sm bg-purple-500 text-white px-4 py-1 rounded hover:bg-purple-600" style="display: none;">
+                                <button id="shareFile" class="bg-purple-500 hover:bg-purple-600 text-white font-semibold py-2 px-4 rounded" style="display: none;">
                                     Share
                                 </button>
                                 <div class="inline-flex items-center">
                                     <input type="checkbox" id="isPublic" class="mr-2">
                                     <label for="isPublic">Public</label>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="grid grid-cols-3 gap-4">
-                        <div class="col-span-2">
-                            <textarea id="fileContent" class="w-full h-[400px] p-4 border rounded font-mono" placeholder="Select a file to view/edit content"></textarea>
-                        </div>
-                        <div class="col-span-1">
-                            <div class="mb-4">
-                                <h4 class="font-semibold mb-2">File Metadata</h4>
-                                <textarea id="fileMetadata" class="w-full h-[150px] p-2 border rounded font-mono" placeholder="{}"></textarea>
-                            </div>
-                            <div>
-                                <h4 class="font-semibold mb-2">Shared With</h4>
-                                <div id="fileShares" class="space-y-2">
-                                    <!-- Shares will be listed here -->
                                 </div>
                             </div>
                         </div>
@@ -360,7 +392,7 @@
 
     <script>
         // Dynamically set API base URL based on current location
-        const API_BASE = `${window.location.protocol}//${window.location.hostname}:8000`;
+        const API_BASE = `${window.location.protocol}//${window.location.hostname}:8000/api/v1`;
         let isEditMode = false;
         let currentAdvisorName = null;
         let currentAdvisorId = null;
@@ -387,7 +419,7 @@
             
             // Add basic auth as fallback
             if (!args[1].headers.Authorization || args[1].headers.Authorization === 'Bearer undefined') {
-                args[1].headers.Authorization = 'Basic ' + btoa('admin:admin');
+                args[1].headers.Authorization = 'Basic ' + btoa('admin:password');
             }
             
             return originalFetch.apply(this, args);
@@ -1198,33 +1230,42 @@
         
         // File Management
         let currentPath = '';
-        
-        function buildFileTree(files) {
-            if (!files || !Array.isArray(files)) {
-                return '<div class="text-gray-500">No files found</div>';
+        let fileTreeData = null;
+        let selectedNode = null;
+
+        // Initialize File Tree
+        async function initializeFileTree() {
+            await refreshFileTree();
+            setupContextMenu();
+            setupEventListeners();
+        }
+
+        // Refresh File Tree
+        async function refreshFileTree() {
+            try {
+                const response = await fetch(`${API_BASE}/files`, {
+                    headers: {
+                        Authorization: `Bearer ${authToken}`
+                    }
+                });
+                
+                if (!response.ok) throw new Error('Failed to fetch files');
+                
+                const files = await response.json();
+                fileTreeData = buildFileTree(files);
+                renderFileTree();
+            } catch (error) {
+                console.error('Error refreshing file tree:', error);
             }
+        }
+
+        // Build File Tree Structure
+        function buildFileTree(files) {
+            const root = { name: '/', children: {}, type: 'directory' };
             
-            // Sort files
-            const sortedFiles = files.sort((a, b) => {
-                // Directories first
-                if (a.is_directory !== b.is_directory) {
-                    return a.is_directory ? -1 : 1;
-                }
-                // Then alphabetically
-                return a.path.localeCompare(b.path);
-            });
-
-            // Create a tree structure
-            const tree = {
-                children: {},
-                is_dir: true
-            };
-
-            // Build tree structure
-            for (const file of sortedFiles) {
-                if (!file.path) continue; // Skip root
-                const parts = file.path.split('/');
-                let current = tree;
+            for (const file of files) {
+                const parts = file.name.split('/');
+                let current = root;
                 
                 for (let i = 0; i < parts.length; i++) {
                     const part = parts[i];
@@ -1234,275 +1275,190 @@
                         current.children[part] = {
                             name: part,
                             path: parts.slice(0, i + 1).join('/'),
-                            is_dir: isLast ? file.is_directory : true,
                             children: {},
-                            size: isLast ? file.size : null,
-                            modified: isLast ? file.modified : null
+                            type: isLast ? 'file' : 'directory',
+                            metadata: isLast ? file : {}
                         };
                     }
+                    
                     current = current.children[part];
                 }
             }
-
-            return buildFileTreeHTML(tree, '');
+            
+            return root;
         }
 
-        function buildFileTreeHTML(node, indent) {
-            let html = '';
-            const entries = Object.entries(node.children);
+        // Render File Tree
+        function renderFileTree() {
+            const container = document.getElementById('fileTree');
+            container.innerHTML = renderNode(fileTreeData, '');
+        }
+
+        // Render Tree Node
+        function renderNode(node, path) {
+            const isRoot = path === '';
+            const fullPath = isRoot ? node.name : `${path}/${node.name}`;
+            const isDirectory = node.type === 'directory';
             
-            for (const [name, item] of entries) {
-                const isDir = item.is_dir;
-                const icon = isDir ? '📁' : '📄';
-                const indentSpaces = '&nbsp;'.repeat(indent.length * 4);
-                
-                html += `
-                    <div class="py-1">
-                        <div class="hover:bg-gray-100 rounded px-2 py-1 cursor-pointer flex items-center" 
-                             onclick="handleFileClick('${item.path}', ${isDir})">
-                            ${indentSpaces}${icon} ${name}
-                        </div>
-                        ${isDir ? buildFileTreeHTML(item, indent + '  ') : ''}
-                    </div>
-                `;
+            let html = `
+                <div class="file-tree-item" data-path="${fullPath}">
+                    ${isDirectory ? '<span class="file-tree-toggle">▶</span>' : '<span class="file-tree-toggle" style="visibility: hidden">▶</span>'}
+                    <i class="fas ${isDirectory ? 'fa-folder' : 'fa-file'}"></i>
+                    <span class="file-name">${node.name}</span>
+                </div>
+            `;
+            
+            if (isDirectory && Object.keys(node.children).length > 0) {
+                html += '<div class="file-tree-children" style="display: none;">';
+                for (const child of Object.values(node.children).sort((a, b) => {
+                    if (a.type === b.type) return a.name.localeCompare(b.name);
+                    return a.type === 'directory' ? -1 : 1;
+                })) {
+                    html += renderNode(child, fullPath);
+                }
+                html += '</div>';
             }
             
             return html;
         }
 
-        async function refreshFileTree() {
-            try {
-                const response = await fetch(`${API_BASE}/files`, {
-                    headers: {
-                        Authorization: `Bearer ${authToken}`
+        // Setup Event Listeners
+        function setupEventListeners() {
+            const fileTree = document.getElementById('fileTree');
+            
+            // Toggle directory
+            fileTree.addEventListener('click', (e) => {
+                const toggle = e.target.closest('.file-tree-toggle');
+                if (toggle) {
+                    const item = toggle.parentElement;
+                    const children = item.nextElementSibling;
+                    if (children && children.classList.contains('file-tree-children')) {
+                        const isExpanded = children.style.display !== 'none';
+                        toggle.textContent = isExpanded ? '▶' : '▼';
+                        children.style.display = isExpanded ? 'none' : 'block';
                     }
-                });
-                const data = await response.json();
-                document.getElementById('fileTree').innerHTML = buildFileTree(data.files);
-            } catch (error) {
-                console.error('Error fetching files:', error);
-            }
+                e.stopPropagation();
+                }
+            });
+            
+            // Select file
+            fileTree.addEventListener('click', (e) => {
+                const item = e.target.closest('.file-tree-item');
+                if (item) {
+                    const path = item.dataset.path;
+                    selectFile(path);
+                }
+            });
+            
+            // Context menu
+            fileTree.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                const item = e.target.closest('.file-tree-item');
+                if (item) {
+                    showContextMenu(e.pageX, e.pageY, item.dataset.path);
+                }
+            });
+            
+            // Hide context menu on click outside
+            document.addEventListener('click', (e) => {
+                if (!e.target.closest('#contextMenu')) {
+                    hideContextMenu();
+                }
+            });
         }
 
-        async function handleFileClick(path, isDir) {
+        // Setup Context Menu
+        function setupContextMenu() {
+            const menu = document.getElementById('contextMenu');
+            
+            menu.addEventListener('click', (e) => {
+                const action = e.target.dataset.action;
+                if (action) {
+                    handleContextMenuAction(action, currentPath);
+                    hideContextMenu();
+                }
+            });
+        }
+
+        // Show Context Menu
+        function showContextMenu(x, y, path) {
+            const menu = document.getElementById('contextMenu');
+            menu.style.display = 'block';
+            menu.style.left = `${x}px`;
+            menu.style.top = `${y}px`;
             currentPath = path;
-            document.getElementById('currentFile').textContent = path;
-            
-            if (!isDir) {
-                try {
-                    const response = await fetch(`${API_BASE}/files/${path}`, {
-                        headers: {
-                            Authorization: `Bearer ${authToken}`
-                        }
-                    });
-                    const data = await response.json();
-                    
-                    document.getElementById('fileContent').value = data.content;
-                    document.getElementById('fileMetadata').value = JSON.stringify(data.metadata || {}, null, 2);
-                    document.getElementById('isPublic').checked = data.is_public;
-                    
-                    // Show file action buttons
-                    document.getElementById('saveFile').style.display = 'inline-block';
-                    document.getElementById('renameFile').style.display = 'inline-block';
-                    document.getElementById('deleteFile').style.display = 'inline-block';
-                    document.getElementById('shareFile').style.display = 'inline-block';
-                    
-                    // Load shares
-                    loadFileShares(path);
-                } catch (error) {
-                    console.error('Error fetching file:', error);
-                }
-            } else {
-                document.getElementById('fileContent').value = '';
-                // Hide file action buttons for directories
-                document.getElementById('saveFile').style.display = 'none';
-                document.getElementById('renameFile').style.display = 'none';
-                document.getElementById('deleteFile').style.display = 'none';
-                document.getElementById('shareFile').style.display = 'none';
+        }
+
+        // Hide Context Menu
+        function hideContextMenu() {
+            document.getElementById('contextMenu').style.display = 'none';
+        }
+
+        // Handle Context Menu Actions
+        async function handleContextMenuAction(action, path) {
+            switch (action) {
+                case 'rename':
+                    await renameFile();
+                    break;
+                case 'delete':
+                    await deleteFile();
+                    break;
+                case 'share':
+                    // TODO: Implement sharing
+                    break;
+                case 'download':
+                    // TODO: Implement download
+                    break;
             }
         }
 
-        async function createNew() {
-            const path = document.getElementById('newPath').value.trim();
-            const type = document.getElementById('newType').value;
-            const content = document.getElementById('newContent').value;
-            const isPublic = document.getElementById('newIsPublic').checked;
-            let metadata = {};
+        // Select File
+        async function selectFile(path) {
+            currentPath = path;
             
+            // Update selection visual
+            const items = document.querySelectorAll('.file-tree-item');
+            items.forEach(item => item.classList.remove('selected'));
+            const selected = document.querySelector(`.file-tree-item[data-path="${path}"]`);
+            if (selected) selected.classList.add('selected');
+            
+            // Get file content
             try {
-                const metadataStr = document.getElementById('newMetadata').value.trim();
-                if (metadataStr) {
-                    metadata = JSON.parse(metadataStr);
-                }
-            } catch (error) {
-                alert('Invalid metadata JSON');
-                return;
-            }
-            
-            if (!path) {
-                alert('Please enter a path');
-                return;
-            }
-            
-            try {
-                const response = await fetch(`${API_BASE}/files/${path}`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        Authorization: `Bearer ${authToken}`
-                    },
-                    body: JSON.stringify({
-                        content: type === 'file' ? content : null,
-                        is_public: isPublic,
-                        metadata: metadata
-                    })
-                });
-                
-                if (!response.ok) {
-                    const error = await response.text();
-                    throw new Error(error);
-                }
-                
-                // Clear form and reload tree
-                document.getElementById('newPath').value = '';
-                document.getElementById('newContent').value = '';
-                document.getElementById('newMetadata').value = '';
-                document.getElementById('newIsPublic').checked = false;
-                refreshFileTree();
-            } catch (error) {
-                console.error('Error creating:', error);
-                alert(`Failed to create: ${error.message}`);
-            }
-        }
-
-        async function saveFile() {
-            if (!currentPath) return;
-            
-            const content = document.getElementById('fileContent').value;
-            const isPublic = document.getElementById('isPublic').checked;
-            let metadata = {};
-            
-            try {
-                const metadataStr = document.getElementById('fileMetadata').value.trim();
-                if (metadataStr) {
-                    metadata = JSON.parse(metadataStr);
-                }
-            } catch (error) {
-                alert('Invalid metadata JSON');
-                return;
-            }
-            
-            try {
-                const response = await fetch(`${API_BASE}/files/${currentPath}`, {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        Authorization: `Bearer ${authToken}`
-                    },
-                    body: JSON.stringify({
-                        content,
-                        is_public: isPublic,
-                        metadata
-                    })
-                });
-                
-                if (!response.ok) {
-                    const error = await response.text();
-                    throw new Error(error);
-                }
-                alert('File saved successfully');
-            } catch (error) {
-                console.error('Error saving:', error);
-                alert(`Failed to save: ${error.message}`);
-            }
-        }
-
-        async function renameFile() {
-            if (!currentPath) return;
-            
-            const newName = prompt('Enter new name:');
-            if (!newName) return;
-            
-            try {
-                const response = await fetch(`${API_BASE}/files/${currentPath}`, {
-                    method: 'PATCH',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        Authorization: `Bearer ${authToken}`
-                    },
-                    body: JSON.stringify({ new_name: newName })
-                });
-                
-                if (!response.ok) {
-                    const error = await response.text();
-                    throw new Error(error);
-                }
-                
-                // Reset UI state
-                currentPath = '';
-                document.getElementById('currentFile').textContent = 'No file selected';
-                document.getElementById('fileContent').value = '';
-                document.getElementById('saveFile').style.display = 'none';
-                document.getElementById('renameFile').style.display = 'none';
-                document.getElementById('deleteFile').style.display = 'none';
-                document.getElementById('shareFile').style.display = 'none';
-                
-                refreshFileTree();
-            } catch (error) {
-                console.error('Error renaming:', error);
-                alert(`Failed to rename: ${error.message}`);
-            }
-        }
-
-        async function deleteFile() {
-            if (!currentPath) return;
-            
-            if (!confirm('Are you sure you want to delete this item?')) return;
-            
-            try {
-                const response = await fetch(`${API_BASE}/files/${currentPath}`, {
-                    method: 'DELETE',
+                const response = await fetch(`${API_BASE}/files/${path}/content`, {
                     headers: {
                         Authorization: `Bearer ${authToken}`
                     }
                 });
                 
-                if (!response.ok) {
-                    const error = await response.text();
-                    throw new Error(error);
-                }
+                if (!response.ok) throw new Error('Failed to fetch file content');
                 
-                // Reset UI state
-                currentPath = '';
-                document.getElementById('currentFile').textContent = 'No file selected';
-                document.getElementById('fileContent').value = '';
-                document.getElementById('saveFile').style.display = 'none';
-                document.getElementById('renameFile').style.display = 'none';
-                document.getElementById('deleteFile').style.display = 'none';
-                document.getElementById('shareFile').style.display = 'none';
+                const content = await response.text();
+                document.getElementById('currentFile').textContent = path;
+                document.getElementById('fileContent').value = content;
                 
-                refreshFileTree();
+                // Show action buttons
+                document.getElementById('saveFile').style.display = 'inline-block';
+                document.getElementById('renameFile').style.display = 'inline-block';
+                document.getElementById('deleteFile').style.display = 'inline-block';
+                document.getElementById('shareFile').style.display = 'inline-block';
             } catch (error) {
-                console.error('Error deleting:', error);
-                alert(`Failed to delete: ${error.message}`);
+                console.error('Error fetching file content:', error);
             }
         }
 
-        // Add event listeners
-        document.getElementById('refreshFiles').addEventListener('click', refreshFileTree);
-        document.getElementById('createNew').addEventListener('click', createNew);
-        document.getElementById('saveFile').addEventListener('click', saveFile);
-        document.getElementById('renameFile').addEventListener('click', renameFile);
-        document.getElementById('deleteFile').addEventListener('click', deleteFile);
-        
-        // Show/hide content textarea based on type selection
-        document.getElementById('newType').addEventListener('change', (e) => {
-            document.getElementById('newContent').style.display = 
-                e.target.value === 'file' ? 'block' : 'none';
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            // Initialize file tree after login
+            const loginForm = document.getElementById('loginForm');
+            loginForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                await handleLogin();
+                initializeFileTree();
+            });
+            
+            // Refresh button
+            document.getElementById('refreshFiles').addEventListener('click', refreshFileTree);
         });
-
-        // Initial file tree load
-        refreshFileTree();
 
         // Update the displayRequest function to include gateway
         function displayRequest() {

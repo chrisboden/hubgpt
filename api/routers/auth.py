@@ -100,4 +100,18 @@ async def verify(
             email=config.DEFAULT_USER_EMAIL,
             password=config.API_PASSWORD
         )
+    return user
+
+@router.get("/users/me", response_model=UserResponse)
+async def get_current_user_info(request: Request, db: Session = Depends(get_db)):
+    """Get current user information"""
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authorization header"
+        )
+    
+    token = auth_header.split(" ")[1]
+    user = await get_current_user(token, db)
     return user 
