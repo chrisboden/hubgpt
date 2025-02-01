@@ -65,41 +65,43 @@
         .file-tree {
             font-family: monospace;
             user-select: none;
+            padding: 8px;
         }
         
-        .file-tree-item {
-            padding: 4px 8px;
-            cursor: pointer;
+        .tree-node {
+            margin: 2px 0;
+        }
+        
+        .tree-content {
             display: flex;
             align-items: center;
+            padding: 4px;
+            cursor: pointer;
             border-radius: 4px;
         }
         
-        .file-tree-item:hover {
+        .tree-content:hover {
             background-color: #f3f4f6;
         }
         
-        .file-tree-item.selected {
+        .tree-content.selected {
             background-color: #e5e7eb;
         }
         
-        .file-tree-item i {
-            margin-right: 8px;
-            width: 16px;
+        .tree-toggle {
+            width: 20px;
             text-align: center;
-        }
-        
-        .file-tree-children {
-            margin-left: 24px;
-        }
-        
-        .file-tree-toggle {
-            width: 16px;
-            height: 16px;
-            margin-right: 4px;
-            text-align: center;
-            line-height: 16px;
             cursor: pointer;
+        }
+        
+        .tree-children {
+            margin-left: 20px;
+            padding-left: 10px;
+            border-left: 1px solid #e5e7eb;
+        }
+
+        .file-name {
+            margin-left: 4px;
         }
     </style>
 </head>
@@ -1233,11 +1235,114 @@
         let fileTreeData = null;
         let selectedNode = null;
 
+        // Completely new file tree implementation
+        function buildFileTree(files) {
+            // First, organize files by path
+            const root = { name: '/', type: 'directory', children: {} };
+            
+            files.forEach(file => {
+                // Skip empty parts and 'files' prefix
+                const parts = file.file_path.split('/').filter(part => part && part !== 'files');
+                let current = root;
+                
+                parts.forEach((part, index) => {
+                    if (!current.children[part]) {
+                        current.children[part] = {
+                            name: part,
+                            type: index === parts.length - 1 ? 'file' : 'directory',
+                            children: {},
+                            metadata: index === parts.length - 1 ? file : null
+                        };
+                    }
+                    current = current.children[part];
+                });
+            });
+            
+            return root;
+        }
+
+        function renderFileTree() {
+            const container = document.getElementById('fileTree');
+            container.innerHTML = '';
+            
+            // Render the root node
+            const rootNode = renderNode(fileTreeData);
+            container.appendChild(rootNode);
+            
+            // Expand root by default
+            const rootToggle = rootNode.querySelector('.tree-toggle');
+            const rootChildren = rootNode.querySelector('.tree-children');
+            if (rootToggle && rootChildren) {
+                rootToggle.textContent = '▼';
+                rootChildren.style.display = 'block';
+            }
+        }
+
+        function renderNode(node, path = '') {
+            const div = document.createElement('div');
+            div.className = 'tree-node';
+            
+            const content = document.createElement('div');
+            content.className = 'tree-content';
+            
+            const hasChildren = node.type === 'directory' && Object.keys(node.children).length > 0;
+            
+            // Create toggle button
+            const toggle = document.createElement('span');
+            toggle.className = 'tree-toggle';
+            toggle.textContent = hasChildren ? '▶' : ' ';
+            if (hasChildren) {
+                toggle.onclick = (e) => {
+                    e.stopPropagation();
+                    const childrenDiv = div.querySelector('.tree-children');
+                    const isExpanded = toggle.textContent === '▼';
+                    toggle.textContent = isExpanded ? '▶' : '▼';
+                    childrenDiv.style.display = isExpanded ? 'none' : 'block';
+                };
+            }
+            
+            // Create name span
+            const nameSpan = document.createElement('span');
+            nameSpan.textContent = node.name;
+            
+            content.appendChild(toggle);
+            content.appendChild(nameSpan);
+            
+            // Construct proper path
+            const nodePath = path ? `${path}/${node.name}`.replace(/^\/+/, '') : node.name;
+            content.dataset.path = nodePath;
+            
+            if (node.type === 'file') {
+                content.onclick = () => selectFile(nodePath);
+            }
+            
+            div.appendChild(content);
+            
+            // Add children if it's a directory
+            if (hasChildren) {
+                const childrenDiv = document.createElement('div');
+                childrenDiv.className = 'tree-children';
+                childrenDiv.style.display = 'none';
+                
+                // Sort children: directories first, then files
+                const sortedChildren = Object.entries(node.children).sort(([, a], [, b]) => {
+                    if (a.type === b.type) return a.name.localeCompare(b.name);
+                    return a.type === 'directory' ? -1 : 1;
+                });
+                
+                sortedChildren.forEach(([name, child]) => {
+                    childrenDiv.appendChild(renderNode(child, nodePath));
+                });
+                
+                div.appendChild(childrenDiv);
+            }
+            
+            return div;
+        }
+
         // Initialize File Tree
         async function initializeFileTree() {
             await refreshFileTree();
-            setupContextMenu();
-            setupEventListeners();
         }
 
         // Refresh File Tree
@@ -1252,6 +1357,7 @@
                 if (!response.ok) throw new Error('Failed to fetch files');
                 
                 const files = await response.json();
+                console.log('Files from API:', files);
                 fileTreeData = buildFileTree(files);
                 renderFileTree();
             } catch (error) {
@@ -1259,172 +1365,21 @@
             }
         }
 
-        // Build File Tree Structure
-        function buildFileTree(files) {
-            const root = { name: '/', children: {}, type: 'directory' };
-            
-            for (const file of files) {
-                const parts = file.name.split('/');
-                let current = root;
-                
-                for (let i = 0; i < parts.length; i++) {
-                    const part = parts[i];
-                    const isLast = i === parts.length - 1;
-                    
-                    if (!current.children[part]) {
-                        current.children[part] = {
-                            name: part,
-                            path: parts.slice(0, i + 1).join('/'),
-                            children: {},
-                            type: isLast ? 'file' : 'directory',
-                            metadata: isLast ? file : {}
-                        };
-                    }
-                    
-                    current = current.children[part];
-                }
-            }
-            
-            return root;
-        }
-
-        // Render File Tree
-        function renderFileTree() {
-            const container = document.getElementById('fileTree');
-            container.innerHTML = renderNode(fileTreeData, '');
-        }
-
-        // Render Tree Node
-        function renderNode(node, path) {
-            const isRoot = path === '';
-            const fullPath = isRoot ? node.name : `${path}/${node.name}`;
-            const isDirectory = node.type === 'directory';
-            
-            let html = `
-                <div class="file-tree-item" data-path="${fullPath}">
-                    ${isDirectory ? '<span class="file-tree-toggle">▶</span>' : '<span class="file-tree-toggle" style="visibility: hidden">▶</span>'}
-                    <i class="fas ${isDirectory ? 'fa-folder' : 'fa-file'}"></i>
-                    <span class="file-name">${node.name}</span>
-                </div>
-            `;
-            
-            if (isDirectory && Object.keys(node.children).length > 0) {
-                html += '<div class="file-tree-children" style="display: none;">';
-                for (const child of Object.values(node.children).sort((a, b) => {
-                    if (a.type === b.type) return a.name.localeCompare(b.name);
-                    return a.type === 'directory' ? -1 : 1;
-                })) {
-                    html += renderNode(child, fullPath);
-                }
-                html += '</div>';
-            }
-            
-            return html;
-        }
-
-        // Setup Event Listeners
-        function setupEventListeners() {
-            const fileTree = document.getElementById('fileTree');
-            
-            // Toggle directory
-            fileTree.addEventListener('click', (e) => {
-                const toggle = e.target.closest('.file-tree-toggle');
-                if (toggle) {
-                    const item = toggle.parentElement;
-                    const children = item.nextElementSibling;
-                    if (children && children.classList.contains('file-tree-children')) {
-                        const isExpanded = children.style.display !== 'none';
-                        toggle.textContent = isExpanded ? '▶' : '▼';
-                        children.style.display = isExpanded ? 'none' : 'block';
-                    }
-                e.stopPropagation();
-                }
-            });
-            
-            // Select file
-            fileTree.addEventListener('click', (e) => {
-                const item = e.target.closest('.file-tree-item');
-                if (item) {
-                    const path = item.dataset.path;
-                    selectFile(path);
-                }
-            });
-            
-            // Context menu
-            fileTree.addEventListener('contextmenu', (e) => {
-                e.preventDefault();
-                const item = e.target.closest('.file-tree-item');
-                if (item) {
-                    showContextMenu(e.pageX, e.pageY, item.dataset.path);
-                }
-            });
-            
-            // Hide context menu on click outside
-            document.addEventListener('click', (e) => {
-                if (!e.target.closest('#contextMenu')) {
-                    hideContextMenu();
-                }
-            });
-        }
-
-        // Setup Context Menu
-        function setupContextMenu() {
-            const menu = document.getElementById('contextMenu');
-            
-            menu.addEventListener('click', (e) => {
-                const action = e.target.dataset.action;
-                if (action) {
-                    handleContextMenuAction(action, currentPath);
-                    hideContextMenu();
-                }
-            });
-        }
-
-        // Show Context Menu
-        function showContextMenu(x, y, path) {
-            const menu = document.getElementById('contextMenu');
-            menu.style.display = 'block';
-            menu.style.left = `${x}px`;
-            menu.style.top = `${y}px`;
-            currentPath = path;
-        }
-
-        // Hide Context Menu
-        function hideContextMenu() {
-            document.getElementById('contextMenu').style.display = 'none';
-        }
-
-        // Handle Context Menu Actions
-        async function handleContextMenuAction(action, path) {
-            switch (action) {
-                case 'rename':
-                    await renameFile();
-                    break;
-                case 'delete':
-                    await deleteFile();
-                    break;
-                case 'share':
-                    // TODO: Implement sharing
-                    break;
-                case 'download':
-                    // TODO: Implement download
-                    break;
-            }
-        }
-
         // Select File
         async function selectFile(path) {
-            currentPath = path;
+            // Clean up the path - remove leading/trailing slashes and multiple slashes
+            const cleanPath = path.replace(/^\/+|\/+$/g, '').replace(/\/+/g, '/');
+            currentPath = cleanPath;
             
             // Update selection visual
-            const items = document.querySelectorAll('.file-tree-item');
+            const items = document.querySelectorAll('.tree-content');
             items.forEach(item => item.classList.remove('selected'));
-            const selected = document.querySelector(`.file-tree-item[data-path="${path}"]`);
+            const selected = document.querySelector(`.tree-content[data-path="${cleanPath}"]`);
             if (selected) selected.classList.add('selected');
             
             // Get file content
             try {
-                const response = await fetch(`${API_BASE}/files/${path}/content`, {
+                const response = await fetch(`${API_BASE}/files/${cleanPath}/content`, {
                     headers: {
                         Authorization: `Bearer ${authToken}`
                     }
@@ -1433,7 +1388,7 @@
                 if (!response.ok) throw new Error('Failed to fetch file content');
                 
                 const content = await response.text();
-                document.getElementById('currentFile').textContent = path;
+                document.getElementById('currentFile').textContent = cleanPath;
                 document.getElementById('fileContent').value = content;
                 
                 // Show action buttons
