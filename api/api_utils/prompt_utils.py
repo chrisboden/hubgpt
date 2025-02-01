@@ -195,7 +195,7 @@ def parse_markdown_messages(content: str) -> List[Dict[str, Any]]:
     return messages
 
 def load_advisor_data(advisor_id: str) -> dict:
-    """Load advisor data from database"""
+    """Load advisor data from database and process any tags in messages"""
     try:
         # Get database session
         db = next(get_db())
@@ -208,6 +208,17 @@ def load_advisor_data(advisor_id: str) -> dict:
         if not advisor:
             raise FileNotFoundError(f"Advisor {advisor_id} not found")
             
+        # Process messages to handle any tags
+        processed_messages = []
+        for message in advisor.messages:
+            processed_message = {
+                "role": message["role"],
+                "content": process_inclusions(message["content"], depth=5)
+            }
+            if "name" in message:
+                processed_message["name"] = message["name"]
+            processed_messages.append(processed_message)
+            
         # Convert to dict
         return {
             "name": advisor.name,
@@ -216,7 +227,7 @@ def load_advisor_data(advisor_id: str) -> dict:
             "temperature": advisor.temperature,
             "max_tokens": advisor.max_tokens,
             "stream": advisor.stream,
-            "messages": advisor.messages,
+            "messages": processed_messages,
             "gateway": advisor.gateway,
             "tools": advisor.tools,
             "top_p": advisor.top_p,

@@ -1,148 +1,182 @@
-from fastapi import APIRouter, HTTPException
-from typing import List, Dict, Any
-from pathlib import Path
+from fastapi import APIRouter, HTTPException, Depends
+from typing import List
+from sqlalchemy.orm import Session
+from datetime import datetime
 import logging
-from ..models.advisors import Advisor, AdvisorSummary, AdvisorCreate
-from ..services.advisor_service import (
-    get_advisors_dir,
-    load_advisor,
-    create_json_content,
-    create_markdown_content
+
+from ..database import get_db
+from ..models.advisors import (
+    Advisor,
+    AdvisorSummary,
+    AdvisorCreate,
+    AdvisorModel
 )
-from ..services.storage_service import ensure_directory, write_json_file
 
 router = APIRouter(tags=["advisors"])
 logger = logging.getLogger(__name__)
 
 @router.get("", response_model=List[AdvisorSummary])
-async def list_advisors():
+async def list_advisors(db: Session = Depends(get_db)):
     """List all available advisors"""
-    advisors_dir = get_advisors_dir()
-    advisors = []
-    
-    if not advisors_dir.exists():
-        ensure_directory(advisors_dir)
-        return []
-        
-    for file_path in advisors_dir.glob("*.json"):
-        advisor_data = load_advisor(file_path)
-        if advisor_data:
-            advisors.append(AdvisorSummary(
-                name=advisor_data["name"],
-                description=advisor_data.get("description"),
-                model=advisor_data["model"]
-            ))
-            
-    for file_path in advisors_dir.glob("*.md"):
-        advisor_data = load_advisor(file_path)
-        if advisor_data:
-            advisors.append(AdvisorSummary(
-                name=advisor_data["name"],
-                description=advisor_data.get("description"),
-                model=advisor_data["model"]
-            ))
-            
-    return advisors
+    try:
+        advisors = db.query(AdvisorModel).all()
+        return [
+            AdvisorSummary(
+                name=advisor.name,
+                description=advisor.description,
+                model=advisor.model
+            ) for advisor in advisors
+        ]
+    except Exception as e:
+        logger.error(f"Error listing advisors: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/{advisor_id}", response_model=Advisor)
-async def get_advisor(advisor_id: str):
+async def get_advisor(advisor_id: str, db: Session = Depends(get_db)):
     """Get a specific advisor by ID"""
-    advisors_dir = get_advisors_dir()
+    advisor = db.query(AdvisorModel).filter(
+        AdvisorModel.name == advisor_id
+    ).first()
     
-    # Try JSON file first
-    json_path = advisors_dir / f"{advisor_id}.json"
-    if json_path.exists():
-        advisor_data = load_advisor(json_path)
-        if advisor_data:
-            return Advisor(**advisor_data)
-            
-    # Try markdown file
-    md_path = advisors_dir / f"{advisor_id}.md"
-    if md_path.exists():
-        advisor_data = load_advisor(md_path)
-        if advisor_data:
-            return Advisor(**advisor_data)
-            
-    raise HTTPException(status_code=404, detail="Advisor not found")
+    if not advisor:
+        raise HTTPException(status_code=404, detail="Advisor not found")
+        
+    return Advisor(
+        name=advisor.name,
+        description=advisor.description,
+        model=advisor.model,
+        temperature=advisor.temperature,
+        max_tokens=advisor.max_tokens,
+        stream=advisor.stream,
+        messages=advisor.messages,
+        gateway=advisor.gateway,
+        tools=advisor.tools,
+        top_p=advisor.top_p,
+        frequency_penalty=advisor.frequency_penalty,
+        presence_penalty=advisor.presence_penalty
+    )
 
 @router.post("", response_model=Advisor)
-async def create_advisor(advisor: AdvisorCreate):
+async def create_advisor(advisor: AdvisorCreate, db: Session = Depends(get_db)):
     """Create a new advisor"""
-    advisors_dir = get_advisors_dir()
-    ensure_directory(advisors_dir)
-    
-    # Check if advisor already exists
-    json_path = advisors_dir / f"{advisor.name}.json"
-    md_path = advisors_dir / f"{advisor.name}.md"
-    if json_path.exists() or md_path.exists():
-        raise HTTPException(status_code=400, detail="Advisor already exists")
+    try:
+        # Check if advisor already exists
+        existing = db.query(AdvisorModel).filter(
+            AdvisorModel.name == advisor.name
+        ).first()
         
-    # Create advisor file
-    if advisor.format == "json":
-        content = create_json_content(advisor)
-        file_path = json_path
-        success = write_json_file(file_path, content)
-    else:  # markdown
-        content = create_markdown_content(advisor)
-        file_path = md_path
-        try:
-            with open(file_path, 'w') as f:
-                f.write(content)
-            success = True
-        except Exception as e:
-            logger.error(f"Error creating markdown advisor: {str(e)}")
-            success = False
+        if existing:
+            raise HTTPException(status_code=400, detail="Advisor already exists")
             
-    if not success:
-        raise HTTPException(status_code=500, detail="Failed to create advisor")
+        # Create new advisor
+        new_advisor = AdvisorModel(
+            name=advisor.name,
+            description=advisor.description,
+            model=advisor.model,
+            temperature=advisor.temperature,
+            max_tokens=advisor.max_tokens,
+            stream=advisor.stream,
+            messages=advisor.messages,
+            gateway=advisor.gateway,
+            tools=advisor.tools,
+            top_p=advisor.top_p,
+            frequency_penalty=advisor.frequency_penalty,
+            presence_penalty=advisor.presence_penalty,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow()
+        )
         
-    # Load and return the created advisor
-    advisor_data = load_advisor(file_path)
-    if not advisor_data:
-        raise HTTPException(status_code=500, detail="Failed to load created advisor")
+        db.add(new_advisor)
+        db.commit()
+        db.refresh(new_advisor)
         
-    return Advisor(**advisor_data)
+        return Advisor(
+            name=new_advisor.name,
+            description=new_advisor.description,
+            model=new_advisor.model,
+            temperature=new_advisor.temperature,
+            max_tokens=new_advisor.max_tokens,
+            stream=new_advisor.stream,
+            messages=new_advisor.messages,
+            gateway=new_advisor.gateway,
+            tools=new_advisor.tools,
+            top_p=new_advisor.top_p,
+            frequency_penalty=new_advisor.frequency_penalty,
+            presence_penalty=new_advisor.presence_penalty
+        )
+        
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error creating advisor: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.put("/{advisor_id}", response_model=Advisor)
-async def update_advisor(advisor_id: str, advisor: AdvisorCreate):
+async def update_advisor(advisor_id: str, advisor: AdvisorCreate, db: Session = Depends(get_db)):
     """Update an existing advisor"""
-    advisors_dir = get_advisors_dir()
-    
-    # Check if advisor exists and get its current format
-    json_path = advisors_dir / f"{advisor_id}.json"
-    md_path = advisors_dir / f"{advisor_id}.md"
-    
-    existing_path = None
-    is_json = False
-    if json_path.exists():
-        existing_path = json_path
-        is_json = True
-    elif md_path.exists():
-        existing_path = md_path
-        is_json = False
-    else:
-        raise HTTPException(status_code=404, detail="Advisor not found")
-    
-    # Create new content in original format
-    if is_json:
-        content = create_json_content(advisor)
-        success = write_json_file(existing_path, content)
-    else:  # markdown
-        content = create_markdown_content(advisor)
-        try:
-            with open(existing_path, 'w') as f:
-                f.write(content)
-            success = True
-        except Exception as e:
-            logger.error(f"Error updating markdown advisor: {str(e)}")
-            success = False
-    
-    if not success:
-        raise HTTPException(status_code=500, detail="Failed to update advisor")
-    
-    # Load and return the updated advisor
-    advisor_data = load_advisor(existing_path)
-    if not advisor_data:
-        raise HTTPException(status_code=500, detail="Failed to load updated advisor")
-    
-    return Advisor(**advisor_data) 
+    try:
+        # Get existing advisor
+        existing = db.query(AdvisorModel).filter(
+            AdvisorModel.name == advisor_id
+        ).first()
+        
+        if not existing:
+            raise HTTPException(status_code=404, detail="Advisor not found")
+            
+        # Update fields
+        existing.name = advisor.name
+        existing.description = advisor.description
+        existing.model = advisor.model
+        existing.temperature = advisor.temperature
+        existing.max_tokens = advisor.max_tokens
+        existing.stream = advisor.stream
+        existing.messages = advisor.messages
+        existing.gateway = advisor.gateway
+        existing.tools = advisor.tools
+        existing.top_p = advisor.top_p
+        existing.frequency_penalty = advisor.frequency_penalty
+        existing.presence_penalty = advisor.presence_penalty
+        existing.updated_at = datetime.utcnow()
+        
+        db.commit()
+        db.refresh(existing)
+        
+        return Advisor(
+            name=existing.name,
+            description=existing.description,
+            model=existing.model,
+            temperature=existing.temperature,
+            max_tokens=existing.max_tokens,
+            stream=existing.stream,
+            messages=existing.messages,
+            gateway=existing.gateway,
+            tools=existing.tools,
+            top_p=existing.top_p,
+            frequency_penalty=existing.frequency_penalty,
+            presence_penalty=existing.presence_penalty
+        )
+        
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error updating advisor: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/{advisor_id}")
+async def delete_advisor(advisor_id: str, db: Session = Depends(get_db)):
+    """Delete an advisor"""
+    try:
+        advisor = db.query(AdvisorModel).filter(
+            AdvisorModel.name == advisor_id
+        ).first()
+        
+        if not advisor:
+            raise HTTPException(status_code=404, detail="Advisor not found")
+            
+        db.delete(advisor)
+        db.commit()
+        
+        return {"status": "success", "message": f"Advisor {advisor_id} deleted"}
+        
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error deleting advisor: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e)) 

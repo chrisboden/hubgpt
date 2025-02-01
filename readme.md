@@ -10,7 +10,7 @@ The code is written in python and rather than using a database, it mostly uses f
 
 ## Prompt Engineering
 
-A key feature is the ability to include external text files eg .json, .md, .txt, etc - but not .pdf or .doc, directly in the 'advisor' system prompts using a special tag notation. This enables developers to inject rich context into the advisor’s instructions by specifying custom files, such as personal biographies or detailed guidelines or work docs. This functionality not only personalises the output but also allows the AI to be grounded in extensive data sources, like long-form biographies or research documents. This is particularly powerful when leveraging large context window models that can accept prompts containing hundreds of thousands of tokens, enabling the advisor to operate with far deeper and more nuanced knowledge.
+A key feature is the ability to include external text files eg .json, .md, .txt, etc - but not .pdf or .doc, directly in the 'advisor' system prompts using a special tag notation. This enables developers to inject rich context into the advisor's instructions by specifying custom files, such as personal biographies or detailed guidelines or work docs. This functionality not only personalises the output but also allows the AI to be grounded in extensive data sources, like long-form biographies or research documents. This is particularly powerful when leveraging large context window models that can accept prompts containing hundreds of thousands of tokens, enabling the advisor to operate with far deeper and more nuanced knowledge.
 
 ## LLM Models
 

@@ -224,7 +224,7 @@ async def add_message(
             message_history.append(message_dict)
             
         # Initialize LLM client and response handler
-        client = get_llm_client()
+        client = get_llm_client(gateway=advisor_data.get('gateway', 'openrouter'))
         response_handler = ResponseHandler(client, messages=message_history)
         
         # Get tools from advisor config

@@ -171,6 +171,7 @@ cython_debug/
 /logs/*
 /snippets/*
 /content/*
+/files/*
 /teams/chats/*
 /teams/archive/*
 /me/*
@@ -190,6 +191,7 @@ cython_debug/
 !/me/.gitkeep
 !/notepads/.gitkeep
 !/content/.gitkeep
+!/files/.gitkeep
 !/data/.gitkeep
 
 # Then keep your existing specific file exceptions
