@@ -1,19 +1,25 @@
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Request
+from fastapi import APIRouter, HTTPException, Depends, Request, status, Body
+from fastapi import File, UploadFile  # Import these separately to avoid global application
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import logging
 import json
+from pathlib import Path
 
 from ..database import get_db
 from ..models.users import User
-from ..models.user_files import UserFile, FileShare
-from ..api_utils.user_file_utils import save_user_file, get_user_file_content, delete_user_file
+from ..models.user_files import UserFile, FileShare as DBFileShare
+from ..api_utils.user_file_utils import save_user_file, get_user_file_content, delete_user_file, get_user_file_path
 from ..services.auth_service import get_current_user_from_request
 from ..api_utils.prompt_utils import process_inclusions
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from ..models.files import FileRename
 
 router = APIRouter(tags=["files"])
 logger = logging.getLogger(__name__)
+
+# Create a separate router for file operations
+file_router = APIRouter(tags=["file_operations"])
 
 class FileResponse(BaseModel):
     id: str
@@ -42,12 +48,32 @@ class FileResponse(BaseModel):
             obj.updated_at = obj.updated_at.isoformat()
         return super().from_orm(obj)
 
+class FileShare(BaseModel):
+    """File share request model"""
+    shared_with_id: str = Field(..., description="ID of the user to share with")
+    permissions: Dict[str, Any] = Field(..., description="Share permissions (read, write)")
+
 class FileShareResponse(BaseModel):
+    """File share response model"""
     id: str
     file_id: str
     shared_with_id: str
-    permissions: str
+    permissions: Dict[str, Any]
     created_at: str
+
+    class Config:
+        from_attributes = True
+
+    @classmethod
+    def from_orm(cls, obj):
+        # Convert datetime fields to strings
+        if hasattr(obj, 'created_at'):
+            obj.created_at = obj.created_at.isoformat()
+        return super().from_orm(obj)
+
+class ShareRequest(BaseModel):
+    shared_with_id: str
+    permissions: Dict[str, Any]
 
 @router.post("/{file_path:path}", response_model=FileResponse)
 async def upload_file(
@@ -114,11 +140,10 @@ async def list_files(
     ).all()
     return [FileResponse.from_orm(f) for f in files]
 
-@router.post("/files/{file_path:path}/share")
+@router.post("/{file_path:path}/share", response_model=FileShareResponse)
 async def share_file(
     file_path: str,
-    shared_with_id: str,
-    permissions: str = "read",
+    share_data: Dict[str, Any] = Body(..., embed=False),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_from_request)
 ):
@@ -133,15 +158,15 @@ async def share_file(
         raise HTTPException(status_code=404, detail="File not found")
         
     # Check if user exists
-    shared_with = db.query(User).filter(User.id == shared_with_id).first()
+    shared_with = db.query(User).filter(User.id == share_data["shared_with_id"]).first()
     if not shared_with:
         raise HTTPException(status_code=404, detail="User not found")
         
     # Create share record
-    share = FileShare(
+    share = DBFileShare(
         file_id=file.id,
-        shared_with_id=shared_with_id,
-        permissions=permissions
+        shared_with_id=share_data["shared_with_id"],
+        permissions=share_data["permissions"]
     )
     
     db.add(share)
@@ -168,9 +193,9 @@ async def unshare_file(
         raise HTTPException(status_code=404, detail="File not found")
         
     # Delete share record
-    share = db.query(FileShare).filter(
-        FileShare.file_id == file.id,
-        FileShare.shared_with_id == user_id
+    share = db.query(DBFileShare).filter(
+        DBFileShare.file_id == file.id,
+        DBFileShare.shared_with_id == user_id
     ).first()
     
     if share:
@@ -208,4 +233,60 @@ async def list_files(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error listing files: {str(e)}"
-        ) 
+        )
+
+@router.patch("/{file_path:path}", response_model=FileResponse)
+async def rename_file(
+    file_path: str,
+    data: FileRename = Body(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_from_request)
+):
+    """Rename a file"""
+    # Debug logging
+    logger.info(f"Received rename request for file: {file_path}")
+    logger.info(f"Rename data: {data}")
+    
+    # Get file record
+    db_file = db.query(UserFile).filter(
+        UserFile.user_id == current_user.id,
+        UserFile.file_path == file_path
+    ).first()
+    
+    if not db_file:
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    # Get the directory path and construct new file path
+    dir_path = str(Path(file_path).parent)
+    new_file_path = str(Path(dir_path) / data.new_name) if dir_path != '.' else data.new_name
+    
+    # Check if target path already exists
+    existing_file = db.query(UserFile).filter(
+        UserFile.user_id == current_user.id,
+        UserFile.file_path == new_file_path
+    ).first()
+    
+    if existing_file:
+        raise HTTPException(status_code=409, detail="File with new name already exists")
+    
+    try:
+        # Get absolute paths
+        old_abs_path = get_user_file_path(current_user.id, file_path)
+        new_abs_path = get_user_file_path(current_user.id, new_file_path, create_dirs=True)
+        
+        # Move the file
+        old_abs_path.rename(new_abs_path)
+        
+        # Update database record
+        db_file.file_path = new_file_path
+        db.commit()
+        db.refresh(db_file)
+        
+        return FileResponse.from_orm(db_file)
+    except Exception as e:
+        logger.error(f"Error renaming file: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Include the file operations router
+router.include_router(file_router, prefix="/files") 

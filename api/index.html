@@ -533,6 +533,12 @@
                 document.getElementById('newContent').style.display = 
                     e.target.value === 'file' ? 'block' : 'none';
             });
+
+            // Add event listeners for file management buttons
+            document.getElementById('saveFile').addEventListener('click', saveFile);
+            document.getElementById('renameFile').addEventListener('click', renameFile);
+            document.getElementById('deleteFile').addEventListener('click', deleteFile);
+            document.getElementById('shareFile').addEventListener('click', shareFile);
         });
 
         // Health check functionality
@@ -1493,17 +1499,8 @@
         }
 
         async function shareFile() {
-            document.getElementById('shareModal').classList.remove('hidden');
-        }
-
-        async function confirmShare() {
-            const userId = document.getElementById('shareUserId').value.trim();
-            const permissions = document.getElementById('sharePermissions').value;
-            
-            if (!userId) {
-                alert('Please enter a user ID');
-                return;
-            }
+            const userId = prompt('Enter user ID to share with:');
+            if (!userId) return;
             
             try {
                 const response = await fetch(`${API_BASE}/files/${currentPath}/share`, {
@@ -1514,29 +1511,148 @@
                     },
                     body: JSON.stringify({
                         shared_with_id: userId,
-                        permissions
+                        permissions: {
+                            read: true,
+                            write: false
+                        }
                     })
                 });
                 
                 if (!response.ok) {
-                    const error = await response.text();
-                    throw new Error(error);
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Failed to share file');
                 }
                 
-                document.getElementById('shareModal').classList.add('hidden');
-                document.getElementById('shareUserId').value = '';
-                loadFileShares(currentPath);
+                const result = await response.json();
+                alert('File shared successfully');
             } catch (error) {
-                console.error('Error sharing:', error);
-                alert(`Failed to share: ${error.message}`);
+                console.error('Error sharing file:', error);
+                alert('Failed to share file: ' + error.message);
             }
         }
 
-        async function unshareFile(path, userId) {
-            if (!confirm('Are you sure you want to remove this share?')) return;
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            // Existing initialization code...
+            
+            // File action buttons
+            document.getElementById('saveFile').addEventListener('click', saveFile);
+            document.getElementById('renameFile').addEventListener('click', renameFile);
+            document.getElementById('deleteFile').addEventListener('click', deleteFile);
+            document.getElementById('shareFile').addEventListener('click', shareFile);
+            
+            // Share modal buttons
+            document.getElementById('confirmShare').addEventListener('click', confirmShare);
+            document.getElementById('cancelShare').addEventListener('click', () => {
+                document.getElementById('shareModal').classList.add('hidden');
+            });
+            
+            // Create file button
+            document.getElementById('createFile').addEventListener('click', async () => {
+                const path = document.getElementById('newFilePath').value.trim();
+                const content = document.getElementById('newFileContent').value;
+                const isPublic = document.getElementById('isPublic').checked;
+                
+                if (!path) {
+                    alert('Please enter a file path');
+                    return;
+                }
+                
+                try {
+                    const response = await fetch(`${API_BASE}/files/${path}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'text/plain'
+                        },
+                        body: content
+                    });
+                    
+                    if (!response.ok) throw new Error('Failed to create file');
+                    
+                    // Clear form
+                    document.getElementById('newFilePath').value = '';
+                    document.getElementById('newFileContent').value = '';
+                    document.getElementById('isPublic').checked = false;
+                    
+                    await refreshFileTree();
+                    alert('File created successfully');
+                } catch (error) {
+                    console.error('Error creating file:', error);
+                    alert('Failed to create file: ' + error.message);
+                }
+            });
+        });
+
+        // File Management Functions
+        async function saveFile() {
+            try {
+                const content = document.getElementById('fileContent').value;
+                
+                // Create FormData and append file
+                const formData = new FormData();
+                const file = new File([content], currentPath.split('/').pop(), {
+                    type: 'text/plain'
+                });
+                formData.append('file', file);
+                
+                const response = await fetch(`${API_BASE}/files/${currentPath}`, {
+                    method: 'POST',
+                    headers: {
+                        Authorization: `Bearer ${authToken}`
+                    },
+                    body: formData
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Failed to save file');
+                }
+                
+                const result = await response.json();
+                alert('File saved successfully');
+            } catch (error) {
+                console.error('Error saving file:', error);
+                alert('Failed to save file: ' + error.message);
+            }
+        }
+
+        async function renameFile() {
+            const newName = prompt('Enter new file name:', currentPath.split('/').pop());
+            if (!newName) return;
             
             try {
-                const response = await fetch(`${API_BASE}/files/${path}/share/${userId}`, {
+                const response = await fetch(`${API_BASE}/files/${currentPath}`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify({
+                        new_name: newName
+                    })
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Failed to rename file');
+                }
+                
+                const result = await response.json();
+                currentPath = result.file_path || `${currentPath.split('/').slice(0, -1).join('/')}/${newName}`;
+                
+                await refreshFileTree();
+                alert('File renamed successfully');
+            } catch (error) {
+                console.error('Error renaming file:', error);
+                alert('Failed to rename file: ' + error.message);
+            }
+        }
+
+        async function deleteFile() {
+            if (!confirm(`Are you sure you want to delete ${currentPath}?`)) return;
+            
+            try {
+                const response = await fetch(`${API_BASE}/files/${currentPath}`, {
                     method: 'DELETE',
                     headers: {
                         Authorization: `Bearer ${authToken}`
@@ -1544,23 +1660,59 @@
                 });
                 
                 if (!response.ok) {
-                    const error = await response.text();
-                    throw new Error(error);
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Failed to delete file');
                 }
                 
-                loadFileShares(path);
+                document.getElementById('currentFile').textContent = 'No file selected';
+                document.getElementById('fileContent').value = '';
+                
+                // Hide action buttons
+                document.getElementById('saveFile').style.display = 'none';
+                document.getElementById('renameFile').style.display = 'none';
+                document.getElementById('deleteFile').style.display = 'none';
+                document.getElementById('shareFile').style.display = 'none';
+                
+                await refreshFileTree();
+                alert('File deleted successfully');
             } catch (error) {
-                console.error('Error unsharing:', error);
-                alert(`Failed to unshare: ${error.message}`);
+                console.error('Error deleting file:', error);
+                alert('Failed to delete file: ' + error.message);
             }
         }
 
-        // Add event listeners for share modal
-        document.getElementById('shareFile').addEventListener('click', shareFile);
-        document.getElementById('confirmShare').addEventListener('click', confirmShare);
-        document.getElementById('cancelShare').addEventListener('click', () => {
-            document.getElementById('shareModal').classList.add('hidden');
-        });
+        async function shareFile() {
+            const userId = prompt('Enter user ID to share with:');
+            if (!userId) return;
+            
+            try {
+                const response = await fetch(`${API_BASE}/files/${currentPath}/share`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify({
+                        shared_with_id: userId,
+                        permissions: {
+                            read: true,
+                            write: false
+                        }
+                    })
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Failed to share file');
+                }
+                
+                const result = await response.json();
+                alert('File shared successfully');
+            } catch (error) {
+                console.error('Error sharing file:', error);
+                alert('Failed to share file: ' + error.message);
+            }
+        }
     </script>
 </body>
 </html>
