@@ -2,7 +2,180 @@
 
 The HubGPT API is a FastAPI-based backend service that powers the HubGPT agent framework. It provides endpoints for managing AI advisors, conversations, and file operations with a focus on multi-user support and database persistence.
 
-NOTE: Test harness is at api/index.html
+## Quick Start
+
+1. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+2. Set up the database:
+```bash
+alembic upgrade head
+```
+
+3. Run the development server:
+```bash
+uvicorn api.main:app --reload --port 8000
+```
+
+4. Access the test harness at `http://localhost:8000/` (index.html)
+
+## Key Features
+
+- Multi-user support with JWT authentication
+- File management with sharing capabilities
+- Advisor management with database persistence
+- Real-time chat with streaming responses
+- Tool integration framework
+- OpenRouter LLM gateway integration
+
+## Authentication
+
+The system supports two authentication methods:
+
+1. **JWT Authentication** (Recommended)
+   - Used for the new multi-user system
+   - Token-based with proper session management
+   - Required for all new feature development
+
+2. **Basic Authentication** (Legacy)
+   - Maintained for backward compatibility
+   - Will be phased out in future versions
+
+### Auth Endpoints
+
+```http
+POST /api/v1/auth/register
+{
+    "username": str,
+    "email": str,
+    "password": str
+}
+
+POST /api/v1/auth/login
+{
+    "username": str,
+    "password": str
+}
+Response: {
+    "access_token": str,
+    "token_type": "bearer"
+}
+
+POST /api/v1/auth/logout
+Headers: Authorization: Bearer <token>
+```
+
+## File Management
+
+The API provides comprehensive file management capabilities with multi-user support:
+
+### File Operations
+
+```http
+GET /api/v1/files
+Description: List all files for current user
+Response: List[FileResponse]
+
+POST /api/v1/files/{file_path}
+Description: Create or update file
+Body: multipart/form-data
+Fields:
+  - file: File data
+  - is_public: boolean (optional)
+
+GET /api/v1/files/{file_path}/content
+Description: Get file contents
+
+PATCH /api/v1/files/{file_path}
+Description: Rename file
+Body: { "new_name": string }
+
+DELETE /api/v1/files/{file_path}
+Description: Delete file
+```
+
+### File Sharing
+
+```http
+POST /api/v1/files/{file_path}/share
+Description: Share file with another user
+Body: {
+    "shared_with_id": string,
+    "permissions": {
+        "read": boolean,
+        "write": boolean
+    }
+}
+
+GET /api/v1/files/{file_path}/shares
+Description: List file shares
+
+DELETE /api/v1/files/{file_path}/share/{user_id}
+Description: Remove file share
+```
+
+## Chat Interface
+
+The chat interface supports real-time communication with AI advisors:
+
+```http
+POST /api/v1/chat/advisor/{advisor_id}/new
+Description: Create new conversation
+
+POST /api/v1/chat/{conversation_id}/message
+Description: Send message
+Body: { "message": string }
+Response: Streaming or single response
+
+GET /api/v1/chat/messages/{chat_id}
+Description: Get chat history
+
+DELETE /api/v1/chat/{chat_id}
+Description: Delete chat
+```
+
+## Development
+
+### Test Harness
+
+The API includes a comprehensive test harness at `/` (index.html) that provides:
+
+- Interactive API testing
+- File management UI
+- Real-time chat interface
+- Advisor management
+- Authentication flow testing
+
+### Database Schema
+
+The system uses PostgreSQL with the following key tables:
+
+1. **users** - User management
+2. **advisors** - AI advisor configurations
+3. **conversations** - Chat conversations
+4. **messages** - Chat messages
+5. **user_files** - File management
+6. **file_shares** - File sharing
+
+For detailed schema information, see `multi_user_prd.md`.
+
+## Current Status
+
+✅ **Complete**
+- Multi-user authentication
+- File management
+- Basic sharing
+- Chat interface
+- Test harness
+
+🔄 **In Progress**
+- Advanced sharing features
+- Team workspaces
+- Usage analytics
+
+For more details on the migration and upcoming features, see `multi_user_prd.md`.
 
 ## System Architecture
 

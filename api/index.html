@@ -300,6 +300,29 @@
                         <div id="fileTree" class="file-tree"></div>
                     </div>
 
+                    <!-- Drag and Drop Zone -->
+                    <div id="dropZone" class="mt-4 border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-500 transition-colors">
+                        <div class="text-gray-500">
+                            <p>Drag and drop files here</p>
+                            <p class="text-sm">or</p>
+                            <label class="cursor-pointer text-blue-500 hover:text-blue-600">
+                                <span>Browse files</span>
+                                <input type="file" id="fileInput" multiple class="hidden">
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Upload Progress -->
+                    <div id="uploadProgress" class="mt-4 hidden">
+                        <div class="flex justify-between mb-1">
+                            <span class="text-sm font-medium" id="uploadFileName"></span>
+                            <span class="text-sm font-medium" id="uploadPercent">0%</span>
+                        </div>
+                        <div class="w-full bg-gray-200 rounded-full h-2.5">
+                            <div id="uploadProgressBar" class="bg-blue-600 h-2.5 rounded-full" style="width: 0%"></div>
+                        </div>
+                    </div>
+
                     <!-- Context Menu -->
                     <div id="contextMenu" class="hidden fixed bg-white shadow-lg border rounded-lg py-2 w-48">
                         <button class="w-full text-left px-4 py-2 hover:bg-gray-100" data-action="rename">Rename</button>
@@ -539,6 +562,192 @@
             document.getElementById('renameFile').addEventListener('click', renameFile);
             document.getElementById('deleteFile').addEventListener('click', deleteFile);
             document.getElementById('shareFile').addEventListener('click', shareFile);
+
+            // Add drag and drop event handlers
+            const dropZone = document.getElementById('dropZone');
+            const fileInput = document.getElementById('fileInput');
+            let currentDropPath = '';  // Will store the current directory path for uploads
+
+            // Update drop path when selecting directories in the file tree
+            function updateDropPath(path) {
+                currentDropPath = path;
+                dropZone.setAttribute('data-path', path);
+                dropZone.querySelector('p').textContent = path ? 
+                    `Drop files to upload to ${path}` : 
+                    'Drag and drop files here';
+            }
+
+            // Prevent default drag behaviors
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, preventDefaults, false);
+                document.body.addEventListener(eventName, preventDefaults, false);
+            });
+
+            function preventDefaults(e) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+
+            // Highlight drop zone when dragging over it
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropZone.addEventListener(eventName, highlight, false);
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, unhighlight, false);
+            });
+
+            function highlight(e) {
+                dropZone.classList.add('border-blue-500', 'bg-blue-50');
+            }
+
+            function unhighlight(e) {
+                dropZone.classList.remove('border-blue-500', 'bg-blue-50');
+            }
+
+            // Handle dropped files
+            dropZone.addEventListener('drop', handleDrop, false);
+            fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+
+            function handleDrop(e) {
+                const dt = e.dataTransfer;
+                const files = dt.files;
+                handleFiles(files);
+            }
+
+            async function handleFiles(files) {
+                const uploadProgress = document.getElementById('uploadProgress');
+                const uploadFileName = document.getElementById('uploadFileName');
+                const uploadPercent = document.getElementById('uploadPercent');
+                const uploadProgressBar = document.getElementById('uploadProgressBar');
+
+                for (const file of files) {
+                    try {
+                        // Show progress UI
+                        uploadProgress.classList.remove('hidden');
+                        uploadFileName.textContent = file.name;
+                        
+                        // Read file content as raw data
+                        const fileContent = await new Promise((resolve) => {
+                            const reader = new FileReader();
+                            reader.onload = (e) => resolve(e.target.result);
+                            reader.readAsArrayBuffer(file);  // Read as raw binary data
+                        });
+                        
+                        // Determine upload path
+                        const uploadPath = currentDropPath ? `${currentDropPath}/${file.name}` : file.name;
+                        
+                        // Create blob with original content
+                        const blob = new Blob([fileContent], { type: file.type || 'application/octet-stream' });
+                        
+                        // Create FormData and append the blob
+                        const formData = new FormData();
+                        formData.append('file', blob, file.name);
+                        
+                        // Upload file
+                        const response = await fetch(`${API_BASE}/files/${uploadPath}`, {
+                            method: 'POST',
+                            headers: {
+                                Authorization: `Bearer ${authToken}`
+                            },
+                            body: formData
+                        });
+
+                        if (!response.ok) {
+                            throw new Error(`Upload failed: ${response.status}`);
+                        }
+
+                        // Update progress
+                        uploadPercent.textContent = '100%';
+                        uploadProgressBar.style.width = '100%';
+                        
+                        // Refresh file tree
+                        await refreshFileTree();
+                        
+                        // Hide progress after a short delay
+                        setTimeout(() => {
+                            uploadProgress.classList.add('hidden');
+                            uploadProgressBar.style.width = '0%';
+                        }, 1000);
+
+                    } catch (error) {
+                        console.error('Upload error:', error);
+                        alert(`Failed to upload ${file.name}: ${error.message}`);
+                        uploadProgress.classList.add('hidden');
+                    }
+                }
+            }
+
+            // Update drop path when selecting directories in file tree
+            function renderNode(node, path = '') {
+                const div = document.createElement('div');
+                div.className = 'tree-node';
+                
+                const content = document.createElement('div');
+                content.className = 'tree-content';
+                
+                const hasChildren = node.type === 'directory' && Object.keys(node.children).length > 0;
+                
+                // Create toggle button
+                const toggle = document.createElement('span');
+                toggle.className = 'tree-toggle';
+                toggle.textContent = hasChildren ? '▶' : ' ';
+                if (hasChildren) {
+                    toggle.onclick = (e) => {
+                        e.stopPropagation();
+                        const childrenDiv = div.querySelector('.tree-children');
+                        const isExpanded = toggle.textContent === '▼';
+                        toggle.textContent = isExpanded ? '▶' : '▼';
+                        childrenDiv.style.display = isExpanded ? 'none' : 'block';
+                    };
+                }
+                
+                // Create name span
+                const nameSpan = document.createElement('span');
+                nameSpan.textContent = node.name;
+                
+                content.appendChild(toggle);
+                content.appendChild(nameSpan);
+                
+                // Construct proper path
+                const nodePath = path ? `${path}/${node.name}`.replace(/^\/+/, '') : node.name;
+                content.dataset.path = nodePath;
+                
+                if (node.type === 'file') {
+                    content.onclick = () => selectFile(nodePath);
+                }
+                
+                div.appendChild(content);
+                
+                // Add children if it's a directory
+                if (hasChildren) {
+                    const childrenDiv = document.createElement('div');
+                    childrenDiv.className = 'tree-children';
+                    childrenDiv.style.display = 'none';
+                    
+                    // Sort children: directories first, then files
+                    const sortedChildren = Object.entries(node.children).sort(([, a], [, b]) => {
+                        if (a.type === b.type) return a.name.localeCompare(b.name);
+                        return a.type === 'directory' ? -1 : 1;
+                    });
+                    
+                    sortedChildren.forEach(([name, child]) => {
+                        childrenDiv.appendChild(renderNode(child, nodePath));
+                    });
+                    
+                    div.appendChild(childrenDiv);
+                }
+                
+                // Add click handler to update drop path for directories
+                if (node.type === 'directory') {
+                    content.onclick = () => {
+                        updateDropPath(nodePath);
+                        // Existing directory click handling...
+                    };
+                }
+                
+                return div;
+            }
         });
 
         // Health check functionality
@@ -1431,9 +1640,20 @@
                 
                 if (!response.ok) throw new Error('Failed to fetch file content');
                 
+                // Get the raw text content
                 const content = await response.text();
+                
+                // Try to parse as JSON to see if the content is JSON-encoded
+                try {
+                    const parsed = JSON.parse(content);
+                    // If it's a string wrapped in JSON, unwrap it
+                    document.getElementById('fileContent').value = typeof parsed === 'string' ? parsed : content;
+                } catch (e) {
+                    // If it's not JSON, use the raw content
+                    document.getElementById('fileContent').value = content;
+                }
+                
                 document.getElementById('currentFile').textContent = cleanPath;
-                document.getElementById('fileContent').value = content;
                 
                 // Show action buttons
                 document.getElementById('saveFile').style.display = 'inline-block';
