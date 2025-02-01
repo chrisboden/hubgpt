@@ -460,21 +460,22 @@ async def new_conversation(advisor_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.delete("/{conversation_id}")
-async def delete_conversation(conversation_id: str):
+async def delete_conversation(conversation_id: str, db: Session = Depends(get_db)):
     """Delete a conversation"""
     try:
-        # First check if this is a current chat
-        current_path = config.CHATS_DIR / f"{conversation_id}.json"
-        archive_path = config.ARCHIVE_DIR / f"{conversation_id}.json"
+        # Get conversation from database
+        conversation = db.query(Conversation).filter(
+            Conversation.id == conversation_id
+        ).first()
         
-        if current_path.exists():
-            current_path.unlink()
-            return {"status": "deleted", "path": str(current_path)}
-        elif archive_path.exists():
-            archive_path.unlink()
-            return {"status": "deleted", "path": str(archive_path)}
-        else:
+        if not conversation:
             raise HTTPException(status_code=404, detail="Conversation not found")
+            
+        # Delete conversation (will cascade delete messages and tool calls)
+        db.delete(conversation)
+        db.commit()
+        
+        return {"status": "deleted", "id": conversation_id}
             
     except Exception as e:
         logger.error(f"Error deleting conversation: {str(e)}")
