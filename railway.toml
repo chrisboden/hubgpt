@@ -10,11 +10,16 @@ restartPolicyType = "on_failure"
 
 [volume]
 mountPath = "/data"
-size = "5"  # 5GB volume size
+size = "0.5"  # 500MB volume size
 
 [[services]]
 name = "hubgpt-api"
 envs = [
     "ENV=production",
-    "RAILWAY_RUN_UID=0"  # Ensure proper volume permissions
+    "RAILWAY_RUN_UID=0",  # Ensure proper volume permissions
+    "RAILWAY_VOLUME_MOUNT_PATH=/data",
+    "DATABASE_URL=sqlite:////data/hubgpt.db",  # Store database in persistent volume
+    "API_USERNAME=admin",
+    "API_PASSWORD=password",  # Change this to a secure password
+    "JWT_SECRET=your-secret-key-for-production"  # Change this to a secure secret
 ] 
