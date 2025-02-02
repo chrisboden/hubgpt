@@ -5,8 +5,12 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
+# Environment
+ENV = os.getenv("ENV", "development")
+IS_RAILWAY = os.getenv("RAILWAY_ENVIRONMENT") is not None
+
 # Determine base directory based on environment
-if os.getenv("RAILWAY_ENVIRONMENT"):
+if IS_RAILWAY:
     BASE_DIR = Path("/app")
 else:
     BASE_DIR = Path(__file__).resolve().parent
@@ -34,7 +38,14 @@ API_VERSION = "v1"
 API_PREFIX = f"/api/{API_VERSION}"
 
 # CORS settings
-CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",")
+CORS_ORIGINS = [
+    "http://localhost",
+    "http://localhost:8000",
+    "http://localhost:3000",
+    "https://localhost",
+    "https://localhost:8000",
+    "https://localhost:3000",
+]
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_METHODS = ["*"]
 CORS_ALLOW_HEADERS = ["*"]
@@ -48,13 +59,20 @@ API_USERNAME = os.getenv("API_USERNAME", "admin")
 API_PASSWORD = os.getenv("API_PASSWORD", "password")
 
 # JWT Settings
-JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key")  # Change in production
+JWT_SECRET = os.getenv("JWT_SECRET", "your-secret-key-for-development")
 JWT_ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
 
 # Database Settings
 DB_TYPE = "sqlite"
-DATABASE_URL = f"sqlite:////{BASE_DIR.parent}/hubgpt.db"
+if IS_RAILWAY:
+    # Railway PostgreSQL URL
+    DATABASE_URL = os.getenv("DATABASE_URL")
+    if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
+        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+else:
+    # Local SQLite URL
+    DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///hubgpt.db")
 
 # Logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
@@ -67,6 +85,26 @@ MAX_UPLOAD_SIZE = 100 * 1024 * 1024  # 100MB
 DEFAULT_USER_EMAIL = os.getenv("DEFAULT_USER_EMAIL", "admin@example.com")
 
 # LLM Settings
-DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "openai/gpt-4o-mini")
+DEFAULT_MODEL = "gpt-4o-mini"
 DEFAULT_TEMPERATURE = float(os.getenv("DEFAULT_TEMPERATURE", "0.7"))
-DEFAULT_MAX_TOKENS = int(os.getenv("DEFAULT_MAX_TOKENS", "1000")) 
+DEFAULT_MAX_TOKENS = int(os.getenv("DEFAULT_MAX_TOKENS", "1000"))
+
+# File Storage
+if IS_RAILWAY:
+    # Railway Volume storage
+    STORAGE_ROOT = Path(os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "/data"))
+else:
+    # Local storage
+    STORAGE_ROOT = Path(os.getenv("STORAGE_PATH", Path(__file__).parent.parent / "storage"))
+
+# Ensure storage directories exist
+USERS_ROOT = STORAGE_ROOT / "users"
+SHARED_ROOT = STORAGE_ROOT / "shared"
+
+# Create directories if they don't exist (local development only)
+if not IS_RAILWAY:
+    USERS_ROOT.mkdir(parents=True, exist_ok=True)
+    SHARED_ROOT.mkdir(parents=True, exist_ok=True)
+
+# App Settings
+DEBUG = ENV != "production" 

@@ -779,57 +779,69 @@
                 const toggle = document.createElement('span');
                 toggle.className = 'tree-toggle';
                 toggle.textContent = hasChildren ? '▶' : ' ';
-                if (hasChildren) {
-                    toggle.onclick = (e) => {
-                        e.stopPropagation();
-                        const childrenDiv = div.querySelector('.tree-children');
-                        const isExpanded = toggle.textContent === '▼';
-                        toggle.textContent = isExpanded ? '▶' : '▼';
-                        childrenDiv.style.display = isExpanded ? 'none' : 'block';
-                    };
-                }
+                toggle.style.cursor = hasChildren ? 'pointer' : 'default';
                 
-                // Create name span
-                const nameSpan = document.createElement('span');
-                nameSpan.textContent = node.name;
+                // Create icon
+                const icon = document.createElement('span');
+                icon.className = 'tree-icon';
+                icon.textContent = node.type === 'directory' ? '📁' : '📄';
                 
-                content.appendChild(toggle);
-                content.appendChild(nameSpan);
+                // Create label
+                const label = document.createElement('span');
+                label.className = 'tree-label';
+                label.textContent = node.name;
                 
-                // Construct proper path
-                const nodePath = path ? `${path}/${node.name}`.replace(/^\/+/, '') : node.name;
-                content.dataset.path = nodePath;
+                // Build full path
+                const fullPath = path ? `${path}/${node.name}` : node.name;
+                content.dataset.path = cleanPath(fullPath);
                 
+                // Add click handler for files
                 if (node.type === 'file') {
-                    content.onclick = () => selectFile(nodePath);
+                    content.style.cursor = 'pointer';
+                    content.onclick = () => selectFile(fullPath);
                 }
                 
+                // Add context menu
+                content.oncontextmenu = (e) => {
+                    e.preventDefault();
+                    showContextMenu(e, fullPath, node.type);
+                };
+                
+                // Assemble content
+                content.appendChild(toggle);
+                content.appendChild(icon);
+                content.appendChild(label);
                 div.appendChild(content);
                 
-                // Add children if it's a directory
+                // Add children container for directories
                 if (hasChildren) {
-                    const childrenDiv = document.createElement('div');
-                    childrenDiv.className = 'tree-children';
-                    childrenDiv.style.display = 'none';
+                    const children = document.createElement('div');
+                    children.className = 'tree-children';
+                    children.style.display = 'none';
+                    children.style.paddingLeft = '20px';
                     
-                    // Sort children: directories first, then files
-                    const sortedChildren = Object.entries(node.children).sort(([, a], [, b]) => {
-                        if (a.type === b.type) return a.name.localeCompare(b.name);
-                        return a.type === 'directory' ? -1 : 1;
+                    // Sort children by type (directories first) then name
+                    const sortedChildren = Object.entries(node.children)
+                        .sort(([, a], [, b]) => {
+                            if (a.type !== b.type) {
+                                return a.type === 'directory' ? -1 : 1;
+                            }
+                            return a.name.localeCompare(b.name);
+                        });
+                    
+                    // Render children
+                    sortedChildren.forEach(([, child]) => {
+                        children.appendChild(renderNode(child, fullPath));
                     });
                     
-                    sortedChildren.forEach(([name, child]) => {
-                        childrenDiv.appendChild(renderNode(child, nodePath));
-                    });
+                    div.appendChild(children);
                     
-                    div.appendChild(childrenDiv);
-                }
-                
-                // Add click handler to update drop path for directories
-                if (node.type === 'directory') {
-                    content.onclick = () => {
-                        updateDropPath(nodePath);
-                        // Existing directory click handling...
+                    // Add toggle handler
+                    toggle.onclick = (e) => {
+                        e.stopPropagation();
+                        const isExpanded = children.style.display === 'block';
+                        toggle.textContent = isExpanded ? '▶' : '▼';
+                        children.style.display = isExpanded ? 'none' : 'block';
                     };
                 }
                 
@@ -1625,14 +1637,25 @@
         let fileTreeData = null;
         let selectedNode = null;
 
+        // Clean up file path - remove leading/trailing slashes and multiple slashes
+        function cleanPath(path) {
+            // Remove leading/trailing slashes and multiple slashes
+            let cleaned = path.replace(/^\/+|\/+$/g, '').replace(/\/+/g, '/');
+            // Remove 'files/' prefix if it exists
+            cleaned = cleaned.replace(/^files\//, '');
+            return cleaned;
+        }
+
         // Completely new file tree implementation
         function buildFileTree(files) {
             // First, organize files by path
             const root = { name: '/', type: 'directory', children: {} };
             
             files.forEach(file => {
-                // Skip empty parts and 'files' prefix
-                const parts = file.file_path.split('/').filter(part => part && part !== 'files');
+                // Clean up the path
+                const cleanedPath = cleanPath(file.file_path);
+                // Split into parts
+                const parts = cleanedPath.split('/').filter(part => part);
                 let current = root;
                 
                 parts.forEach((part, index) => {
@@ -1681,50 +1704,70 @@
             const toggle = document.createElement('span');
             toggle.className = 'tree-toggle';
             toggle.textContent = hasChildren ? '▶' : ' ';
-            if (hasChildren) {
-                toggle.onclick = (e) => {
-                    e.stopPropagation();
-                    const childrenDiv = div.querySelector('.tree-children');
-                    const isExpanded = toggle.textContent === '▼';
-                    toggle.textContent = isExpanded ? '▶' : '▼';
-                    childrenDiv.style.display = isExpanded ? 'none' : 'block';
-                };
-            }
+            toggle.style.cursor = hasChildren ? 'pointer' : 'default';
             
-            // Create name span
-            const nameSpan = document.createElement('span');
-            nameSpan.textContent = node.name;
+            // Create icon
+            const icon = document.createElement('span');
+            icon.className = 'tree-icon';
+            icon.textContent = node.type === 'directory' ? '📁' : '📄';
             
-            content.appendChild(toggle);
-            content.appendChild(nameSpan);
+            // Create label
+            const label = document.createElement('span');
+            label.className = 'tree-label';
+            label.textContent = node.name;
             
-            // Construct proper path
-            const nodePath = path ? `${path}/${node.name}`.replace(/^\/+/, '') : node.name;
-            content.dataset.path = nodePath;
+            // Build full path
+            const fullPath = path ? `${path}/${node.name}` : node.name;
+            content.dataset.path = cleanPath(fullPath);
             
+            // Add click handler for files
             if (node.type === 'file') {
-                content.onclick = () => selectFile(nodePath);
+                content.style.cursor = 'pointer';
+                content.onclick = () => selectFile(fullPath);
             }
             
+            // Add context menu
+            content.oncontextmenu = (e) => {
+                e.preventDefault();
+                showContextMenu(e, fullPath, node.type);
+            };
+            
+            // Assemble content
+            content.appendChild(toggle);
+            content.appendChild(icon);
+            content.appendChild(label);
             div.appendChild(content);
             
-            // Add children if it's a directory
+            // Add children container for directories
             if (hasChildren) {
-                const childrenDiv = document.createElement('div');
-                childrenDiv.className = 'tree-children';
-                childrenDiv.style.display = 'none';
+                const children = document.createElement('div');
+                children.className = 'tree-children';
+                children.style.display = 'none';
+                children.style.paddingLeft = '20px';
                 
-                // Sort children: directories first, then files
-                const sortedChildren = Object.entries(node.children).sort(([, a], [, b]) => {
-                    if (a.type === b.type) return a.name.localeCompare(b.name);
-                    return a.type === 'directory' ? -1 : 1;
+                // Sort children by type (directories first) then name
+                const sortedChildren = Object.entries(node.children)
+                    .sort(([, a], [, b]) => {
+                        if (a.type !== b.type) {
+                            return a.type === 'directory' ? -1 : 1;
+                        }
+                        return a.name.localeCompare(b.name);
+                    });
+                
+                // Render children
+                sortedChildren.forEach(([, child]) => {
+                    children.appendChild(renderNode(child, fullPath));
                 });
                 
-                sortedChildren.forEach(([name, child]) => {
-                    childrenDiv.appendChild(renderNode(child, nodePath));
-                });
+                div.appendChild(children);
                 
-                div.appendChild(childrenDiv);
+                // Add toggle handler
+                toggle.onclick = (e) => {
+                    e.stopPropagation();
+                    const isExpanded = children.style.display === 'block';
+                    toggle.textContent = isExpanded ? '▶' : '▼';
+                    children.style.display = isExpanded ? 'none' : 'block';
+                };
             }
             
             return div;
@@ -1757,19 +1800,18 @@
 
         // Select File
         async function selectFile(path) {
-            // Clean up the path - remove leading/trailing slashes and multiple slashes
-            const cleanPath = path.replace(/^\/+|\/+$/g, '').replace(/\/+/g, '/');
-            currentPath = cleanPath;
+            const cleanedPath = cleanPath(path);
+            currentPath = cleanedPath;
             
             // Update selection visual
             const items = document.querySelectorAll('.tree-content');
             items.forEach(item => item.classList.remove('selected'));
-            const selected = document.querySelector(`.tree-content[data-path="${cleanPath}"]`);
+            const selected = document.querySelector(`.tree-content[data-path="${cleanedPath}"]`);
             if (selected) selected.classList.add('selected');
             
             // Get file content
             try {
-                const response = await fetch(`${API_BASE}/files/${cleanPath}/content`, {
+                const response = await fetch(`${API_BASE}/files/${cleanedPath}/content`, {
                     headers: {
                         Authorization: `Bearer ${authToken}`
                     }
@@ -1790,7 +1832,7 @@
                     document.getElementById('fileContent').value = content;
                 }
                 
-                document.getElementById('currentFile').textContent = cleanPath;
+                document.getElementById('currentFile').textContent = cleanedPath;
                 
                 // Show action buttons
                 document.getElementById('saveFile').style.display = 'inline-block';
@@ -1799,6 +1841,7 @@
                 document.getElementById('shareFile').style.display = 'inline-block';
             } catch (error) {
                 console.error('Error fetching file content:', error);
+                alert('Failed to fetch file content: ' + error.message);
             }
         }
 
@@ -1811,9 +1854,6 @@
                 await handleLogin();
                 initializeFileTree();
             });
-            
-            // Refresh button
-            document.getElementById('refreshFiles').addEventListener('click', refreshFileTree);
         });
 
         // Update the displayRequest function to include gateway
@@ -1990,7 +2030,7 @@
                 });
                 formData.append('file', file);
                 
-                const response = await fetch(`${API_BASE}/files/${currentPath}`, {
+                const response = await fetch(`${API_BASE}/files/${cleanPath(currentPath)}`, {
                     method: 'POST',
                     headers: {
                         Authorization: `Bearer ${authToken}`
@@ -2128,7 +2168,7 @@
                 formData.append('file', file);
                 formData.append('is_public', isPublic);
                 
-                const response = await fetch(`${API_BASE}/files/${path}`, {
+                const response = await fetch(`${API_BASE}/files/${cleanPath(path)}`, {
                     method: 'POST',
                     headers: {
                         Authorization: `Bearer ${authToken}`

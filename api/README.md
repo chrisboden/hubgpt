@@ -71,6 +71,53 @@ Headers: Authorization: Bearer <token>
 
 The API provides comprehensive file management capabilities with multi-user support:
 
+### File System Architecture
+
+The file management system uses a hybrid approach combining physical file storage with database metadata:
+
+1. **Physical Storage**:
+   - Files are stored on disk in `storage/users/{user_id}/files/` directory
+   - Each user has their own isolated storage space
+   - Physical files contain the actual content/data
+   - Directory structure matches the file paths in database
+
+2. **Database Storage**:
+   - The database only stores metadata about files in the `user_files` table
+   - Metadata includes:
+     - `id`: Unique identifier
+     - `user_id`: Owner of the file
+     - `file_path`: Relative path within user's space
+     - `file_type`: File extension/type
+     - `size_bytes`: Size of the file
+     - `is_public`: Public/private flag
+     - `created_at/updated_at`: Timestamps
+   - Database records act as pointers to physical files
+
+3. **Operation Flow**:
+   - File Upload:
+     1. Physical file saved to user's storage directory
+     2. Metadata record created in database
+     3. Database record points to physical file
+   
+   - File Access:
+     1. Check database for metadata and permissions
+     2. If allowed, read content from physical file
+   
+   - File Update:
+     1. Update physical file content
+     2. Update metadata in database
+   
+   - File Delete:
+     1. Remove database record
+     2. Delete physical file from disk
+
+This hybrid approach provides:
+- Efficient storage of large files
+- Fast metadata queries
+- Proper access control
+- File sharing capabilities
+- Data isolation between users
+
 ### File Operations
 
 ```http

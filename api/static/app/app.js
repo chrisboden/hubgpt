@@ -1,12 +1,50 @@
 import { api } from './lib/api-client.js';
 import { store } from './lib/store.js';
 
+// Dynamically set API base URL based on current location
+const API_BASE = `${window.location.protocol}//${window.location.hostname}:8000/api/v1`;
+const authToken = localStorage.getItem('authToken');
+
 class App {
     constructor() {
         this.currentController = null;
         this.currentReader = null;
         this.setupEventListeners();
         this.checkAuth();
+        this.initializeFileEditor();
+    }
+
+    initializeFileEditor() {
+        // Create file editor modal if it doesn't exist
+        if (!document.getElementById('file-editor-modal')) {
+            const modal = document.createElement('div');
+            modal.id = 'file-editor-modal';
+            modal.className = 'fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center';
+            modal.innerHTML = `
+                <div class="bg-white rounded-lg p-6 w-3/4 max-w-4xl max-h-[90vh] overflow-y-auto">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 id="file-editor-title" class="text-xl font-semibold">Edit File</h2>
+                        <button id="close-file-editor" class="text-gray-500 hover:text-gray-700">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    </div>
+                    <textarea id="file-editor" class="w-full h-96 p-4 border rounded font-mono text-sm"></textarea>
+                    <div class="flex justify-end mt-4 space-x-2">
+                        <button id="save-file-button" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
+                            Save
+                        </button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+
+            // Add close button handler
+            document.getElementById('close-file-editor').onclick = () => {
+                modal.classList.add('hidden');
+            };
+        }
     }
 
     async checkAuth() {
@@ -213,8 +251,18 @@ class App {
             settingsToggle.addEventListener('click', async () => {
                 if (settingsSidebar) {
                     settingsSidebar.classList.remove('translate-x-full');
-                    // Reload advisors when opening settings
+                    // Get currently selected advisor
+                    const currentAdvisorId = store.getState('advisors.selected');
+                    // Load advisors and then select the current one
                     await this.loadAdvisors();
+                    if (currentAdvisorId) {
+                        const advisorEditSelect = document.getElementById('advisor-edit-select');
+                        if (advisorEditSelect) {
+                            advisorEditSelect.value = currentAdvisorId;
+                            // Trigger change event to load advisor details
+                            advisorEditSelect.dispatchEvent(new Event('change'));
+                        }
+                    }
                 }
             });
         }
@@ -346,6 +394,30 @@ class App {
                 promptTextarea.value = systemMessageEditor.value;
             }
             systemMessageModal.classList.add('hidden');
+        });
+
+        // Tab switching
+        const advisorsTab = document.getElementById('advisors-tab');
+        const filesTab = document.getElementById('files-tab');
+        const advisorsPanel = document.getElementById('advisors-panel');
+        const filesPanel = document.getElementById('files-panel');
+
+        advisorsTab?.addEventListener('click', () => {
+            advisorsTab.classList.add('bg-blue-50', 'text-blue-700');
+            advisorsTab.classList.remove('text-gray-500');
+            filesTab.classList.remove('bg-blue-50', 'text-blue-700');
+            filesTab.classList.add('text-gray-500');
+            advisorsPanel.classList.remove('hidden');
+            filesPanel.classList.add('hidden');
+        });
+
+        filesTab?.addEventListener('click', () => {
+            filesTab.classList.add('bg-blue-50', 'text-blue-700');
+            filesTab.classList.remove('text-gray-500');
+            advisorsTab.classList.remove('bg-blue-50', 'text-blue-700');
+            advisorsTab.classList.add('text-gray-500');
+            filesPanel.classList.remove('hidden');
+            advisorsPanel.classList.add('hidden');
         });
     }
 
@@ -658,7 +730,9 @@ class App {
                         ${this.formatDate(chat.created_at)}
                     </div>
                     <button class="text-red-500 hover:text-red-700" onclick="event.stopPropagation(); app.deleteChat('${chat.id}')">
-                        Delete
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
                     </button>
                 </div>
                 <div class="mt-2">
@@ -753,26 +827,138 @@ class App {
 
         container.innerHTML = '';
         files.forEach(file => {
+            // Clean up the path - remove leading/trailing slashes and multiple slashes
+            const cleanPath = this.cleanPath(file.file_path);
+            // Remove 'files/' prefix if it exists
+            const displayPath = cleanPath.replace(/^files\//, '');
+
             const div = document.createElement('div');
             div.className = 'p-4 bg-white rounded shadow mb-4';
             div.innerHTML = `
                 <div class="flex justify-between items-center">
                     <div class="text-sm">
-                        <div class="font-semibold">${file.file_path}</div>
+                        <div class="font-semibold">${displayPath}</div>
                         <div class="text-gray-600">${this.formatFileSize(file.size_bytes)}</div>
                     </div>
                     <div class="space-x-2">
-                        <button class="text-blue-500 hover:text-blue-700" onclick="app.downloadFile('${file.file_path}')">
-                            Download
+                        <button class="text-blue-500 hover:text-blue-700" onclick="app.editFile('${displayPath}')">
+                            Edit
                         </button>
-                        <button class="text-red-500 hover:text-red-700" onclick="app.deleteFile('${file.file_path}')">
-                            Delete
+                        <button class="text-red-500 hover:text-red-700" onclick="app.deleteFile('${displayPath}')">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
                         </button>
                     </div>
                 </div>
             `;
             container.appendChild(div);
         });
+    }
+
+    async editFile(path) {
+        try {
+            const cleanedPath = this.cleanPath(path);
+            
+            // Get file content with proper auth headers
+            const response = await fetch(`${API_BASE}/files/${cleanedPath}/content`, {
+                headers: {
+                    'Authorization': `Bearer ${store.getState('auth.token')}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Failed to fetch file content: ${response.status}`);
+            }
+            
+            // Get the raw text content
+            const content = await response.text();
+            
+            // Try to parse as JSON to see if the content is JSON-encoded
+            try {
+                const parsed = JSON.parse(content);
+                // If it's a string wrapped in JSON, unwrap it
+                this.showFileEditor(cleanedPath, typeof parsed === 'string' ? parsed : content);
+            } catch (e) {
+                // If it's not JSON, use the raw content
+                this.showFileEditor(cleanedPath, content);
+            }
+        } catch (error) {
+            console.error('Error editing file:', error);
+            store.dispatch('ui/addError', {
+                id: Date.now(),
+                message: `Failed to edit file: ${error.message}`
+            });
+        }
+    }
+
+    showFileEditor(path, content) {
+        const modal = document.getElementById('file-editor-modal');
+        const editor = document.getElementById('file-editor');
+        const title = document.getElementById('file-editor-title');
+        
+        if (!modal || !editor || !title) {
+            console.error('File editor elements not found');
+            return;
+        }
+        
+        title.textContent = `Editing: ${path}`;
+        editor.value = content;
+        modal.classList.remove('hidden');
+        
+        // Store the current file path for save operation
+        this.currentEditingFile = path;
+
+        // Add event listener for save button if not already added
+        const saveButton = document.getElementById('save-file-button');
+        if (saveButton) {
+            saveButton.onclick = () => this.saveFile();
+        }
+    }
+
+    async saveFile() {
+        try {
+            const content = document.getElementById('file-editor').value;
+            if (!this.currentEditingFile) {
+                throw new Error('No file selected for saving');
+            }
+            
+            // Create FormData and append file
+            const formData = new FormData();
+            const file = new File([content], this.currentEditingFile.split('/').pop(), {
+                type: 'text/plain'
+            });
+            formData.append('file', file);
+            
+            const response = await fetch(`${API_BASE}/files/${this.cleanPath(this.currentEditingFile)}`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${store.getState('auth.token')}`
+                },
+                body: formData
+            });
+            
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Failed to save file');
+            }
+            
+            await this.loadFiles();
+            store.dispatch('ui/addSuccess', {
+                id: Date.now(),
+                message: 'File saved successfully'
+            });
+            
+            // Close the editor modal
+            document.getElementById('file-editor-modal')?.classList.add('hidden');
+        } catch (error) {
+            console.error('Error saving file:', error);
+            store.dispatch('ui/addError', {
+                id: Date.now(),
+                message: `Failed to save file: ${error.message}`
+            });
+        }
     }
 
     formatDate(dateString) {
@@ -797,6 +983,49 @@ class App {
     showLoginForm() {
         document.getElementById('login-container')?.classList.remove('hidden');
         document.getElementById('app-container')?.classList.add('hidden');
+    }
+
+    // Clean up file path - remove leading/trailing slashes and multiple slashes
+    cleanPath(path) {
+        // Remove leading/trailing slashes and multiple slashes
+        let cleaned = path.replace(/^\/+|\/+$/g, '').replace(/\/+/g, '/');
+        // Remove 'files/' prefix if it exists
+        cleaned = cleaned.replace(/^files\//, '');
+        return cleaned;
+    }
+
+    async deleteFile(path) {
+        if (!confirm(`Are you sure you want to delete ${path}?`)) {
+            return;
+        }
+
+        try {
+            const cleanedPath = this.cleanPath(path);
+            
+            const response = await fetch(`${API_BASE}/files/${cleanedPath}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${store.getState('auth.token')}`
+                }
+            });
+            
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Failed to delete file');
+            }
+            
+            await this.loadFiles();
+            store.dispatch('ui/addSuccess', {
+                id: Date.now(),
+                message: 'File deleted successfully'
+            });
+        } catch (error) {
+            console.error('Error deleting file:', error);
+            store.dispatch('ui/addError', {
+                id: Date.now(),
+                message: `Failed to delete file: ${error.message}`
+            });
+        }
     }
 }
 

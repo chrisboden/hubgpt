@@ -1,45 +1,64 @@
-# repo_tools/generate_requirements.py
-import subprocess
-import os
-import tempfile
-import shutil
-import requests
-import ast
-from termcolor import colored
-from pathspec import PathSpec
-from pathspec.patterns import GitWildMatchPattern
-import traceback
-
 def validate_package_on_pypi(package_name):
     """Check if a package exists on PyPI"""
-    url = f"https://pypi.org/pypi/{package_name}/json"
+    # Remove any extras from package name for validation
+    base_package = package_name.split('[')[0]
+    url = f"https://pypi.org/pypi/{base_package}/json"
     try:
         response = requests.get(url)
         return response.status_code == 200
     except requests.RequestException:
         return False
 
-def extract_imports_from_file(file_path):
-    """Extract all import statements from a Python file"""
-    try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-        
-        tree = ast.parse(content)
-        imports = set()
-        
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                for name in node.names:
-                    imports.add(name.name.split('.')[0])
-            elif isinstance(node, ast.ImportFrom):
-                if node.module:
-                    imports.add(node.module.split('.')[0])
-                    
-        return imports
-    except Exception as e:
-        print(colored(f"Warning: Could not parse {file_path}: {str(e)}", 'yellow'))
-        return set()
+# Package versions to use
+PACKAGE_VERSIONS = {
+    'aiofiles': '23.2.1',
+    'alembic': '1.13.1',
+    'beautifulsoup4': '4.12.3',
+    'duckdb': '0.9.2',
+    'duckduckgo-search': '4.1.1',
+    'fastapi': '0.109.0',
+    'google-generativeai': '0.3.2',
+    'halo': '0.0.31',
+    'markdown': '3.5.2',
+    'openai': '1.12.0',
+    'pandas': '2.2.0',
+    'passlib': '1.7.4',
+    'pillow': '10.2.0',
+    'psycopg2-binary': '2.9.9',
+    'pydantic': '2.5.3',
+    'pydantic-settings': '2.1.0',
+    'pyjwt': '2.8.0',
+    'python-dateutil': '2.8.2',
+    'python-dotenv': '1.0.0',
+    'python-frontmatter': '1.1.0',
+    'python-jose': '3.3.0',
+    'python-magic': '0.4.27',
+    'python-multipart': '0.0.6',
+    'pytube': '15.0.0',
+    'pyyaml': '6.0.1',
+    'requests': '2.31.0',
+    'shortuuid': '1.0.11',
+    'sqlalchemy': '2.0.25',
+    'tavily-python': '0.3.1',
+    'termcolor': '2.4.0',
+    'urllib3': '2.2.0',
+    'uvicorn': '0.27.0',
+    'wikipedia-api': '0.6.0',
+    'youtube-transcript-api': '0.6.2',
+    'yt-dlp': '2023.12.30'
+}
+
+def normalize_package_name(name):
+    """Normalize package name to use hyphens and remove any version info"""
+    name = name.lower().replace('_', '-').split('==')[0]
+    return name
+
+def get_package_with_version(name):
+    """Get package name with its version"""
+    name = normalize_package_name(name)
+    if name in PACKAGE_VERSIONS:
+        return f"{name}=={PACKAGE_VERSIONS[name]}"
+    return name
 
 def generate_requirements():
     """Generate requirements.txt using both pipreqs and direct import scanning"""
@@ -47,7 +66,8 @@ def generate_requirements():
         print(colored("Generating requirements.txt...", 'blue'))
         
         # Get the root directory (one level up from current script)
-        root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        root_dir = os.path.dirname(script_dir)
         print(colored(f"Scanning directory: {root_dir}", 'blue'))
 
         # Define target directories for different dependency types
@@ -55,6 +75,15 @@ def generate_requirements():
             'api': ['api'],  # Core API dependencies
             'tools': ['tools'],  # Tool-specific dependencies
             'utils': ['utils']  # Utility dependencies
+        }
+
+        # Internal modules to exclude (including common patterns)
+        internal_modules = {
+            'api', 'tools', 'utils', 'models', 'routers', 'services',
+            'api_utils', 'log_utils', 'chat_utils', 'file_utils',
+            'tool_utils', 'prompt_utils', 'user_file_utils', 'db_utils',
+            'search_utils', 'message_utils', 'notion_utils', 'ui_utils',
+            'llm_utils', 'scrape_utils', 'config', 'database', 'frontmatter'
         }
 
         # Get list of our own Python modules to exclude
@@ -68,6 +97,7 @@ def generate_requirements():
             if os.path.isdir(os.path.join(root_dir, d)) and 
             os.path.exists(os.path.join(root_dir, d, '__init__.py'))
         })
+        local_modules.update(internal_modules)
         print(colored(f"Excluding local modules: {', '.join(local_modules)}", 'blue'))
 
         # Read .gitignore patterns
@@ -140,28 +170,29 @@ def generate_requirements():
             'dotenv': 'python-dotenv',
             'tavily': 'tavily-python',
             'genai': 'google-generativeai',
-            'wikipediaapi': 'Wikipedia-API',
+            'wikipediaapi': 'wikipedia-api',
             'dateutil': 'python-dateutil',
             'PIL': 'pillow',
-            'jwt': 'PyJWT',
-            'yaml': 'PyYAML'
+            'jwt': 'pyjwt',
+            'yaml': 'pyyaml',
+            'jose': 'python-jose'
         }
 
         # Core dependencies that should always be included
         core_dependencies = {
-            'fastapi': '0.109.0',
-            'uvicorn': '0.27.0',
-            'sqlalchemy': '2.0.25',
-            'alembic': '1.13.1',
-            'python-jose[cryptography]': '3.3.0',
-            'passlib[bcrypt]': '1.7.4',
-            'python-multipart': '0.0.6',
-            'python-dotenv': '1.0.0',
-            'pydantic': '2.5.3',
-            'pydantic-settings': '2.1.0',
-            'psycopg2-binary': '2.9.9',
-            'aiofiles': '23.2.1',
-            'python-magic': '0.4.27'
+            'fastapi': True,
+            'uvicorn': True,
+            'sqlalchemy': True,
+            'alembic': True,
+            'python-jose': True,
+            'passlib': True,
+            'python-multipart': True,
+            'python-dotenv': True,
+            'pydantic': True,
+            'pydantic-settings': True,
+            'psycopg2-binary': True,
+            'aiofiles': True,
+            'python-magic': True
         }
 
         # Development dependencies
@@ -208,31 +239,34 @@ def generate_requirements():
         for category, imports in category_imports.items():
             for imp in imports:
                 if imp in package_mappings:
-                    normalized_name = package_mappings[imp].lower()
+                    normalized_name = package_mappings[imp]
                 elif imp not in stdlib_modules and imp not in local_modules:
-                    normalized_name = imp.lower()
+                    normalized_name = normalize_package_name(imp)
                 else:
                     continue
                 final_packages[category].add(normalized_name)
 
         # Add core dependencies to API category
-        for package, version in core_dependencies.items():
-            final_packages['api'].add(f"{package}=={version}")
+        for package in core_dependencies:
+            final_packages['api'].add(package)
 
         # Add dev dependencies
         for package, version in dev_dependencies.items():
             final_packages['dev'].add(f"{package}=={version}")
 
-        # Validate packages against PyPI
+        # Validate packages against PyPI and add versions
         print(colored("\nValidating packages on PyPI...", 'blue'))
         invalid_packages = set()
         for category in final_packages:
-            for pkg in final_packages[category].copy():
+            versioned_packages = set()
+            for pkg in final_packages[category]:
                 pkg_name = pkg.split('==')[0]
                 if not validate_package_on_pypi(pkg_name):
                     print(colored(f"Warning: Package '{pkg_name}' not found on PyPI", 'yellow'))
                     invalid_packages.add(pkg)
-                    final_packages[category].remove(pkg)
+                else:
+                    versioned_packages.add(get_package_with_version(pkg))
+            final_packages[category] = versioned_packages
 
         if invalid_packages:
             print(colored("\nRemoved invalid packages:", 'yellow'))
@@ -241,6 +275,7 @@ def generate_requirements():
 
         # Write final requirements.txt
         requirements_path = os.path.join(root_dir, 'requirements.txt')
+        print(colored(f"\nWriting requirements to: {requirements_path}", 'blue'))
         with open(requirements_path, 'w') as f:
             f.write("# API Core Dependencies\n")
             f.write('\n'.join(sorted(final_packages['api'])))
@@ -262,4 +297,4 @@ def generate_requirements():
         traceback.print_exc()
 
 if __name__ == "__main__":
-    generate_requirements()
+    generate_requirements() 

@@ -133,19 +133,24 @@
             </div>
 
             <!-- Settings Sidebar -->
-            <div id="settings-sidebar" class="fixed inset-y-0 right-0 w-96 bg-white border-l shadow-lg transform translate-x-full transition-transform duration-200 ease-in-out">
-                <div class="p-4">
-                    <div class="flex justify-between items-center mb-6">
-                        <h2 class="text-xl font-bold">Settings</h2>
-                        <button id="close-settings" class="text-gray-500 hover:text-gray-700">
-                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                        </button>
+            <div id="settings-sidebar" class="fixed inset-y-0 right-0 w-96 bg-white border-l shadow-lg transform translate-x-full transition-transform duration-200 ease-in-out flex flex-col">
+                <!-- Tab Bar -->
+                <div class="p-4 border-b flex items-center justify-between bg-white">
+                    <div class="flex space-x-4">
+                        <button id="advisors-tab" class="px-3 py-2 text-sm font-medium rounded-md bg-blue-50 text-blue-700">Advisors</button>
+                        <button id="files-tab" class="px-3 py-2 text-sm font-medium rounded-md text-gray-500 hover:text-gray-700">Files</button>
                     </div>
+                    <button id="close-settings" class="text-gray-500 hover:text-gray-700">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
 
+                <!-- Scrollable Content Area -->
+                <div class="flex-1 overflow-y-auto">
                     <!-- Advisor Management -->
-                    <div class="mb-6">
+                    <div id="advisors-panel" class="p-4">
                         <h3 class="text-lg font-semibold mb-4">Manage Advisors</h3>
                         <select id="advisor-edit-select" class="w-full p-2 border rounded mb-4">
                             <option value="">Select an advisor to edit...</option>
@@ -190,7 +195,7 @@
                     </div>
 
                     <!-- File Management -->
-                    <div class="mb-6">
+                    <div id="files-panel" class="p-4 hidden">
                         <h3 class="text-lg font-semibold mb-4">Files</h3>
                         <div id="file-dropzone" class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-500 transition-colors">
                             <div class="text-gray-500">

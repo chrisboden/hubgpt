@@ -1,0 +1,20 @@
+[build]
+builder = "nixpacks"
+buildCommand = "pip install -r requirements.txt"
+
+[deploy]
+startCommand = "uvicorn api.main:app --host 0.0.0.0 --port $PORT"
+healthcheckPath = "/health"
+healthcheckTimeout = 100
+restartPolicyType = "on_failure"
+
+[volume]
+mountPath = "/data"
+size = "5"  # 5GB volume size
+
+[[services]]
+name = "hubgpt-api"
+envs = [
+    "ENV=production",
+    "RAILWAY_RUN_UID=0"  # Ensure proper volume permissions
+] 
