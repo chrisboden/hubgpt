@@ -181,6 +181,9 @@ cython_debug/
 
 # Create empty .gitkeep files in these directories to preserve them
 
+!api/static/app/lib/
+
+
 !/advisors/chats/.gitkeep
 !/advisors/ideas/.gitkeep
 !/advisors/archive/.gitkeep
