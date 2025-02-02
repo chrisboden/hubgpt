@@ -95,14 +95,14 @@ DEFAULT_MAX_TOKENS = int(os.getenv("DEFAULT_MAX_TOKENS", "1000"))
 # File Storage
 if IS_RAILWAY:
     # Railway Volume storage
-    STORAGE_ROOT = Path(os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "/data"))
+    DATA_ROOT = Path(os.getenv('RAILWAY_VOLUME_MOUNT_PATH', os.path.join(os.getcwd(), 'data')))
 else:
     # Local storage
-    STORAGE_ROOT = Path(os.getenv("STORAGE_PATH", Path(__file__).parent.parent / "storage"))
+    DATA_ROOT = Path(os.getenv("STORAGE_PATH", Path(__file__).parent.parent / "storage"))
 
 # Ensure storage directories exist
-USERS_ROOT = STORAGE_ROOT / "users"
-SHARED_ROOT = STORAGE_ROOT / "shared"
+USERS_ROOT = DATA_ROOT / 'users'
+SHARED_ROOT = DATA_ROOT / 'shared'
 
 # Create directories if they don't exist (local development only)
 if not IS_RAILWAY:

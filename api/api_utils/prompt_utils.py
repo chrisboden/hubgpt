@@ -123,24 +123,43 @@ def process_file_tag(match: re.Match, user: Optional[User] = None, db: Optional[
         if user and db:
             logger.info("Attempting user-specific file access")
             try:
-                content = get_user_file_content(db, user.id, file_path)
-                logger.info(f"Successfully read user file: length={len(content)}")
-                return content
+                # Get the file path from the user's directory
+                user_file_path = config.USERS_ROOT / str(user.id) / "files" / file_path
+                logger.info(f"Looking for file at: {user_file_path}")
+                
+                if user_file_path.exists():
+                    with open(user_file_path, 'r') as f:
+                        content = f.read().strip()
+                        logger.info(f"Successfully read user file: length={len(content)}")
+                        return content
+                
+                # Try shared directory as fallback
+                shared_file_path = config.SHARED_ROOT / file_path
+                if shared_file_path.exists():
+                    with open(shared_file_path, 'r') as f:
+                        content = f.read().strip()
+                        logger.info(f"Successfully read shared file: length={len(content)}")
+                        return content
+                
+                logger.warning(f"File not found in user or shared directories: {file_path}")
+                return f"[Error: File not found: {file_path}]"
+                    
             except Exception as e:
                 logger.warning(f"User file access failed: {str(e)}")
-                # Fall through to legacy path handling
+                return f"[Error reading file {file_path}: {str(e)}]"
         
-        # Legacy path handling
-        logger.info("Attempting legacy file access")
-        abs_path = os.path.join(get_workspace_root(), file_path)
-        if not os.path.exists(abs_path):
-            logger.error(f"File not found: path={abs_path}")
-            return f"[Error: File not found: {file_path}]"
+        # Legacy path handling as fallback (for local development)
+        if not config.IS_RAILWAY:
+            logger.info("Attempting legacy file access (local only)")
+            abs_path = os.path.join(get_workspace_root(), file_path)
+            if os.path.exists(abs_path):
+                with open(abs_path, 'r') as f:
+                    content = f.read().strip()
+                    logger.info(f"Successfully read legacy file: length={len(content)}")
+                    return content
             
-        with open(abs_path, 'r') as f:
-            content = f.read().strip()
-            logger.info(f"Successfully read legacy file: length={len(content)}")
-            return content
+        logger.error(f"File not found in any location: {file_path}")
+        return f"[Error: File not found: {file_path}]"
             
     except Exception as e:
         logger.error(f"Error reading file: {str(e)}")
