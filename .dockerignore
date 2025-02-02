@@ -3,18 +3,42 @@
 
 # Don't ignore these directories and files
 !api/
+!tools/
+!utils/
+!storage/
+!teams/
+!repo_tools/
+!notepads/
+!me/
+!files/
+!content/
+!cursor_prompts/
+!advisors/
 !requirements.txt
 !.env
+!.nixpacks/
 
-# But still ignore these within the api directory
-api/**/__pycache__/
-api/**/*.pyc
-api/logs/
-api/temp/
-api/tests/
-api/.pytest_cache/
-api/data/
-api/database.db
+# Ignore unnecessary files within allowed directories
+**/__pycache__/
+**/*.pyc
+**/logs/
+**/temp/
+**/tests/
+**/.pytest_cache/
+**/database.db
+**/.DS_Store
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/.Python
+**/env/
+**/venv/
+**/.env
+**/.venv
+**/ENV/
+**/.git/
+**/.idea/
+**/.vscode/
 
 # Explicitly don't ignore static files
 !api/static/
