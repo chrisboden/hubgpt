@@ -2,7 +2,7 @@ import { api } from './lib/api-client.js';
 import { store } from './lib/store.js';
 
 // Dynamically set API base URL based on current location
-const API_BASE = `${window.location.protocol}//${window.location.hostname}:8000/api/v1`;
+const API_BASE = `${window.location.origin}/api/v1`;
 const authToken = localStorage.getItem('authToken');
 
 class App {

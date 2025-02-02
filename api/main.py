@@ -77,19 +77,22 @@ app.include_router(snippets.router, tags=["snippets"])
 # Serve static files
 static_dir = Path(__file__).parent / "static"
 if static_dir.exists():
-    # Mount the app directory
-    app.mount("/static/app", StaticFiles(directory=str(static_dir / "app"), html=True), name="app")
-    # Mount the root static directory
+    logger.info(f"Serving static files from: {static_dir}")
+    # Mount the app directory first
+    app.mount("/static/app", StaticFiles(directory=str(static_dir / "app"), html=True), name="static_app")
+    # Then mount the root static directory
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 @app.get("/", response_class=HTMLResponse, description="Serve the index.html file")
 async def read_root():
     """Serve the index.html file"""
     try:
-        index_path = static_dir / "index.html"
+        index_path = static_dir / "app" / "index.html"
+        logger.info(f"Trying to serve index from: {index_path}")
         if index_path.exists():
             return FileResponse(index_path)
         else:
+            logger.warning(f"Index file not found at: {index_path}")
             return HTMLResponse("<h1>Welcome to HubGPT API</h1>")
     except Exception as e:
         logger.error(f"Error serving index.html: {e}")

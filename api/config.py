@@ -42,9 +42,12 @@ CORS_ORIGINS = [
     "http://localhost",
     "http://localhost:8000",
     "http://localhost:3000",
+    "http://127.0.0.1:8000",
+    "http://127.0.0.1:3000",
     "https://localhost",
     "https://localhost:8000",
     "https://localhost:3000",
+    "https://wonderful-creativity-production.up.railway.app"
 ]
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_METHODS = ["*"]
