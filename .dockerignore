@@ -8,4 +8,4 @@ __pycache__/
 !api/static/
 !api/static/app/
 !api/static/app/lib/
-!api/static/app/components/ 
+!api/static/app/components/
