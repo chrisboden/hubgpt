@@ -21,5 +21,5 @@ envs = [
     "DATABASE_URL=sqlite:////data/hubgpt.db",  # Store database in persistent volume
     "API_USERNAME=admin",
     "API_PASSWORD=password",  # Change this to a secure password
-    "JWT_SECRET=your-secret-key-for-production"  # Change this to a secure secret
+    "JWT_SECRET_KEY=your-secret-key-for-production"  # Changed to use JWT_SECRET_KEY consistently
 ] 
