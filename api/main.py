@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse
 import os
 from pathlib import Path
 import logging
@@ -67,12 +67,36 @@ async def startup_event():
         logger.error(f"Error during startup: {str(e)}")
         raise e
 
-# Include routers
-app.include_router(auth.router, prefix=f"{config.API_PREFIX}/auth", tags=["auth"])
-app.include_router(advisors.router, prefix=f"{config.API_PREFIX}/advisors", tags=["advisors"])
-app.include_router(chat.router, prefix=f"{config.API_PREFIX}/chat", tags=["chat"])
-app.include_router(files.router, prefix=f"{config.API_PREFIX}/files", tags=["files"])
-app.include_router(snippets.router, tags=["snippets"])
+# Include routers with proper trailing slash configuration
+app.include_router(
+    auth.router,
+    prefix=f"{config.API_PREFIX}/auth",
+    tags=["auth"],
+    include_in_schema=True
+)
+app.include_router(
+    advisors.router,
+    prefix=f"{config.API_PREFIX}/advisors",
+    tags=["advisors"],
+    include_in_schema=True
+)
+app.include_router(
+    chat.router,
+    prefix=f"{config.API_PREFIX}/chat",
+    tags=["chat"],
+    include_in_schema=True
+)
+app.include_router(
+    files.router,
+    prefix=f"{config.API_PREFIX}/files",
+    tags=["files"],
+    include_in_schema=True
+)
+app.include_router(
+    snippets.router,
+    tags=["snippets"],
+    include_in_schema=True
+)
 
 # Serve static files
 static_dir = Path(__file__).parent / "static"
@@ -82,6 +106,8 @@ if static_dir.exists():
     app.mount("/static/app", StaticFiles(directory=str(static_dir / "app"), html=True), name="static_app")
     # Then mount the root static directory
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+else:
+    logger.error(f"Static directory not found at: {static_dir}")
 
 @app.get("/", response_class=HTMLResponse, description="Serve the index.html file")
 async def read_root():
@@ -98,12 +124,12 @@ async def read_root():
         logger.error(f"Error serving index.html: {e}")
         return HTMLResponse("<h1>Welcome to HubGPT API</h1>")
 
+@app.get("/verify")
+async def verify_credentials(current_user: User = Depends(get_current_user_or_default)):
+    """Verify credentials endpoint"""
+    return {"status": "ok"}
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
-    return {"status": "ok"}
-
-@app.get("/verify", dependencies=[Depends(get_current_user_or_default)])
-async def verify_credentials():
-    """Verify credentials endpoint"""
     return {"status": "ok"}

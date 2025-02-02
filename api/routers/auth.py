@@ -15,7 +15,10 @@ from api.services.auth_service import (
 )
 from api import config
 
-router = APIRouter(tags=["authentication"])
+router = APIRouter(
+    tags=["authentication"],
+    redirect_slashes=False  # Prevent automatic slash redirection
+)
 security = HTTPBasic()
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
