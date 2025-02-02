@@ -10,17 +10,32 @@ class App {
     }
 
     async checkAuth() {
-        const credentials = localStorage.getItem('auth');
-        if (credentials) {
-            const [username, password] = atob(credentials).split(':');
-            try {
-                await api.verifyAuth(username, password);
-                store.dispatch('auth/login', { username });
+        try {
+            // Try JWT token first
+            const token = localStorage.getItem('authToken');
+            if (token) {
+                await api.verifyAuth();
+                store.dispatch('auth/login', { token });
                 this.initializeApp();
-            } catch {
-                this.showLoginForm();
+                return;
             }
-        } else {
+
+            // Fallback to basic auth
+            const basicAuth = localStorage.getItem('basicAuth');
+            if (basicAuth) {
+                const [username, password] = atob(basicAuth).split(':');
+                try {
+                    await api.verifyAuth();
+                    store.dispatch('auth/login', { username });
+                    this.initializeApp();
+                    return;
+                } catch {
+                    localStorage.removeItem('basicAuth');
+                }
+            }
+
+            this.showLoginForm();
+        } catch {
             this.showLoginForm();
         }
     }
@@ -55,16 +70,24 @@ class App {
             e.preventDefault();
             const username = e.target.username.value;
             const password = e.target.password.value;
+            const email = e.target.email?.value;
             
             try {
-                await api.verifyAuth(username, password);
-                localStorage.setItem('auth', btoa(`${username}:${password}`));
-                store.dispatch('auth/login', { username });
+                // Try to register first (will fail if user exists)
+                try {
+                    await api.register(username, password, email || `${username}@example.com`);
+                } catch {
+                    // Ignore registration errors
+                }
+
+                // Then try to login
+                const data = await api.login(username, password);
+                store.dispatch('auth/login', { token: data.access_token });
                 this.initializeApp();
             } catch (error) {
                 store.dispatch('ui/addError', {
                     id: Date.now(),
-                    message: 'Invalid credentials'
+                    message: 'Login failed'
                 });
             }
         });
@@ -72,6 +95,7 @@ class App {
         // Message input
         const messageInput = document.getElementById('message-input');
         const sendButton = document.getElementById('send-button');
+        const cancelButton = document.getElementById('cancel-button');
 
         messageInput?.addEventListener('keypress', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -81,6 +105,7 @@ class App {
         });
 
         sendButton?.addEventListener('click', () => this.sendMessage());
+        cancelButton?.addEventListener('click', () => this.cancelMessage());
 
         // File dropzone
         const dropzone = document.getElementById('file-dropzone');
@@ -118,9 +143,10 @@ class App {
         });
 
         store.subscribe('chat.isStreaming', (streaming) => {
-            if (messageInput && sendButton) {
+            if (messageInput && sendButton && cancelButton) {
                 messageInput.disabled = streaming;
                 sendButton.disabled = streaming;
+                cancelButton.style.display = streaming ? 'inline-block' : 'none';
             }
         });
 
@@ -232,46 +258,16 @@ class App {
             e.preventDefault();
             const formData = new FormData(e.target);
             
-            // Safely get form values with null checks
-            const name = formData.get('advisor-name');
-            const model = formData.get('advisor-model');
-            const temperature = formData.get('advisor-temperature');
-            const gateway = formData.get('advisor-gateway');
-            const tools = formData.get('advisor-tools');
-            const systemPrompt = formData.get('advisor-prompt');
-
-            // Validate required fields
-            if (!name) {
-                store.dispatch('ui/addError', {
-                    id: Date.now(),
-                    message: 'Advisor name is required'
-                });
-                return;
-            }
-
-            if (!model) {
-                store.dispatch('ui/addError', {
-                    id: Date.now(),
-                    message: 'Model is required'
-                });
-                return;
-            }
-
-            if (!systemPrompt) {
-                store.dispatch('ui/addError', {
-                    id: Date.now(),
-                    message: 'System prompt is required'
-                });
-                return;
-            }
-
             const advisorData = {
-                name: name.trim(),
-                model: model.trim(),
-                temperature: parseFloat(temperature || '0.7'),
-                gateway: gateway ? gateway.trim() : 'openrouter',
-                tools: tools ? tools.trim() : '',
-                system_prompt: systemPrompt.trim()
+                name: formData.get('advisor-name'),
+                model: formData.get('advisor-model'),
+                temperature: parseFloat(formData.get('advisor-temperature')),
+                gateway: formData.get('advisor-gateway'),
+                tools: formData.get('advisor-tools')?.split(',').map(t => t.trim()).filter(t => t) || [],
+                messages: [{
+                    role: 'system',
+                    content: formData.get('advisor-prompt')
+                }]
             };
 
             try {
@@ -281,347 +277,100 @@ class App {
                     message: 'Advisor saved successfully'
                 });
                 await this.loadAdvisors();
-                
-                // Close the sidebar after successful save
-                settingsSidebar?.classList.add('translate-x-full');
             } catch (error) {
                 store.dispatch('ui/addError', {
                     id: Date.now(),
-                    message: `Failed to save advisor: ${error.message}`
+                    message: 'Failed to save advisor'
                 });
             }
         });
 
-        createNewAdvisorBtn?.addEventListener('click', () => {
-            advisorEditSelect.value = 'new';
-            this.clearAdvisorForm();
+        // Advisor selection
+        document.getElementById('advisor-select')?.addEventListener('change', async (e) => {
+            const advisorId = e.target.value;
+            store.setState('advisors.selected', advisorId);
+            if (advisorId) {
+                await this.loadChatHistory(advisorId);
+            } else {
+                store.setState('chat.history', []);
+                store.setState('chat.currentId', null);
+                store.setState('chat.messages', []);
+                this.renderChatHistory();
+                this.renderMessages();
+            }
+        });
+
+        // System Message Editor
+        const systemMessageModal = document.getElementById('system-message-modal');
+        const systemMessageEditor = document.getElementById('system-message-editor');
+        const closeSystemMessageModal = document.getElementById('close-system-message-modal');
+        const previewSystemMessage = document.getElementById('preview-system-message');
+        const saveSystemMessage = document.getElementById('save-system-message');
+        const previewModal = document.getElementById('preview-modal');
+        const closePreviewModal = document.getElementById('close-preview-modal');
+        const previewContent = document.getElementById('preview-content');
+
+        // Add edit button next to the system prompt textarea
+        const promptTextarea = document.querySelector('[name="advisor-prompt"]');
+        if (promptTextarea) {
+            const editButton = document.createElement('button');
+            editButton.type = 'button';
+            editButton.className = 'mt-2 text-blue-500 hover:text-blue-600';
+            editButton.textContent = 'Edit in Full Screen';
+            editButton.onclick = () => {
+                systemMessageEditor.value = promptTextarea.value;
+                systemMessageModal.classList.remove('hidden');
+            };
+            promptTextarea.parentNode.appendChild(editButton);
+        }
+
+        // Close system message modal
+        closeSystemMessageModal?.addEventListener('click', () => {
+            systemMessageModal.classList.add('hidden');
+        });
+
+        // Preview system message
+        previewSystemMessage?.addEventListener('click', () => {
+            previewContent.innerHTML = marked.parse(systemMessageEditor.value);
+            previewModal.classList.remove('hidden');
+        });
+
+        // Close preview modal
+        closePreviewModal?.addEventListener('click', () => {
+            previewModal.classList.add('hidden');
+        });
+
+        // Save system message
+        saveSystemMessage?.addEventListener('click', () => {
+            if (promptTextarea) {
+                promptTextarea.value = systemMessageEditor.value;
+            }
+            systemMessageModal.classList.add('hidden');
         });
     }
 
     async initializeApp() {
-        document.getElementById('login-form')?.classList.add('hidden');
-        document.getElementById('app')?.classList.remove('hidden');
-
-        // Load advisors
-        try {
-            const advisors = await api.listAdvisors();
-            store.setState('advisors.list', advisors);
-            this.renderAdvisors();
-        } catch (error) {
-            store.dispatch('ui/addError', {
-                id: Date.now(),
-                message: 'Failed to load advisors'
-            });
-        }
-
-        // Load files
-        try {
-            const files = await api.listFiles();
-            store.setState('files.list', files.files || []);
-        } catch (error) {
-            store.dispatch('ui/addError', {
-                id: Date.now(),
-                message: 'Failed to load files'
-            });
-        }
-    }
-
-    renderAdvisors() {
-        const select = document.getElementById('advisor-select');
-        if (!select) return;
-
-        const advisors = store.getState('advisors.list');
-        const currentValue = select.value;
-
-        // Clear all options except the placeholder
-        while (select.options.length > 1) {
-            select.remove(1);
-        }
-
-        advisors.forEach(advisor => {
-            const option = document.createElement('option');
-            option.value = advisor.name;
-            option.textContent = `${advisor.name} (${advisor.model})`;
-            select.appendChild(option);
-        });
-
-        // Restore selection if it exists in new list
-        if (currentValue && advisors.some(a => a.name === currentValue)) {
-            select.value = currentValue;
-        }
-
-        // Add change handler if not already added
-        if (!select.dataset.hasChangeHandler) {
-            select.addEventListener('change', async () => {
-                const advisorId = select.value;
-                if (advisorId) {
-                    store.dispatch('advisors/select', advisorId);
-                    await this.loadChatHistory(advisorId);
-                }
-            });
-            select.dataset.hasChangeHandler = 'true';
-        }
-    }
-
-    async loadChatHistory(advisorId) {
-        const historyContainer = document.getElementById('chat-history');
-        if (!historyContainer) return;
-
-        try {
-            const chats = await api.listChats(advisorId);
-            historyContainer.innerHTML = '';
-
-            chats.forEach(chat => {
-                const chatItem = document.createElement('div');
-                chatItem.className = 'p-2 bg-muted/10 rounded hover:bg-muted/20 cursor-pointer flex justify-between items-center';
-                
-                const info = document.createElement('span');
-                info.className = 'flex-1';
-                info.textContent = `${this.formatDate(chat.updated_at)} (${chat.message_count} msgs)`;
-                
-                const deleteBtn = document.createElement('button');
-                deleteBtn.className = 'ml-2 text-destructive hover:text-destructive/80';
-                deleteBtn.textContent = '×';
-                deleteBtn.onclick = (e) => {
-                    e.stopPropagation();
-                    if (confirm('Delete this chat?')) {
-                        this.deleteChat(chat.id);
-                    }
-                };
-
-                chatItem.appendChild(info);
-                chatItem.appendChild(deleteBtn);
-                
-                chatItem.onclick = () => this.loadChat(chat.id);
-                historyContainer.appendChild(chatItem);
-            });
-
-            // If no current chat is selected and we have chats, load the most recent one
-            if (!store.getState('chat.currentId') && chats.length > 0) {
-                await this.loadChat(chats[0].id);
-            }
-        } catch (error) {
-            console.error('Error loading chat history:', error);
-            store.dispatch('ui/addError', {
-                id: Date.now(),
-                message: 'Failed to load chat history'
-            });
-        }
-    }
-
-    async deleteChat(chatId) {
-        try {
-            await api.request(`/chat/${chatId}`, { method: 'DELETE' });
-            const advisorId = store.getState('advisors.selected');
-            if (advisorId) {
-                await this.loadChatHistory(advisorId);
-            }
-        } catch (error) {
-            console.error('Error deleting chat:', error);
-            store.dispatch('ui/addError', {
-                id: Date.now(),
-                message: 'Failed to delete chat'
-            });
-        }
-    }
-
-    async loadChat(chatId) {
-        try {
-            // First try to load from current chats
-            let chat = await api.getChat(chatId).catch(() => null);
-            
-            // If not found in current chats, try archived chats
-            if (!chat) {
-                const archivedChats = await api.getArchivedChats();
-                const archivedChatId = archivedChats.find(c => c.startsWith(chatId));
-                if (archivedChatId) {
-                    chat = await api.getArchivedChat(archivedChatId);
-                }
-            }
-
-            if (!chat) {
-                throw new Error('Chat not found');
-            }
-
-            store.setState('chat.currentId', chat.id);
-            store.setState('chat.messages', chat.messages || []);
-            
-            // Update UI
-            this.renderMessages();
-            this.scrollToBottom();
-        } catch (error) {
-            store.dispatch('ui/addError', {
-                id: Date.now(),
-                message: `Failed to load chat: ${error.message}`
-            });
-        }
-    }
-
-    renderMessages() {
-        const container = document.getElementById('messages-container');
-        if (!container) return;
-
-        const messages = store.getState('chat.messages');
+        document.getElementById('login-container')?.classList.add('hidden');
+        document.getElementById('app-container')?.classList.remove('hidden');
         
-        // If container is empty or number of bubbles doesn't match messages, do a full render
-        if (container.children.length !== messages.length) {
-            container.innerHTML = '';
-            messages.forEach(message => {
-                const bubble = document.createElement('chat-bubble');
-                bubble.setAttribute('role', message.role);
-                bubble.setAttribute('timestamp', this.formatDate(message.timestamp));
-                bubble.content = message.content;
-                container.appendChild(bubble);
-            });
-        } else {
-            // Otherwise just update the last message's content
-            const lastBubble = container.lastElementChild;
-            if (lastBubble) {
-                lastBubble.content = messages[messages.length - 1].content;
-            }
-        }
-
-        container.scrollTop = container.scrollHeight;
-    }
-
-    async handleFiles(files) {
-        store.setState('files.uploading', true);
-        const errors = [];
-
-        for (const file of files) {
-            try {
-                await api.uploadFile(file);
-            } catch (error) {
-                errors.push(`Failed to upload ${file.name}: ${error.message}`);
-            }
-        }
-
-        if (errors.length) {
-            store.dispatch('ui/addError', {
-                id: Date.now(),
-                message: errors.join('\n')
-            });
-        }
-
-        // Refresh file list
         try {
-            const response = await api.listFiles();
-            store.setState('files.list', response.files || []);
-        } catch (error) {
-            console.error('Failed to refresh file list:', error);
-        }
-
-        store.setState('files.uploading', false);
-    }
-
-    async sendMessage() {
-        const messageInput = document.getElementById('message-input');
-        const message = messageInput.value.trim();
-        if (!message) return;
-
-        const chatId = store.getState('chat.currentId');
-        const advisor = store.getState('advisors.selected');
-        if (!chatId || !advisor) {
-            store.dispatch('ui/addError', {
-                id: Date.now(),
-                message: 'No active chat or advisor selected'
-            });
-            return;
-        }
-
-        // Get advisor data to check for gateway configuration
-        const advisorData = await api.getAdvisor(advisor);
-        const gateway = advisorData.gateway || 'openrouter';  // Default to openrouter if not specified
-
-        messageInput.value = '';
-        messageInput.style.height = 'auto';
-
-        // Add user message to UI immediately
-        const userMessage = { role: 'user', content: message };
-        store.dispatch('chat/addMessage', userMessage);
-        this.renderMessages();
-
-        try {
-            // Send message with gateway configuration
-            const response = await api.sendMessage(chatId, message, gateway);
-            
-            if (response.ok) {
-                const reader = response.body.getReader();
-                this.currentReader = reader;
-                
-                let assistantMessage = { role: 'assistant', content: '' };
-                store.dispatch('chat/addMessage', assistantMessage);
-                this.renderMessages(); // Initial render of empty assistant message
-
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-
-                    const text = new TextDecoder().decode(value);
-                    const lines = text.split('\n');
-
-                    for (const line of lines) {
-                        if (line.startsWith('data: ')) {
-                            const data = line.slice(6);
-                            if (data === '[DONE]') continue;
-
-                            try {
-                                const parsed = JSON.parse(data);
-                                if (parsed.message && parsed.message.content) {
-                                    assistantMessage.content += parsed.message.content;
-                                    this.renderMessages();
-                                }
-                            } catch (e) {
-                                console.error('Error parsing SSE data:', e);
-                            }
-                        }
-                    }
-                }
-            }
+            await Promise.all([
+                this.loadAdvisors(),
+                this.loadFiles()
+            ]);
         } catch (error) {
             store.dispatch('ui/addError', {
                 id: Date.now(),
-                message: 'Failed to send message'
+                message: 'Failed to initialize app'
             });
-        } finally {
-            this.currentReader = null;
         }
-    }
-
-    formatDate(dateString) {
-        const date = new Date(dateString);
-        const now = new Date();
-        const diff = now - date;
-
-        if (diff < 60000) { // Less than 1 minute
-            return 'Just now';
-        } else if (diff < 3600000) { // Less than 1 hour
-            const minutes = Math.floor(diff / 60000);
-            return `${minutes}m ago`;
-        } else if (diff < 86400000) { // Less than 1 day
-            const hours = Math.floor(diff / 3600000);
-            return `${hours}h ago`;
-        } else {
-            return date.toLocaleDateString();
-        }
-    }
-
-    showLoginForm() {
-        document.getElementById('app')?.classList.add('hidden');
-        document.getElementById('login-form')?.classList.remove('hidden');
-        document.getElementById('login-error')?.classList.add('hidden');
-        
-        // Clear any stored credentials
-        localStorage.removeItem('auth');
-        store.dispatch('auth/logout');
     }
 
     async loadAdvisors() {
         try {
-            const advisors = await api.listAdvisors();
+            const advisors = await api.getAdvisors();
             store.setState('advisors.list', advisors);
-            
-            // Update both advisor selectors
+            this.renderAdvisors();
             this.renderAdvisorSelectors(advisors);
         } catch (error) {
             store.dispatch('ui/addError', {
@@ -631,124 +380,426 @@ class App {
         }
     }
 
-    renderAdvisorSelectors(advisors) {
-        // Main advisor selector
-        const advisorSelect = document.getElementById('advisor-select');
-        if (advisorSelect) {
-            advisorSelect.innerHTML = `
-                <option value="">Select an advisor</option>
-                ${advisors.map(advisor => `
-                    <option value="${advisor.name}">${advisor.name}</option>
-                `).join('')}
-            `;
-        }
-
-        // Edit advisor selector
-        const advisorEditSelect = document.getElementById('advisor-edit-select');
-        if (advisorEditSelect) {
-            advisorEditSelect.innerHTML = `
-                <option value="">Select an advisor to edit</option>
-                <option value="new">Create New Advisor</option>
-                ${advisors.map(advisor => `
-                    <option value="${advisor.name}">${advisor.name}</option>
-                `).join('')}
-            `;
+    async loadFiles() {
+        try {
+            const files = await api.getFiles();
+            store.setState('files.list', files);
+            this.renderFiles();
+        } catch (error) {
+            store.dispatch('ui/addError', {
+                id: Date.now(),
+                message: 'Failed to load files'
+            });
         }
     }
 
-    async loadAdvisorForEditing(advisorId) {
-        if (advisorId === 'new') {
-            this.clearAdvisorForm();
+    async loadChatHistory(advisorId) {
+        try {
+            const chats = await api.getChatHistory(advisorId);
+            store.setState('chat.history', chats);
+            this.renderChatHistory();
+        } catch (error) {
+            store.dispatch('ui/addError', {
+                id: Date.now(),
+                message: 'Failed to load chat history'
+            });
+        }
+    }
+
+    async loadChat(chatId) {
+        try {
+            const messages = await api.getMessages(chatId);
+            store.setState('chat.currentId', chatId);
+            store.setState('chat.messages', messages);
+            this.renderMessages();
+        } catch (error) {
+            store.dispatch('ui/addError', {
+                id: Date.now(),
+                message: 'Failed to load chat'
+            });
+        }
+    }
+
+    async deleteChat(chatId) {
+        try {
+            await api.deleteChat(chatId);
+            const currentId = store.getState('chat.currentId');
+            if (currentId === chatId) {
+                store.setState('chat.currentId', null);
+                store.setState('chat.messages', []);
+                this.renderMessages();
+            }
+            const advisorId = store.getState('advisors.selected');
+            await this.loadChatHistory(advisorId);
+        } catch (error) {
+            store.dispatch('ui/addError', {
+                id: Date.now(),
+                message: 'Failed to delete chat'
+            });
+        }
+    }
+
+    async sendMessage() {
+        const messageInput = document.getElementById('message-input');
+        const message = messageInput?.value.trim();
+        if (!message) return;
+
+        const chatId = store.getState('chat.currentId');
+        if (!chatId) {
+            store.dispatch('ui/addError', {
+                id: Date.now(),
+                message: 'No active chat'
+            });
             return;
         }
 
         try {
-            const advisor = await api.getAdvisor(advisorId);
-            console.log('Loaded advisor:', advisor);  // Debug log
-            
-            if (!advisor) {
-                throw new Error('Invalid advisor data received');
-            }
+            // Create AbortController for cancellation
+            this.currentController = new AbortController();
+            store.setState('chat.isStreaming', true);
 
-            // Set form values directly from the advisor object
-            document.getElementById('advisor-name').value = advisor.name || '';
-            document.getElementById('advisor-model').value = advisor.model || '';
-            document.getElementById('advisor-temperature').value = advisor.temperature || 0.7;
-            document.getElementById('advisor-gateway').value = advisor.gateway || '';
-            document.getElementById('advisor-tools').value = Array.isArray(advisor.tools) ? advisor.tools.join(', ') : '';
-            
-            // Get the system prompt - everything after the YAML front matter
-            let systemPrompt = '';
-            if (advisor.messages && advisor.messages.length > 0) {
-                systemPrompt = advisor.messages[0].content;
-            }
-            document.getElementById('advisor-prompt').value = systemPrompt;
+            // Add user message immediately
+            const messages = store.getState('chat.messages') || [];
+            const userMessage = { role: 'user', content: message };
+            store.setState('chat.messages', [...messages, userMessage]);
+            this.renderMessages();
+            messageInput.value = '';
 
-            // Show the form
-            document.getElementById('advisor-edit-form').classList.remove('hidden');
+            // Create placeholder for assistant message
+            const assistantMessage = { role: 'assistant', content: '' };
+            store.setState('chat.messages', [...messages, userMessage, assistantMessage]);
+            this.renderMessages();
+
+            // Send message and handle streaming response
+            const response = await api.sendMessage(chatId, message, this.currentController.signal);
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value);
+                const lines = chunk.split('\n');
+
+                for (const line of lines) {
+                    if (!line.trim() || !line.startsWith('data: ')) continue;
+
+                    try {
+                        const data = JSON.parse(line.slice(6));
+                        if (data.message?.content) {
+                            assistantMessage.content += data.message.content;
+                            const currentMessages = store.getState('chat.messages');
+                            store.setState('chat.messages', [
+                                ...currentMessages.slice(0, -1),
+                                assistantMessage
+                            ]);
+                            this.renderMessages();
+                        }
+                    } catch (error) {
+                        console.error('Error parsing chunk:', error);
+                    }
+                }
+            }
         } catch (error) {
-            console.error('Error loading advisor:', error);  // Debug log
-            store.dispatch('ui/addError', {
-                id: Date.now(),
-                message: `Failed to load advisor: ${error.message}`
-            });
-            // Hide the form on error
-            document.getElementById('advisor-edit-form').classList.add('hidden');
+            if (error.name === 'AbortError') {
+                store.dispatch('ui/addSuccess', {
+                    id: Date.now(),
+                    message: 'Message cancelled'
+                });
+            } else {
+                store.dispatch('ui/addError', {
+                    id: Date.now(),
+                    message: 'Failed to send message'
+                });
+            }
+        } finally {
+            store.setState('chat.isStreaming', false);
+            this.currentController = null;
         }
     }
 
-    clearAdvisorForm() {
-        document.getElementById('advisor-name').value = '';
-        document.getElementById('advisor-model').value = 'gpt-4';
-        document.getElementById('advisor-temperature').value = '0.7';
-        document.getElementById('advisor-gateway').value = '';
-        document.getElementById('advisor-tools').value = '';
-        document.getElementById('advisor-prompt').value = '';
+    async cancelMessage() {
+        const chatId = store.getState('chat.currentId');
+        if (!chatId || !this.currentController) return;
+
+        try {
+            this.currentController.abort();
+            await api.cancelMessage(chatId);
+        } catch (error) {
+            console.error('Error cancelling message:', error);
+        }
+    }
+
+    async handleFiles(files) {
+        for (const file of files) {
+            try {
+                store.dispatch('files/setUploading', {
+                    name: file.name,
+                    progress: 0
+                });
+
+                await api.uploadFile(file.name, file);
+
+                store.dispatch('ui/addSuccess', {
+                    id: Date.now(),
+                    message: `Uploaded ${file.name}`
+                });
+
+                await this.loadFiles();
+            } catch (error) {
+                store.dispatch('ui/addError', {
+                    id: Date.now(),
+                    message: `Failed to upload ${file.name}`
+                });
+            } finally {
+                store.dispatch('files/setUploading', null);
+            }
+        }
+    }
+
+    async loadAdvisorForEditing(advisorId) {
+        try {
+            const advisor = await api.getAdvisor(advisorId);
+            const form = document.getElementById('advisor-edit-form');
+            if (!form) return;
+
+            form.querySelector('[name="advisor-name"]').value = advisor.name;
+            form.querySelector('[name="advisor-model"]').value = advisor.model || '';
+            form.querySelector('[name="advisor-temperature"]').value = advisor.temperature || 1.0;
+            form.querySelector('[name="advisor-gateway"]').value = advisor.gateway || 'openrouter';
+            form.querySelector('[name="advisor-tools"]').value = advisor.tools?.join(', ') || '';
+            form.querySelector('[name="advisor-prompt"]').value = 
+                advisor.messages?.find(m => m.role === 'system')?.content || '';
+        } catch (error) {
+            store.dispatch('ui/addError', {
+                id: Date.now(),
+                message: 'Failed to load advisor'
+            });
+        }
     }
 
     async saveAdvisor(advisorData) {
-        if (!advisorData.name) {
-            throw new Error('Advisor name is required');
+        const advisorId = store.getState('advisors.editing');
+        if (advisorId) {
+            await api.updateAdvisor(advisorId, advisorData);
+        } else {
+            await api.createAdvisor(advisorData);
         }
+    }
 
-        // Create the advisor data structure
-        const data = {
-            name: advisorData.name,
-            model: advisorData.model,
-            temperature: parseFloat(advisorData.temperature),
-            gateway: advisorData.gateway || 'openrouter',
-            stream: true
-        };
+    renderAdvisors() {
+        const advisors = store.getState('advisors.list') || [];
+        const container = document.getElementById('advisor-list');
+        if (!container) return;
 
-        // Add tools if specified
-        if (advisorData.tools && advisorData.tools.length > 0) {
-            const toolsArray = advisorData.tools.split(',').map(t => t.trim()).filter(Boolean);
-            if (toolsArray.length > 0) {
-                data.tools = toolsArray;
+        container.innerHTML = '';
+        advisors.forEach(advisor => {
+            const div = document.createElement('div');
+            div.className = 'p-4 bg-white rounded shadow mb-4';
+            div.innerHTML = `
+                <div class="flex justify-between items-center">
+                    <h3 class="text-lg font-semibold">${advisor.name}</h3>
+                    <div class="space-x-2">
+                        <button class="text-blue-500 hover:text-blue-700" onclick="app.editAdvisor('${advisor.id}')">
+                            Edit
+                        </button>
+                        <button class="text-red-500 hover:text-red-700" onclick="app.deleteAdvisor('${advisor.id}')">
+                            Delete
+                        </button>
+                    </div>
+                </div>
+                <div class="mt-2 text-sm text-gray-600">
+                    <div>Model: ${advisor.model || 'default'}</div>
+                    <div>Temperature: ${advisor.temperature || 1.0}</div>
+                    <div>Tools: ${advisor.tools?.join(', ') || 'none'}</div>
+                </div>
+            `;
+            container.appendChild(div);
+        });
+    }
+
+    renderAdvisorSelectors(advisors) {
+        const selectors = [
+            document.getElementById('advisor-select'),
+            document.getElementById('advisor-edit-select')
+        ];
+
+        selectors.forEach(select => {
+            if (!select) return;
+
+            select.innerHTML = '<option value="">Select an advisor...</option>';
+            if (select.id === 'advisor-edit-select') {
+                select.innerHTML += '<option value="new">Create New Advisor</option>';
             }
-        }
 
-        // Add the system prompt as the first message
-        if (advisorData.system_prompt) {
-            data.messages = [{
-                role: 'system',
-                content: advisorData.system_prompt
-            }];
-        }
+            advisors.forEach(advisor => {
+                const option = document.createElement('option');
+                option.value = advisor.id;
+                option.textContent = advisor.name;
+                select.appendChild(option);
+            });
+        });
+    }
 
-        const advisorId = advisorData.name;
-        return api.updateAdvisor(advisorId, data);
+    renderChatHistory() {
+        const chats = store.getState('chat.history') || [];
+        const container = document.getElementById('chat-history');
+        if (!container) return;
+
+        container.innerHTML = '';
+        chats.forEach(chat => {
+            const div = document.createElement('div');
+            div.className = 'p-4 bg-white rounded shadow mb-4 cursor-pointer hover:bg-gray-50';
+            div.onclick = () => this.loadChat(chat.id);
+            div.innerHTML = `
+                <div class="flex justify-between items-center">
+                    <div class="text-sm text-gray-600">
+                        ${this.formatDate(chat.created_at)}
+                    </div>
+                    <button class="text-red-500 hover:text-red-700" onclick="event.stopPropagation(); app.deleteChat('${chat.id}')">
+                        Delete
+                    </button>
+                </div>
+                <div class="mt-2">
+                    ${chat.message_count} messages
+                </div>
+            `;
+            container.appendChild(div);
+        });
+    }
+
+    renderMessages() {
+        const messages = store.getState('chat.messages') || [];
+        const container = document.getElementById('message-list');
+        if (!container) return;
+
+        container.innerHTML = '';
+        messages.forEach(message => {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `group w-full text-gray-800 dark:text-gray-100 border-b border-black/10 dark:border-gray-900/50 ${message.role === 'assistant' ? 'bg-gray-50' : 'bg-white'}`;
+            
+            const contentWrapper = document.createElement('div');
+            contentWrapper.className = 'text-base gap-4 md:gap-6 md:max-w-2xl lg:max-w-[38rem] xl:max-w-3xl p-4 md:py-6 lg:px-0 m-auto flex';
+            
+            // Avatar
+            const avatar = document.createElement('div');
+            avatar.className = 'w-[30px] h-[30px] flex flex-col relative items-end';
+            avatar.innerHTML = message.role === 'assistant' ? 
+                '<div class="relative h-7 w-7 p-1 rounded-sm bg-blue-500 text-white flex items-center justify-center text-xs font-bold">AI</div>' :
+                '<div class="relative h-7 w-7 p-1 rounded-sm bg-gray-800 text-white flex items-center justify-center text-xs font-bold">U</div>';
+            
+            // Message content
+            const contentContainer = document.createElement('div');
+            contentContainer.className = 'relative flex w-[calc(100%-50px)] flex-col gap-1 md:gap-3 lg:w-[calc(100%-115px)]';
+            
+            const content = document.createElement('div');
+            content.className = 'flex flex-grow flex-col gap-3';
+            content.innerHTML = marked.parse(message.content);
+
+            // Save snippet button for assistant messages
+            if (message.role === 'assistant') {
+                const saveButton = document.createElement('button');
+                saveButton.className = 'absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200';
+                saveButton.title = 'Save as snippet';
+                saveButton.innerHTML = `
+                    <svg stroke="currentColor" fill="none" stroke-width="2" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 text-gray-500 hover:text-gray-700" height="1em" width="1em" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M5 13l4 4L19 7"></path>
+                    </svg>
+                `;
+                saveButton.onclick = () => this.saveSnippet(message.content);
+                contentContainer.appendChild(saveButton);
+            }
+
+            contentContainer.appendChild(content);
+            contentWrapper.appendChild(avatar);
+            contentWrapper.appendChild(contentContainer);
+            messageDiv.appendChild(contentWrapper);
+            container.appendChild(messageDiv);
+        });
+
+        this.scrollToBottom();
+    }
+
+    async saveSnippet(content) {
+        try {
+            const advisor = document.getElementById('chatAdvisorSelect')?.selectedOptions[0]?.text || 'Unknown Advisor';
+            await api.createSnippet({
+                source_type: 'advisor',
+                source_name: advisor,
+                content: content,
+                tags: ['chat'],
+                snippet_metadata: {
+                    conversation_id: store.getState('chat.currentId'),
+                    advisor_id: store.getState('chat.advisorId')
+                }
+            });
+            store.dispatch('ui/addSuccess', {
+                id: Date.now(),
+                message: 'Snippet saved successfully'
+            });
+        } catch (error) {
+            store.dispatch('ui/addError', {
+                id: Date.now(),
+                message: 'Failed to save snippet'
+            });
+        }
+    }
+
+    renderFiles() {
+        const files = store.getState('files.list') || [];
+        const container = document.getElementById('file-list');
+        if (!container) return;
+
+        container.innerHTML = '';
+        files.forEach(file => {
+            const div = document.createElement('div');
+            div.className = 'p-4 bg-white rounded shadow mb-4';
+            div.innerHTML = `
+                <div class="flex justify-between items-center">
+                    <div class="text-sm">
+                        <div class="font-semibold">${file.file_path}</div>
+                        <div class="text-gray-600">${this.formatFileSize(file.size_bytes)}</div>
+                    </div>
+                    <div class="space-x-2">
+                        <button class="text-blue-500 hover:text-blue-700" onclick="app.downloadFile('${file.file_path}')">
+                            Download
+                        </button>
+                        <button class="text-red-500 hover:text-red-700" onclick="app.deleteFile('${file.file_path}')">
+                            Delete
+                        </button>
+                    </div>
+                </div>
+            `;
+            container.appendChild(div);
+        });
+    }
+
+    formatDate(dateString) {
+        return new Date(dateString).toLocaleString();
+    }
+
+    formatFileSize(bytes) {
+        if (!bytes) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
     }
 
     scrollToBottom() {
-        const container = document.getElementById('messages-container');
+        const container = document.getElementById('message-list');
         if (container) {
             container.scrollTop = container.scrollHeight;
         }
     }
+
+    showLoginForm() {
+        document.getElementById('login-container')?.classList.remove('hidden');
+        document.getElementById('app-container')?.classList.add('hidden');
+    }
 }
 
 // Initialize app
-window.addEventListener('DOMContentLoaded', () => {
-    window.app = new App();
-});
+const app = new App();
+window.app = app; // Export for global access

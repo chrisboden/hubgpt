@@ -452,6 +452,56 @@
         </div>
     </div>
 
+    <!-- Settings Sidebar -->
+    <div id="settings-sidebar" class="fixed top-0 right-0 h-full w-96 bg-white shadow-lg transform translate-x-full transition-transform duration-200 ease-in-out overflow-y-auto">
+        // ... existing code ...
+        
+        <!-- System Message Editor Modal -->
+        <div id="system-message-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center">
+            <div class="bg-white rounded-lg p-6 w-3/4 max-w-4xl max-h-[90vh] overflow-y-auto">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-semibold">Edit System Message</h2>
+                    <button id="close-system-message-modal" class="text-gray-500 hover:text-gray-700">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+                <div class="space-y-4">
+                    <div>
+                        <textarea id="system-message-editor" class="w-full h-96 p-4 border rounded font-mono text-sm"></textarea>
+                    </div>
+                    <div class="flex justify-end space-x-2">
+                        <button id="preview-system-message" class="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600">
+                            Preview
+                        </button>
+                        <button id="save-system-message" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
+                            Save
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Preview Modal -->
+        <div id="preview-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center">
+            <div class="bg-white rounded-lg p-6 w-3/4 max-w-4xl max-h-[90vh] overflow-y-auto">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-semibold">Preview</h2>
+                    <button id="close-preview-modal" class="text-gray-500 hover:text-gray-700">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+                <div id="preview-content" class="prose max-w-none markdown-content">
+                    <!-- Preview content will be inserted here -->
+                </div>
+            </div>
+        </div>
+    </div>
+    // ... existing code ...
+
     <script>
         // Dynamically set API base URL based on current location
         const API_BASE = `${window.location.protocol}//${window.location.hostname}:8000/api/v1`;
@@ -1466,6 +1516,22 @@
             // Use markdown for assistant messages
             if (role === 'assistant') {
                 contentDiv.innerHTML = marked.parse(content);
+                
+                // Add save as snippet button for assistant messages
+                const saveButton = document.createElement('button');
+                saveButton.className = 'ml-2 text-gray-500 hover:text-gray-700';
+                saveButton.innerHTML = `
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"></path>
+                    </svg>
+                `;
+                saveButton.title = 'Save as Snippet';
+                saveButton.onclick = () => saveMessageAsSnippet(content, currentAdvisorId);
+                
+                const actionsDiv = document.createElement('div');
+                actionsDiv.className = 'flex justify-end mt-1';
+                actionsDiv.appendChild(saveButton);
+                messageDiv.appendChild(actionsDiv);
             } else {
                 contentDiv.textContent = content;
             }
@@ -1473,6 +1539,40 @@
             messageDiv.appendChild(roleDiv);
             messageDiv.appendChild(contentDiv);
             chatHistory.appendChild(messageDiv);
+        }
+
+        async function saveMessageAsSnippet(content, advisorId) {
+            try {
+                const advisor = document.getElementById('chatAdvisorSelect')?.selectedOptions[0]?.text || 'Unknown Advisor';
+                
+                const response = await fetch(`${API_BASE}/snippets/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify({
+                        source_type: 'advisor',
+                        source_name: advisor,
+                        content: content,
+                        tags: [],
+                        snippet_metadata: {
+                            conversation_id: currentConversationId,
+                            advisor_id: advisorId
+                        }
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to save snippet');
+                }
+
+                const result = await response.json();
+                alert('Message saved as snippet successfully!');
+            } catch (error) {
+                console.error('Error saving snippet:', error);
+                alert('Failed to save snippet: ' + error.message);
+            }
         }
 
         // Event Listeners

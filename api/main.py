@@ -75,8 +75,11 @@ app.include_router(files.router, prefix=f"{config.API_PREFIX}/files", tags=["fil
 app.include_router(snippets.router, tags=["snippets"])
 
 # Serve static files
-static_dir = Path(__file__).parent
+static_dir = Path(__file__).parent / "static"
 if static_dir.exists():
+    # Mount the app directory
+    app.mount("/static/app", StaticFiles(directory=str(static_dir / "app"), html=True), name="app")
+    # Mount the root static directory
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 @app.get("/", response_class=HTMLResponse, description="Serve the index.html file")
