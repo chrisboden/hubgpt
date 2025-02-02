@@ -1,10 +1,22 @@
-env/
-venv/
-.git/
-.idea/
-.vscode/
-__pycache__/
-*.pyc
+# Ignore everything
+*
+
+# Don't ignore these directories and files
+!api/
+!requirements.txt
+!.env
+
+# But still ignore these within the api directory
+api/**/__pycache__/
+api/**/*.pyc
+api/logs/
+api/temp/
+api/tests/
+api/.pytest_cache/
+api/data/
+api/database.db
+
+# Explicitly don't ignore static files
 !api/static/
 !api/static/app/
 !api/static/app/lib/
