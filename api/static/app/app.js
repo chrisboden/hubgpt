@@ -111,21 +111,28 @@ class App {
             const email = e.target.email?.value;
             
             try {
-                // Try to register first (will fail if user exists)
+                // Try to login first
                 try {
-                    await api.register(username, password, email || `${username}@example.com`);
-                } catch {
-                    // Ignore registration errors
+                    const data = await api.login(username, password);
+                    store.dispatch('auth/login', { token: data.access_token });
+                    this.initializeApp();
+                    return;
+                } catch (error) {
+                    // If login fails, try registration only for new users
+                    if (error.status === 401) {
+                        const regData = await api.register(username, password, email || `${username}@example.com`);
+                        // If registration succeeds, try login again
+                        const loginData = await api.login(username, password);
+                        store.dispatch('auth/login', { token: loginData.access_token });
+                        this.initializeApp();
+                        return;
+                    }
+                    throw error; // Re-throw if not a 401
                 }
-
-                // Then try to login
-                const data = await api.login(username, password);
-                store.dispatch('auth/login', { token: data.access_token });
-                this.initializeApp();
             } catch (error) {
                 store.dispatch('ui/addError', {
                     id: Date.now(),
-                    message: 'Login failed'
+                    message: 'Invalid username or password'
                 });
             }
         });
@@ -419,6 +426,19 @@ class App {
             filesPanel.classList.remove('hidden');
             advisorsPanel.classList.add('hidden');
         });
+
+        // Logout button
+        document.getElementById('logout-button')?.addEventListener('click', async () => {
+            try {
+                await api.logout();
+                this.showLoginForm();
+            } catch (error) {
+                store.dispatch('ui/addError', {
+                    id: Date.now(),
+                    message: 'Logout failed'
+                });
+            }
+        });
     }
 
     async initializeApp() {
@@ -636,6 +656,9 @@ class App {
             const form = document.getElementById('advisor-edit-form');
             if (!form) return;
 
+            // Set the current editing advisor ID
+            store.setState('advisors.editing', advisorId);
+
             form.querySelector('[name="advisor-name"]').value = advisor.name;
             form.querySelector('[name="advisor-model"]').value = advisor.model || '';
             form.querySelector('[name="advisor-temperature"]').value = advisor.temperature || 1.0;
@@ -649,6 +672,21 @@ class App {
                 message: 'Failed to load advisor'
             });
         }
+    }
+
+    clearAdvisorForm() {
+        const form = document.getElementById('advisor-edit-form');
+        if (!form) return;
+
+        // Clear the editing state
+        store.setState('advisors.editing', null);
+
+        form.querySelector('[name="advisor-name"]').value = '';
+        form.querySelector('[name="advisor-model"]').value = 'openai/gpt-4o-mini';
+        form.querySelector('[name="advisor-temperature"]').value = '1.0';
+        form.querySelector('[name="advisor-gateway"]').value = 'openrouter';
+        form.querySelector('[name="advisor-tools"]').value = '';
+        form.querySelector('[name="advisor-prompt"]').value = '';
     }
 
     async saveAdvisor(advisorData) {
@@ -828,7 +866,7 @@ class App {
         container.innerHTML = '';
         files.forEach(file => {
             // Clean up the path - remove leading/trailing slashes and multiple slashes
-            const cleanPath = this.cleanPath(file.file_path);
+            const cleanPath = this.cleanPath(file.name);
             // Remove 'files/' prefix if it exists
             const displayPath = cleanPath.replace(/^files\//, '');
 
@@ -838,7 +876,7 @@ class App {
                 <div class="flex justify-between items-center">
                     <div class="text-sm">
                         <div class="font-semibold">${displayPath}</div>
-                        <div class="text-gray-600">${this.formatFileSize(file.size_bytes)}</div>
+                        <div class="text-gray-600">Last modified: ${new Date(parseFloat(file.updated_at) * 1000).toLocaleString()}</div>
                     </div>
                     <div class="space-x-2">
                         <button class="text-blue-500 hover:text-blue-700" onclick="app.editFile('${displayPath}')">
@@ -981,8 +1019,13 @@ class App {
     }
 
     showLoginForm() {
-        document.getElementById('login-container')?.classList.remove('hidden');
+        // Hide app container and show login container
         document.getElementById('app-container')?.classList.add('hidden');
+        document.getElementById('login-container')?.classList.remove('hidden');
+        
+        // Clear any stored auth data
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('basicAuth');
     }
 
     // Clean up file path - remove leading/trailing slashes and multiple slashes

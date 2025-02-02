@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-from typing import Dict
+from typing import Dict, Optional
 import secrets
 
 from api.database import get_db
@@ -70,7 +70,7 @@ async def logout(request: Request, db: Session = Depends(get_db)):
 @router.get("/verify", response_model=UserResponse)
 async def verify(
     request: Request,
-    credentials: HTTPBasicCredentials = Depends(security),
+    credentials: Optional[HTTPBasicCredentials] = Depends(security),
     db: Session = Depends(get_db)
 ):
     """Verify the current user's credentials and return user info"""
@@ -83,27 +83,38 @@ async def verify(
         except HTTPException:
             pass
     
-    # Try basic auth
-    is_username_correct = secrets.compare_digest(credentials.username, config.API_USERNAME)
-    is_password_correct = secrets.compare_digest(credentials.password, config.API_PASSWORD)
+    # Try basic auth if credentials provided
+    if credentials:
+        is_username_correct = secrets.compare_digest(credentials.username, config.API_USERNAME)
+        is_password_correct = secrets.compare_digest(credentials.password, config.API_PASSWORD)
+        
+        if not (is_username_correct and is_password_correct):
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid credentials",
+                headers={"WWW-Authenticate": "Basic"},
+            )
+        
+        # Get or create default user
+        user = db.query(User).filter(User.username == credentials.username).first()
+        if not user:
+            user = create_user(
+                db,
+                username=credentials.username,
+                email=config.DEFAULT_USER_EMAIL,
+                password=config.API_PASSWORD
+            )
+        
+        # Create a new session for the user
+        session = create_user_session(db, user.id)
+        user.current_token = session.token  # Add token to response
+        return user
     
-    if not (is_username_correct and is_password_correct):
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid credentials",
-            headers={"WWW-Authenticate": "Basic"},
-        )
-    
-    # Get or create default user
-    user = db.query(User).filter(User.username == credentials.username).first()
-    if not user:
-        user = create_user(
-            db,
-            username=credentials.username,
-            email=config.DEFAULT_USER_EMAIL,
-            password=config.API_PASSWORD
-        )
-    return user
+    raise HTTPException(
+        status_code=401,
+        detail="Authentication required",
+        headers={"WWW-Authenticate": "Bearer"}
+    )
 
 @router.get("/users/me", response_model=UserResponse)
 async def get_current_user_info(request: Request, db: Session = Depends(get_db)):

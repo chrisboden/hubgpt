@@ -63,18 +63,30 @@ class ApiClient {
     }
 
     async logout() {
-        const response = await fetch(`${API_BASE}/auth/logout`, {
-            method: 'POST',
-            headers: this.getHeaders()
-        });
-
-        if (!response.ok) {
-            throw new Error('Logout failed');
-        }
-
+        // Clear auth token first
         this.authToken = null;
         localStorage.removeItem('authToken');
         localStorage.removeItem('basicAuth');
+
+        try {
+            const response = await fetch(`${API_BASE}/auth/logout`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            // Don't throw on 401 since we expect it after clearing the token
+            if (!response.ok && response.status !== 401) {
+                throw new Error('Logout failed');
+            }
+        } catch (error) {
+            // Only throw if it's not a 401 error
+            if (!error.response || error.response.status !== 401) {
+                console.error('Logout error:', error);
+                // Don't throw - we've already cleared local auth
+            }
+        }
     }
 
     async verifyAuth() {
@@ -86,7 +98,12 @@ class ApiClient {
             throw new Error('Auth verification failed');
         }
 
-        return response.json();
+        const data = await response.json();
+        if (data.current_token) {
+            this.authToken = data.current_token;
+            localStorage.setItem('authToken', this.authToken);
+        }
+        return data;
     }
 
     // Advisor Methods
@@ -237,7 +254,7 @@ class ApiClient {
 
     // File Methods
     async getFiles() {
-        const response = await fetch(`${API_BASE}/files`, {
+        const response = await fetch(`${API_BASE}/files/`, {
             headers: this.getHeaders()
         });
 
@@ -248,12 +265,12 @@ class ApiClient {
         return response.json();
     }
 
-    async uploadFile(path, file, isPublic = false) {
+    async uploadFile(filename, file, isPublic = false) {
         const formData = new FormData();
         formData.append('file', file);
         formData.append('is_public', isPublic);
 
-        const response = await fetch(`${API_BASE}/files/${path}`, {
+        const response = await fetch(`${API_BASE}/files/${filename}`, {
             method: 'POST',
             headers: this.getHeaders(),
             body: formData
@@ -266,8 +283,8 @@ class ApiClient {
         return response.json();
     }
 
-    async getFileContent(path) {
-        const response = await fetch(`${API_BASE}/files/${path}/content`, {
+    async getFileContent(filename) {
+        const response = await fetch(`${API_BASE}/files/${filename}/content`, {
             headers: this.getHeaders()
         });
 
@@ -275,11 +292,12 @@ class ApiClient {
             throw new Error('Failed to fetch file content');
         }
 
-        return response.text();
+        const data = await response.json();
+        return data.content;
     }
 
-    async deleteFile(path) {
-        const response = await fetch(`${API_BASE}/files/${path}`, {
+    async deleteFile(filename) {
+        const response = await fetch(`${API_BASE}/files/${filename}`, {
             method: 'DELETE',
             headers: this.getHeaders()
         });
@@ -287,6 +305,8 @@ class ApiClient {
         if (!response.ok) {
             throw new Error('Failed to delete file');
         }
+
+        return response.json();
     }
 
     async shareFile(path, userId, permissions) {

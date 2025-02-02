@@ -124,7 +124,7 @@ async def read_root():
         logger.error(f"Error serving index.html: {e}")
         return HTMLResponse("<h1>Welcome to HubGPT API</h1>")
 
-@app.get("/verify")
+@app.get(f"{config.API_PREFIX}/verify")
 async def verify_credentials(current_user: User = Depends(get_current_user_or_default)):
     """Verify credentials endpoint"""
     return {"status": "ok"}

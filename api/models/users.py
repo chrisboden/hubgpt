@@ -63,7 +63,8 @@ class UserLogin(BaseModel):
 class UserResponse(BaseModel):
     id: UUID
     username: str
-    email: Optional[str]
+    email: Optional[str] = None
+    current_token: Optional[str] = None
     created_at: datetime
     settings: Dict[str, Any]
 

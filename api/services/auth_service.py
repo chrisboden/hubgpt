@@ -106,22 +106,16 @@ async def get_current_user(token: str, db: Session) -> User:
         )
 
 async def get_current_user_or_default(token: str = None, db: Session = Depends(get_db)) -> User:
-    """Get the current user from the token, or return the default user if authentication fails"""
+    """Get the current user from the token, or return the default user if no token provided"""
     if not token:
-        # Return default user
+        # Return default user only when no token is provided (for health checks)
         default_user = db.query(User).filter(User.username == "default").first()
         if not default_user:
             default_user = create_default_user(db)
         return default_user
     
-    try:
-        return await get_current_user(token, db)
-    except HTTPException:
-        # Return default user on authentication failure
-        default_user = db.query(User).filter(User.username == "default").first()
-        if not default_user:
-            default_user = create_default_user(db)
-        return default_user
+    # If token is provided, validate it strictly
+    return await get_current_user(token, db)
 
 def create_default_user(db: Session) -> User:
     """Create the default user if it doesn't exist"""

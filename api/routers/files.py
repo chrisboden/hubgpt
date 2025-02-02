@@ -1,5 +1,5 @@
-from fastapi import APIRouter, HTTPException, Depends, Request, status, Body
-from fastapi import File, UploadFile  # Import these separately to avoid global application
+from fastapi import APIRouter, HTTPException, Depends, Request, status, Body, UploadFile, File
+from fastapi import File  # Import these separately to avoid global application
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
 import logging
@@ -14,39 +14,26 @@ from ..services.auth_service import get_current_user_from_request
 from ..api_utils.prompt_utils import process_inclusions
 from pydantic import BaseModel, Field
 from ..models.files import FileRename
+from ..services.file_service import save_file, get_files, get_file_content
+from .. import config as app_config  # Import the config module as app_config
 
-router = APIRouter(tags=["files"])
+router = APIRouter(
+    tags=["files"],
+    redirect_slashes=False  # Prevent automatic slash redirection
+)
 logger = logging.getLogger(__name__)
 
 # Create a separate router for file operations
 file_router = APIRouter(tags=["file_operations"])
 
 class FileResponse(BaseModel):
-    id: str
-    user_id: str
-    file_path: str
-    file_type: str
-    content_type: Optional[str]
-    size_bytes: Optional[int]
-    is_public: bool
-    metadata: dict = {}
-    created_at: str
-    updated_at: str
-
-    class Config:
-        from_attributes = True
-
-    @classmethod
-    def from_orm(cls, obj):
-        # Convert metadata field name
-        if hasattr(obj, 'file_metadata'):
-            obj.metadata = obj.file_metadata
-        # Convert datetime fields to strings
-        if hasattr(obj, 'created_at'):
-            obj.created_at = obj.created_at.isoformat()
-        if hasattr(obj, 'updated_at'):
-            obj.updated_at = obj.updated_at.isoformat()
-        return super().from_orm(obj)
+    name: str
+    type: str = "file"
+    content_type: Optional[str] = None
+    is_public: bool = False
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    metadata: Dict[str, Any] = {}
 
 class FileShare(BaseModel):
     """File share request model"""
@@ -75,70 +62,120 @@ class ShareRequest(BaseModel):
     shared_with_id: str
     permissions: Dict[str, Any]
 
-@router.post("/{file_path:path}", response_model=FileResponse)
-async def upload_file(
-    file_path: str,
-    file: UploadFile = File(...),
-    file_type: str = None,
-    is_public: bool = False,
-    metadata: dict = None,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_from_request)
-):
-    """Upload a file to user's storage"""
-    try:
-        if not file_type:
-            file_type = file_path.split('.')[-1] if '.' in file_path else 'txt'
-            
-        # Read file content
-        content = await file.read()
-            
-        db_file = await save_user_file(
-            db=db,
-            user=current_user,
-            file=content,
-            file_path=file_path,
-            file_type=file_type,
-            content_type=file.content_type,
-            is_public=is_public,
-            metadata=metadata
-        )
-        
-        return FileResponse.from_orm(db_file)
-    except Exception as e:
-        logger.error(f"Error uploading file: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/{file_path:path}/content")
-async def get_file_content(
-    file_path: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_from_request)
-):
-    """Get file content"""
-    return get_user_file_content(db, current_user.id, file_path)
-
-@router.delete("/{file_path:path}")
-async def delete_file(
-    file_path: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_from_request)
-):
-    """Delete a file"""
-    if delete_user_file(db, current_user.id, file_path):
-        return {"status": "success"}
-    raise HTTPException(status_code=404, detail="File not found")
-
 @router.get("/", response_model=List[FileResponse])
 async def list_files(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_from_request)
+) -> List[FileResponse]:
+    """List all files for the current user"""
+    try:
+        logger.info(f"Listing files for user: {current_user.id} ({current_user.username})")
+        user_files = []
+        
+        # User's personal files directory
+        user_files_dir = app_config.USERS_ROOT / str(current_user.id) / "files"
+        logger.info(f"Looking for files in: {user_files_dir} (exists: {user_files_dir.exists()})")
+        
+        if user_files_dir.exists():
+            logger.info(f"Directory exists and is directory: {user_files_dir.is_dir()}")
+            for file_path in user_files_dir.rglob('*'):
+                logger.info(f"Found path: {file_path} (is_file: {file_path.is_file()})")
+                if file_path.is_file():
+                    relative_path = file_path.relative_to(user_files_dir)
+                    stat = file_path.stat()
+                    logger.info(f"Found file: {relative_path}")
+                    user_files.append(FileResponse(
+                        name=str(relative_path),
+                        type="file",
+                        content_type=None,
+                        is_public=False,
+                        created_at=str(stat.st_ctime),
+                        updated_at=str(stat.st_mtime),
+                        metadata={}
+                    ))
+        else:
+            logger.warning(f"Directory does not exist: {user_files_dir}")
+        
+        # Shared files
+        logger.info(f"Looking for shared files in: {app_config.SHARED_ROOT} (exists: {app_config.SHARED_ROOT.exists()})")
+        
+        if app_config.SHARED_ROOT.exists():
+            logger.info(f"Shared directory exists and is directory: {app_config.SHARED_ROOT.is_dir()}")
+            for file_path in app_config.SHARED_ROOT.rglob('*'):
+                logger.info(f"Found shared path: {file_path} (is_file: {file_path.is_file()})")
+                if file_path.is_file():
+                    relative_path = file_path.relative_to(app_config.SHARED_ROOT)
+                    stat = file_path.stat()
+                    logger.info(f"Found shared file: {relative_path}")
+                    user_files.append(FileResponse(
+                        name=str(relative_path),
+                        type="file",
+                        content_type=None,
+                        is_public=True,
+                        created_at=str(stat.st_ctime),
+                        updated_at=str(stat.st_mtime),
+                        metadata={}
+                    ))
+        else:
+            logger.warning(f"Shared directory does not exist: {app_config.SHARED_ROOT}")
+        
+        logger.info(f"Returning {len(user_files)} files: {[f.name for f in user_files]}")
+        return user_files
+        
+    except Exception as e:
+        logger.error(f"Error listing files: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error listing files: {str(e)}"
+        )
+
+@router.post("/{filename}")
+async def upload_file(
+    filename: str,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_from_request)
 ):
-    """List user's files"""
-    files = db.query(UserFile).filter(
-        UserFile.user_id == current_user.id
-    ).all()
-    return [FileResponse.from_orm(f) for f in files]
+    """Upload a file"""
+    try:
+        await save_file(filename, file, str(current_user.id))
+        return {"filename": filename}
+    except Exception as e:
+        logger.error(f"Error uploading file: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/{filename}/content")
+async def get_file_content_endpoint(
+    filename: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_from_request)
+):
+    """Get file content"""
+    try:
+        content = await get_file_content(filename, str(current_user.id))
+        return {"filename": filename, "content": content}
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="File not found")
+    except Exception as e:
+        logger.error(f"Error reading file: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/{filename}")
+async def delete_file_endpoint(
+    filename: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_from_request)
+):
+    """Delete a file"""
+    try:
+        file_path = app_config.USERS_ROOT / str(current_user.id) / "files" / filename
+        if file_path.exists():
+            file_path.unlink()
+            return {"status": "success"}
+        raise HTTPException(status_code=404, detail="File not found")
+    except Exception as e:
+        logger.error(f"Error deleting file: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/{file_path:path}/share", response_model=FileShareResponse)
 async def share_file(
@@ -204,36 +241,6 @@ async def unshare_file(
         return {"status": "success"}
         
     raise HTTPException(status_code=404, detail="Share not found")
-
-@router.get("/")
-async def list_files(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user_from_request)
-) -> List[dict]:
-    """List all files for the current user"""
-    try:
-        files = db.query(UserFile).filter(
-            UserFile.user_id == current_user.id
-        ).all()
-        
-        return [
-            {
-                "id": str(file.id),
-                "name": file.file_path,
-                "type": "file",
-                "content_type": file.content_type,
-                "is_public": file.is_public,
-                "created_at": file.created_at.isoformat(),
-                "updated_at": file.updated_at.isoformat() if file.updated_at else None,
-                "metadata": file.metadata
-            }
-            for file in files
-        ]
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error listing files: {str(e)}"
-        )
 
 @router.patch("/{file_path:path}", response_model=FileResponse)
 async def rename_file(
