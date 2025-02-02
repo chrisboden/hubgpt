@@ -1,1 +1,11 @@
- 
+env/
+venv/
+.git/
+.idea/
+.vscode/
+__pycache__/
+*.pyc
+!api/static/
+!api/static/app/
+!api/static/app/lib/
+!api/static/app/components/ 
