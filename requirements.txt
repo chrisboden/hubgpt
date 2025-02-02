@@ -6,6 +6,9 @@ duckduckgo-search
 fastapi
 google-generativeai
 halo
+markdown
+markdown-it-py
+mdurl
 openai
 pandas
 pathspec
