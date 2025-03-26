@@ -84,7 +84,7 @@ def process_scrape_with_llm(scrape_path, llm_client):
         
         print("Sending scrape content to LLM for FAQ generation")
         response = llm_client.chat.completions.create(
-            model="google/gemini-flash-1.5-8b",
+            model="google/gemini-2.0-flash-001",
             messages=faq_messages,
             max_tokens=8000,
             temperature=0.7

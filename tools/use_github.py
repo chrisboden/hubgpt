@@ -475,7 +475,7 @@ Remember: Your goal is to help users understand both the what and why of the cod
             
             update_spinner_status("Generating response...")
             response = llm_client.chat.completions.create(
-                model="google/gemini-flash-1.5-8b",
+                model="google/gemini-2.0-flash-001",
                 messages=messages,
                 max_tokens=3000,
                 temperature=0.7
@@ -664,25 +664,7 @@ TOOL_METADATA = {
                 },
                 "params": {
                     "type": "object",
-                    "description": "Parameters specific to the chosen operation. You can provide either 'url' OR 'owner'/'repo' parameters:\n\n" +
-                        "URL format: params.url = 'https://github.com/owner/repo'\n\n" +
-                        "Required parameters by operation:\n" +
-                        "- search_repositories: query\n" +
-                        "- get_repo_details: url OR (owner, repo)\n" +
-                        "- get_file_content: (url OR (owner, repo)) AND path\n" +
-                        "- list_pull_requests: url OR (owner, repo)\n" +
-                        "- get_pull_request: (url OR (owner, repo)) AND pull_number\n" +
-                        "- list_repo_issues: url OR (owner, repo)\n" +
-                        "- create_issue_comment: (url OR (owner, repo)) AND issue_number, body\n" +
-                        "- get_directory_structure: url OR (owner, repo)\n" +
-                        "- check_github_diff: (url OR (owner, repo)) AND base, head\n" +
-                        "- update_file: (url OR (owner, repo)) AND path, content, message, branch\n" +
-                        "- create_branch: (url OR (owner, repo)) AND branch_name\n" +
-                        "- create_pull_request: (url OR (owner, repo)) AND title, body, head, base\n" +
-                        "- ask: url AND question\n" +
-                        "- check_if_starred: (owner, repo)\n" +
-                        "- list_starred_repos: no parameters required\n" +
-                        "- create_gist: description, files, public (optional)",
+                    "description": "Parameters specific to the chosen operation. You can provide either 'url' OR 'owner'/'repo' parameters:\n\nURL format: params.url = 'https://github.com/owner/repo'\n\nRequired parameters by operation:\n- search_repositories: query\n- get_repo_details: url OR (owner, repo)\n- get_file_content: (url OR (owner, repo)) AND path\n- list_pull_requests: url OR (owner, repo)\n- get_pull_request: (url OR (owner, repo)) AND pull_number\n- list_repo_issues: url OR (owner, repo)\n- create_issue_comment: (url OR (owner, repo)) AND issue_number, body\n- get_directory_structure: url OR (owner, repo)\n- check_github_diff: (url OR (owner, repo)) AND base, head\n- update_file: (url OR (owner, repo)) AND path, content, message, branch\n- create_branch: (url OR (owner, repo)) AND branch_name\n- create_pull_request: (url OR (owner, repo)) AND title, body, head, base\n- ask: url AND question\n- check_if_starred: (owner, repo)\n- list_starred_repos: no parameters required\n- create_gist: description, files, public (optional)",
                     "properties": {
                         "url": {
                             "type": "string",
@@ -779,7 +761,7 @@ TOOL_METADATA = {
                         },
                         "files": {
                             "type": "object",
-                            "description": "Dictionary of filename to file content. Example: {'example.txt': {'content': 'Hello World'}}"
+                            "description": "Dictionary of filename to file content. Example: {'example.txt': {'content': 'Hello World'}"
                         },
                         "public": {
                             "type": "boolean",

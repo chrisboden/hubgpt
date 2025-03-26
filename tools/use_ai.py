@@ -113,7 +113,7 @@ TOOL_METADATA = {
                         "The model to use. Default options include:\n"
                         "- 'openai/gpt-4o-mini' for general use\n"
                         "- 'perplexity/llama-3.1-sonar-huge-128k-online' for web search tasks\n"
-                        "- 'google/gemini-flash-1.5-8b' for large context tasks"
+                        "- 'google/gemini-2.0-flash-001' for large context tasks"
                     ),
                     "default": "openai/gpt-4o-mini"
                 },

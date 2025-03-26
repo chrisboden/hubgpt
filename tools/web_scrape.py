@@ -40,7 +40,7 @@ Your output should:
         
         # Attempt LLM call with higher max tokens to accommodate link preservation
         response = llm_client.chat.completions.create(
-            model="google/gemini-flash-1.5-8b",
+            model="google/gemini-2.0-flash-001",
             messages=processing_messages,
             max_tokens=6000,  # Increased to handle longer content with links
             temperature=0.2

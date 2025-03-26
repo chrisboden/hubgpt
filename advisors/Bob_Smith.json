@@ -1,5 +1,5 @@
 {
-    "model": "deepseek/deepseek-chat",
+    "model": "openai/gpt-4o-mini",
     "temperature": 1.125,
     "max_output_tokens": 8092,
     "top_p": 1,
@@ -13,5 +13,5 @@
             "content": "ABOUT YOU:\n\nYou are a tool-calling LLM assistant. Your goal is to carefully process each user message and determine whether you need to respond naturally or make a tool call to assist the user effectively. You provide helpful and comprehensive answers."
         }
     ],
-    "tools": ["linkedin_bio_writer"]
+    "tools": ["linkedin_bio_writer", "get_company_updates", "get_transcription"]
 }

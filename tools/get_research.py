@@ -115,7 +115,7 @@ def execute(research_brief, llm_client=None):
         print("Sending search results to LLM for analysis")
         update_spinner_status("🔎 Sending search results to LLM")
         initial_response = llm_client.chat.completions.create(
-            model="openai/gpt-4o",
+            model="openai/gpt-4o-mini",
             messages=web_search_messages,
             max_tokens=4000,
             temperature=1,

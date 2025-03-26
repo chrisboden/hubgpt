@@ -1,5 +1,5 @@
 ---
-model: google/gemini-flash-1.5-8b
+model: google/gemini-2.0-flash-001
 temperature: 1
 max_output_tokens: 8092
 stream: true

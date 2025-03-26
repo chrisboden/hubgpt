@@ -75,7 +75,7 @@ def execute(term, llm_client):
                     ]
                     try:
                         response = llm_client.chat.completions.create(
-                            model="google/gemini-flash-1.5-8b",
+                            model="google/gemini-2.0-flash-001",
                             messages=messages,
                             max_tokens=3000,
                             temperature=1

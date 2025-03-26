@@ -207,6 +207,12 @@ cython_debug/
 !/content/navalmanack.json
 !/content/naval_interview1.txt
 
+/files/*
+/storage/*
+.specstory
+
+
+
 logs/advisorchat.log
 
 /cbnotes

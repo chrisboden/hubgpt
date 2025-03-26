@@ -365,76 +365,85 @@ def auto_select_tools(user_input: str, available_tools: List[Tool], llm_client: 
             history_str = f"\n\nNote that the previous chat history with the user:\n\n{history_str}"
         
         # Prepare the prompt with tools README content and chat history
-        prompt_template = """You are a tool selection agent. Given a user brief and a list of potential tools, you select all of the tools that might be required to complete the job.
+        prompt = f"""You are a tool selection agent. Given a user brief and a list of potential tools, you select all of the tools that might be required to complete the job.
 
 Here are the available tools:
 
-<$tools/README.md$>
+{', '.join(f"{tool.name}: {tool.description}" for tool in available_tools)}
 
 IMPORTANT: You must respond with a valid JSON object using this exact structure:
-{
+{{
     "selected_tools": ["tool_name1", "tool_name2"],
     "rationale": "Brief explanation of why these tools were selected"
-}
+}}
 
 Do not include any other text in your response, only the JSON object.
 
 For the user request below, analyze what tools would be needed and return them in a JSON response:
 
-User request: """ + user_input + history_str
+User request: {user_input}{history_str}"""
 
-        # Process the prompt to include README content
-        prompt = process_inclusions(prompt_template, depth=5)
-        logging.debug("Processed prompt with README content and chat history")
-
-        # Use deepseek model for tool selection
-        update_spinner_status("Analyzing request with Deepseek...")
-        response = llm_client.chat.completions.create(
-            model="deepseek/deepseek-chat",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are a tool selection specialist. Always respond with valid JSON only."
-                },
-                {
-                    "role": "user", 
-                    "content": prompt
-                }
-            ],
-            response_format={"type": "json_object"},
-            temperature=0.3
-        )
-        
-        # Parse response
+        # Use LLM model for tool selection
+        update_spinner_status("Analyzing request...")
         try:
+            response = llm_client.chat.completions.create(
+                model="openai/gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are a tool selection specialist. Always respond with valid JSON only."
+                    },
+                    {
+                        "role": "user", 
+                        "content": prompt
+                    }
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.3
+            )
+            
+            if not response or not hasattr(response, 'choices') or not response.choices:
+                logging.error("Invalid or empty response from LLM")
+                return []
+                
             content = response.choices[0].message.content
+            if not content:
+                logging.error("Empty content in LLM response")
+                return []
+                
             # Remove markdown code blocks if present
             content = content.replace('```json\n', '').replace('\n```', '').strip()
             
-            selection = json.loads(content)
-            if not isinstance(selection, dict) or 'selected_tools' not in selection:
-                raise ValueError("Invalid response format")
+            try:
+                selection = json.loads(content)
+                if not isinstance(selection, dict) or 'selected_tools' not in selection:
+                    logging.error(f"Invalid response format: {content}")
+                    return []
+                    
+                selected_tool_names = selection["selected_tools"]
+                logging.info("Auto-selected tools: %s", selected_tool_names)
+                logging.info("Selection rationale: %s", selection.get("rationale", "No rationale provided"))
                 
-            selected_tool_names = selection["selected_tools"]
-            logging.info("Auto-selected tools: %s", selected_tool_names)
-            logging.info("Selection rationale: %s", selection.get("rationale", "No rationale provided"))
-            
-            # Map selected names to actual tool objects
-            selected_tools = [
-                tool for tool in available_tools 
-                if tool.name in selected_tool_names
-            ]
-            
-            if not selected_tools:
-                logging.warning("No matching tools were found")
+                # Map selected names to actual tool objects
+                selected_tools = [
+                    tool for tool in available_tools 
+                    if tool.name in selected_tool_names
+                ]
+                
+                if not selected_tools:
+                    logging.warning("No matching tools were found")
+                    return []
+                    
+                update_spinner_status(f"Selected tools: {', '.join(selected_tool_names)}")
+                return selected_tools
+                
+            except json.JSONDecodeError as e:
+                logging.error("Failed to parse JSON response: %s", str(e))
+                logging.error("Raw response: %s", content)
                 return []
                 
-            update_spinner_status(f"Selected tools: {', '.join(selected_tool_names)}")
-            return selected_tools
-            
-        except json.JSONDecodeError as e:
-            logging.error("Failed to parse JSON response: %s", str(e))
-            logging.error("Raw response: %s", response.choices[0].message.content)
+        except Exception as e:
+            logging.error("Error in LLM request: %s", str(e))
             return []
             
     except Exception as e:
